@@ -51,13 +51,18 @@ class KITTIOdometryDataset:
 
         self.calibration = self.read_calib_file(os.path.join(self.kitti_sequence_dir, "calib.txt"))
 
-        # if self.image_available: # now we use cam2
-        #     # check this (FIXME)
-        #     K_mat = self.calibration["P2"]
-        #     self.fx = K_mat[0,0]
-        #     self.fy = K_mat[1,1]
-        #     self.cx = K_mat[0,2]
-        #     self.cy = K_mat[1,2]
+        calib_data = self._load_calib() # load all calib first
+
+        if self.image_available: # now we use cam2 (left color)
+            # intrinsic
+            self.K_mat = calib_data["K_cam2"]
+            self.fx = self.K_mat[0,0]
+            self.fy = self.K_mat[1,1]
+            self.cx = self.K_mat[0,2]
+            self.cy = self.K_mat[1,2]
+            # extrinsic
+            self.T_c_l = calib_data['T_cam2_velo']
+            self.T_l_c = np.linalg.inv(self.T_c_l)
 
         # Load GT Poses (if available)
         if int(sequence) < 11:
@@ -69,11 +74,18 @@ class KITTIOdometryDataset:
         points = self.scans(idx)
         point_ts = self.get_timestamps(points)
 
-        frame_data = {"points": points, "point_ts": point_ts}
-
         if self.image_available:
             img = self.read_img(self.img2_files[idx]) # just for vis here
-            frame_data["img"] = img
+
+            # project to the image plane to get the corresponding color
+            points_color = self.project_points_to_cam(points, img)
+
+            # we skip the intensity here for now (and also the color mask)
+            points = np.hstack((points[:,:3], points_color[:,:3]))
+
+            frame_data = {"points": points, "point_ts": point_ts, "img": img}
+        else:
+            frame_data = {"points": points, "point_ts": point_ts}
 
         return frame_data
 
@@ -91,7 +103,7 @@ class KITTIOdometryDataset:
 
     def read_point_cloud(self, scan_file: str):
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
-        return points
+        return points # N, 4
     
     def read_img(self, img_file: str):
         img = cv2.imread(img_file)
@@ -100,7 +112,7 @@ class KITTIOdometryDataset:
         cv2.imshow('cam0', img)
         cv2.waitKey(1) # 1ms
 
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # img = np.array(img) # as np array
         
         return img
@@ -152,3 +164,114 @@ class KITTIOdometryDataset:
                     key = tokens[0][:-1]
                     calib_dict[key] = values
         return calib_dict
+    
+    def project_points_to_cam(self, points, img):
+        
+        # points as np.numpy (N,4)
+
+        # cm = plt.get_cmap('jet')
+        points[:,3] = 1 # homo coordinate
+
+        # transfrom velodyne points to camera coordinate
+        points_cam = np.matmul(self.T_c_l, points.T).T # N, 4
+        points_cam = points_cam[:,:3] # N, 3
+
+        # project to image space
+        u, v, depth= self.persepective_cam2image(points_cam.T) 
+        u = u.astype(np.int32)
+        v = v.astype(np.int32)
+
+        img_height, img_width, _ = np.shape(img)
+
+        # prepare depth map for visualization
+        depth_map = np.zeros((img_height, img_width))
+        depth_img = np.zeros((img_height, img_width, 3))
+        mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
+        
+        # visualize points within 30 meters
+        min_depth = 1.0
+        max_depth = 100.0
+        mask = np.logical_and(np.logical_and(mask, depth>min_depth), depth<max_depth)
+        
+        v_valid = v[mask]
+        u_valid = u[mask]
+
+        depth_map[v_valid,u_valid] = depth[mask]
+
+        points_rgb = np.ones_like(points) # N,4, last channel for the mask
+
+        # print(np.shape(points_rgb))
+
+        points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
+        points_rgb[mask, 3] = 0 # has color
+
+        return points_rgb
+    
+    def persepective_cam2image(self, points):
+        ndim = points.ndim
+        if ndim == 2:
+            points = np.expand_dims(points, 0)
+        points_proj = np.matmul(self.K_mat[:3,:3].reshape([1,3,3]), points)
+        depth = points_proj[:,2,:]
+        depth[depth==0] = -1e-6
+        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
+        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(np.int32)
+
+        if ndim==2:
+            u = u[0]; v=v[0]; depth=depth[0]
+        return u, v, depth
+    
+    # from pykitti
+    def _load_calib(self):
+        """Load and compute intrinsic and extrinsic calibration parameters."""
+        # We'll build the calibration parameters as a dictionary, then
+        # convert it to a namedtuple to prevent it from being modified later
+        data = {}
+
+        filedata = self.calibration
+
+        # Create 3x4 projection matrices
+        P_rect_00 = np.reshape(filedata['P0'], (3, 4))
+        P_rect_10 = np.reshape(filedata['P1'], (3, 4))
+        P_rect_20 = np.reshape(filedata['P2'], (3, 4))
+        P_rect_30 = np.reshape(filedata['P3'], (3, 4))
+
+        data['P_rect_00'] = P_rect_00
+        data['P_rect_10'] = P_rect_10
+        data['P_rect_20'] = P_rect_20
+        data['P_rect_30'] = P_rect_30
+
+        # Compute the rectified extrinsics from cam0 to camN
+        T1 = np.eye(4)
+        T1[0, 3] = P_rect_10[0, 3] / P_rect_10[0, 0]
+        T2 = np.eye(4)
+        T2[0, 3] = P_rect_20[0, 3] / P_rect_20[0, 0]
+        T3 = np.eye(4)
+        T3[0, 3] = P_rect_30[0, 3] / P_rect_30[0, 0]
+
+        # Compute the velodyne to rectified camera coordinate transforms
+        data['T_cam0_velo'] = np.reshape(filedata['Tr'], (3, 4))
+        data['T_cam0_velo'] = np.vstack([data['T_cam0_velo'], [0, 0, 0, 1]])
+        data['T_cam1_velo'] = T1.dot(data['T_cam0_velo'])
+        data['T_cam2_velo'] = T2.dot(data['T_cam0_velo'])
+        data['T_cam3_velo'] = T3.dot(data['T_cam0_velo'])
+
+        # Compute the camera intrinsics
+        data['K_cam0'] = P_rect_00[0:3, 0:3]
+        data['K_cam1'] = P_rect_10[0:3, 0:3]
+        data['K_cam2'] = P_rect_20[0:3, 0:3]
+        data['K_cam3'] = P_rect_30[0:3, 0:3]
+
+        # Compute the stereo baselines in meters by projecting the origin of
+        # each camera frame into the velodyne frame and computing the distances
+        # between them
+        p_cam = np.array([0, 0, 0, 1])
+        p_velo0 = np.linalg.inv(data['T_cam0_velo']).dot(p_cam)
+        p_velo1 = np.linalg.inv(data['T_cam1_velo']).dot(p_cam)
+        p_velo2 = np.linalg.inv(data['T_cam2_velo']).dot(p_cam)
+        p_velo3 = np.linalg.inv(data['T_cam3_velo']).dot(p_cam)
+
+        data['b_gray'] = np.linalg.norm(p_velo1 - p_velo0)  # gray baseline
+        data['b_rgb'] = np.linalg.norm(p_velo3 - p_velo2)   # rgb baseline
+
+        return data

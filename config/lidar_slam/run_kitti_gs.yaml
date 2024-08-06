@@ -1,8 +1,8 @@
 setting: 
-  name: "test_kitti360_gs"
+  name: "test_kitti_gs"
   output_root: "./experiments"
   color_channel: 3
-  deskew: True
+  deskew: False
   kitti_correct: True
   correct_deg: 0.195
   color_map_on: False # pin slam does not make use of color
@@ -13,8 +13,6 @@ sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
-# decoder:
-#   mlp_hidden_dim: 16
 gs:
   gs_iters: 20
   img_pool_size: 30
