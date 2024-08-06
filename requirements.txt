@@ -4,6 +4,7 @@ gtsam==4.2
 laspy==2.5.3
 natsort==8.1.0
 open3d==0.17.0
+opencv-python==4.10.0.84
 plyfile==1.0.3
 pycryptodomex==3.20.0
 pypose==0.6.8

@@ -1,4 +1,10 @@
 
+# PINGS
+
+For development, please create your own branch (for example, `dev/faris`). 
+
+For questions and proposals, please raise issues or contact Yue and Starry via WhatsApp.
+
 ## Requirements
 
 1. follow the installation instruction of PIN-SLAM
@@ -16,10 +22,14 @@ We may change this to [gaussian-surfels](https://github.com/turandai/gaussian_su
 
 3. Prepare the KITTI dataset, KITTI-360 dataset and Nuscenes dataset. You may directly contact Yue to get the dataset in the required structure.
 
+### Visualization
+
+you can visualize the neural gaussians as point cloud in the visualizer by pressing `P`. For the other instructions for visualizer, please refer to the readme file
+
 
 ## Run on KITTI dataset
 
-we are using the kitti odometry dataset here, you need `image_2` and `velodyne folder` in your sequence base folder
+we are using the kitti odometry dataset here, you need `image_2` and `velodyne` folder in your sequence base folder
 
 ```
 python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -dvl
@@ -37,7 +47,7 @@ python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 03 -i ./data/k
 ```
 
 
-## Run on Nuscenes dataset
+## Run on Nuscenes dataset (under development)
 
 ```
 python pin_slam.py ./config/lidar_slam/run_fast.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
@@ -45,7 +55,7 @@ python pin_slam.py ./config/lidar_slam/run_fast.yaml nuscenes 0061 -i ./data/nus
 python pin_slam.py ./config/lidar_slam/run_fast.yaml nuscenes 0655 -i ./data/nuscenes/v1.0-mini/ -dvl
 ```
 
-### available scenes
+### available scenes for Nuscenes
 
 for the `v1.0-mini` split
 
@@ -62,10 +72,35 @@ scene-1094, Night, after rain, many peds, PMD, ped ... [18-11-21 11:47:27]   19s
 scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s, singapore-hollandv, #anns:935
 ```
 
-## nuscenes dataset
+### notes on nuscenes dataset
 
 + only the sample keyframes (per 0.5s / 2Hz) have the anotation
 + images have different frequency as the Lidar frames, has lower frequency and is not as constant, we need to somehow associate the imgs to the Lidar frames
 + for the keyframes, all the sensor data are available
 + only 20 seconds for a scene (40 keyframes, 400 lidar frames, fewer img frames)
 + timestamps and pose are available for each measurement of each sensor
+
+## Run on Waymo dataset (under development)
+
+... ...
+
+## Useful links
++ [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)
+
++ [2D-GS](https://github.com/hbb1/2d-gaussian-splatting)
+
++ [Gaussian-Surfels](https://github.com/turandai/gaussian_surfels)
+
++ [MonoGS](https://github.com/muskie82/MonoGS)
+
++ [GS-ICP-SLAM](https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM)
+
++ [Street-Gaussians](https://github.com/LightwheelAI/street-gaussians-ns)
+
++ [Scaffold-GS](https://github.com/city-super/Scaffold-GS)
+
++ [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
+
++ [SHINE-Mapping](https://github.com/PRBonn/SHINE_mapping)
+
+Please add more links here

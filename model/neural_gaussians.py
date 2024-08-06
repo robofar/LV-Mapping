@@ -879,9 +879,8 @@ class NeuralPoints(nn.Module):
 
         # neural_points_np = self.neural_points[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
         neural_pc_o3d = o3d.geometry.PointCloud()
-        neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)
 
-        if color_mode == 0:  # "geo_feature"
+        if color_mode == 1:  # "geo_feature"
             if query_global:
                 neural_features_vis = self.geo_features[:-1:random_down_ratio].detach()
             else:
@@ -894,22 +893,59 @@ class NeuralPoints(nn.Module):
                 neural_features_np[:, 0:3] * ratio_vis
             )
 
-        elif color_mode == 1:  # "color_feature"
-            if self.color_features is None:
-                return neural_pc_o3d
+        elif color_mode == 0:  # "gaussian fused color"
             if query_global:
-                neural_features_vis = self.color_features[
-                    :-1:random_down_ratio
-                ].detach()
+                xyz_displacement_np = (
+                    self.xyz[::random_down_ratio]
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
+                gaussian_rgb_np = (
+                    self.features_dc[::random_down_ratio, 0]
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
             else:
-                neural_features_vis = self.local_color_features[
-                    :-1:random_down_ratio
-                ].detach()
-            neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
-            neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
+                xyz_displacement_np = (
+                    self.local_xyz[::random_down_ratio]
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
+                gaussian_rgb_np = (
+                    self.local_features_dc[::random_down_ratio, 0]
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
+            neural_points_np += xyz_displacement_np
+            
             neural_pc_o3d.colors = o3d.utility.Vector3dVector(
-                neural_features_np[:, 0:3] * ratio_vis
+                gaussian_rgb_np
             )
+        
+        # elif color_mode == 1:  # "color_feature"
+        #     if self.color_features is None:
+        #         return neural_pc_o3d
+        #     if query_global:
+        #         neural_features_vis = self.color_features[
+        #             :-1:random_down_ratio
+        #         ].detach()
+        #     else:
+        #         neural_features_vis = self.local_color_features[
+        #             :-1:random_down_ratio
+        #         ].detach()
+        #     neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
+        #     neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
+        #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(
+        #         neural_features_np[:, 0:3] * ratio_vis
+        #     )
 
         elif color_mode == 2:  # "ts": # frame number (ts) as the color
             if query_global:
@@ -967,6 +1003,9 @@ class NeuralPoints(nn.Module):
                 np.float64
             )
             neural_pc_o3d.colors = o3d.utility.Vector3dVector(random_color)
+
+        # coordinate
+        neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)
 
         return neural_pc_o3d
 
