@@ -447,7 +447,7 @@ class Mapper:
 
         # img related 
         if self.dataset.cur_cam_img is not None:
-            if len(self.cam_img_pool) > 30: # TODO, change maximum pool size
+            if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
                 self.cam_img_pool.pop(0) # pop the oldest cam
                 self.cam_img_pool_id.pop(0) # pop the oldest cam
             self.cam_img_pool.append(self.dataset.cur_cam_img)
@@ -975,7 +975,8 @@ class Mapper:
 
         renderd_image = None
 
-        for iter in tqdm(range(iter_count), disable=self.silence):       
+        # for iter in tqdm(range(iter_count), disable=self.silence):       
+        for iter in range(iter_count):
 
             # gaussians.update_learning_rate(iteration) # FIXME
 
@@ -991,16 +992,14 @@ class Mapper:
 
             if iter == iter_count -1:
                 rand_idx = -1 # take the most recent one (for vis comparison)
-            
+
             viewpoint_cam = self.cam_img_pool[rand_idx]
+
+            # print("Used cam id:", viewpoint_cam.uid)
             
             T_w_l = self.used_poses[viewpoint_cam.uid] # already in torch tensor, lidar pose # T_w_l
             # need to convert to cam frame
-
             T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device)
-
-            # print(T_l_c)
-
             T_w_c = T_w_l @ T_l_c
 
             render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
@@ -1008,7 +1007,8 @@ class Mapper:
             # rendered results
             renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
-            gt_image = viewpoint_cam.original_image.to(self.device) # should be already in cuda?, then might be too much?
+            gt_image = viewpoint_cam.original_image.to(self.device) # should be already in cuda?, then might be faster
+            
             loss_l1 = l1_loss(renderd_image, gt_image)
 
             # loss = loss_l1
@@ -1039,8 +1039,9 @@ class Mapper:
             # # loss
             # total_loss = loss + dist_loss + normal_loss
             
-            # total_loss.backward()
+            # total_loss.backward() 
 
+        renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # print(np.shape(renderd_image_np))
 
@@ -1048,6 +1049,8 @@ class Mapper:
         
         cv2.imshow("rendered", renderd_image_np) # all white, does not work now
         cv2.waitKey(1) # 1ms
+
+        self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
         
         return 
     

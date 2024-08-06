@@ -311,7 +311,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # TODO: GS training here (camera pose might be wrong, need the transform)
         print("GS fitting on")
-        mapper.gs_mapping(config.gs_iters) 
+        # gs_iter_num = config.gs_iters * config.init_iter_ratio if frame_id == 0 else config.gs_iters # same, more iter for first frame
+        gs_iter_num = config.gs_iters
+        mapper.gs_mapping(gs_iter_num) 
         
         T6 = get_time()
 
@@ -439,7 +441,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     neural_points.clear_temp() # clear temp data for output
     if config.save_map:
         save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
-        gs_map = os.path.join(run_path, "map", "gaussians.ply") # TODO
+        gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here
         neural_points.save_gaussian_ply(gs_map)
     if config.save_merged_pc:
         dataset.write_merged_point_cloud() # replay: save merged point cloud map

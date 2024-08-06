@@ -5,25 +5,25 @@ setting:
   deskew: True
   kitti_correct: True
   correct_deg: 0.195
-  color_map_on: False # do not use the 
+  color_map_on: False # pin slam does not make use of color
 process:
-  max_range_m: 80.0
-  vox_down_m: 0.1
+  max_range_m: 60.0 # 80.0
+  vox_down_m: 0.08
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.4 # 0.5
+  voxel_size_m: 0.3 # 0.5
 # decoder:
 #   mlp_hidden_dim: 16
 gs:
-  gs_iters: 5
+  gs_iters: 10
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
   source_vox_down_m: 1.2
-  iter_n: 15
+  iter_n: 20
   term_deg: 0.1
 pgo:
   map_context: True

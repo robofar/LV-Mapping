@@ -252,7 +252,7 @@ class SLAMDataset(Dataset):
 
                 # print(self.fovx, self.fovy) # seems to be not wrong 
 
-                self.cur_cam_img = CamImage(frame_id, cur_img, self.fovy, self.fovx)
+                self.cur_cam_img = CamImage(frame_id, cur_img, self.fovy, self.fovx, self.device)
                 # print(self.cur_cam_img)
 
                 # print(self.cur_img.shape)

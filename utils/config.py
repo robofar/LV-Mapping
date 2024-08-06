@@ -201,6 +201,7 @@ class Config:
 
         # gaussian splatting fitting 
         self.gs_iters: int = 0
+        self.img_pool_size: int = 30
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
 
         # tracking (odometry estimation)
@@ -501,6 +502,7 @@ class Config:
         # gaussian splatting
         if "gs" in config_args:
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
+            self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
 
 
         # vis and eval

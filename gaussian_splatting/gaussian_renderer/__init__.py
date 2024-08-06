@@ -28,6 +28,10 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     Background tensor (bg_color) must be on GPU!
     """
 
+    # pipeline_params:
+    # convert_SHs_python: False
+    # compute_cov3D_python: False
+
     # pipe is something like the config (TODO)
     
     dtype = neural_gaussians.dtype
@@ -91,7 +95,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     rotations = None
     cov3D_precomp = None
     
-    compute_cov3D_python = True
+    compute_cov3D_python = False 
 
     if compute_cov3D_python: # False now
         # currently don't support normal consistency loss if use precomputed covariance
@@ -106,19 +110,16 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
             [0, 0, 0, 1]]).float().cuda().T
         world2pix =  viewpoint_camera.full_proj_transform @ ndc2pix
         cov3D_precomp = (splat2world[:, [0,1,3]] @ world2pix[:,[0,1,3]]).permute(0,2,1).reshape(-1, 9) # column major
-    else:
-        scales = neural_gaussians.get_local_scaling # expected scalar type Float but found Double
+    else:  # this is used
+        scales = neural_gaussians.get_local_scaling 
         rotations = neural_gaussians.get_local_rotation
-
-    # scales = neural_gaussians.get_local_scaling # expected scalar type Float but found Double
-    # rotations = neural_gaussians.get_local_rotation
 
     # print(scales)
     
     # TODO
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
-    convert_SHs_python = True
+    convert_SHs_python = False
     shs = None
     colors_precomp = None
     if override_color is None:
@@ -129,7 +130,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
             sh2rgb = eval_sh(neural_gaussians.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
-            shs = neural_gaussians.get_local_gaussian_sh_features
+            shs = neural_gaussians.get_local_gaussian_sh_features # this is used
     else:
         colors_precomp = override_color
     

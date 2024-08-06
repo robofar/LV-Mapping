@@ -475,11 +475,15 @@ class NeuralPoints(nn.Module):
         
         self.scaling = torch.cat((self.scaling, new_scales), 0) 
 
+        # print(self.scaling[:10])
+
         # this is actually different from the orientation
         new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # change to normal direction initialization
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
-        new_opacities = self.inverse_opacity_activation(0.1 * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
+        init_opacity = 0.1 # 0.1
+
+        new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
         self.opacity = torch.cat((self.opacity, new_opacities), 0)
 
         new_max_radii2D = torch.zeros((new_point_count), dtype=self.dtype, device=self.device)
@@ -545,7 +549,6 @@ class NeuralPoints(nn.Module):
         self.local_rotation = nn.Parameter(self.rotation[local_mask])
         self.local_opacity = nn.Parameter(self.opacity[local_mask])
 
-
         local_mask = torch.cat(
             (local_mask, torch.tensor([True], device=self.device))
         )  # padding with one element in the end
@@ -570,7 +573,6 @@ class NeuralPoints(nn.Module):
         self.local_orientation = sensor_orientation  # not used
 
     def assign_local_to_global(self):
-
         local_mask = self.local_mask
         # self.neural_points[local_mask[:-1]] = self.local_neural_points
         # self.point_orientations[local_mask[:-1]] = self.local_point_orientations
@@ -580,16 +582,14 @@ class NeuralPoints(nn.Module):
         self.point_certainties[local_mask[:-1]] = self.local_point_certainties
         self.point_ts_update[local_mask[:-1]] = self.local_point_ts_update
 
-        # Local Gaussian parameters
+    def assign_local_gaussians_to_global(self):
+        local_mask = self.local_mask
         self.xyz[local_mask[:-1]] = self.local_xyz.data
         self.features_dc[local_mask[:-1]] = self.local_features_dc.data
         self.features_rest[local_mask[:-1]] = self.local_features_rest.data
         self.scaling[local_mask[:-1]] = self.local_scaling.data
         self.rotation[local_mask[:-1]] = self.local_rotation.data
         self.opacity[local_mask[:-1]] = self.local_opacity.data
-
-        # print(self.features_dc.shape)
-        # print(self.features_rest.shape)
 
     def query_feature(
         self,

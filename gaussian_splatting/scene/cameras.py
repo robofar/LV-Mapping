@@ -70,12 +70,13 @@ class Camera(nn.Module):
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0) # T_wi
         self.camera_center = self.world_view_transform.inverse()[3, :3]
 
+# used by as
 class CamImage:
-    def __init__(self, frame_id, image, fovy, fovx):
+    def __init__(self, frame_id, image, fovy, fovx, device):
         
         self.uid = frame_id
 
-        self.original_image = image.clamp(0.0, 1.0)
+        self.original_image = image.clamp(0.0, 1.0).to(device)
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
  
