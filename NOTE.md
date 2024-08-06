@@ -1,3 +1,22 @@
+
+## Requirements
+
+1. follow the installation instruction of PIN-SLAM
+
+2. in PIN-SLAM's conda environment, try to install the other dependencies needed for [2DGS](https://github.com/hbb1/2d-gaussian-splatting), mainly `submodules/diff-surfel-rasterization`. Please follow 2D-GS's installation instruction:
+
+```
+cd ..
+git clone https://github.com/hbb1/2d-gaussian-splatting.git --recursive
+cd 2d-gaussian-splatting
+pip install submodules/diff-surfel-rasterization
+```
+
+We may change this to [gaussian-surfels](https://github.com/turandai/gaussian_surfels) later.
+
+3. Prepare the KITTI dataset, KITTI-360 dataset and Nuscenes dataset. You may directly contact Yue to get the dataset in the required structure.
+
+
 ## Run on KITTI dataset
 
 we are using the kitti odometry dataset here, you need `image_2` and `velodyne folder` in your sequence base folder
