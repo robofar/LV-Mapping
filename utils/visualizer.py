@@ -91,7 +91,7 @@ class MapVisualizer:
         self.render_odom_trajectory: bool = (
             True  # when pgo is on, visualize the odom or not
         )
-        self.render_neural_points: bool = False
+        self.render_neural_points: bool = True
         self.render_data_pool: bool = False
         self.render_sdf: bool = False
         self.render_pgo: bool = self.render_trajectory
@@ -394,7 +394,10 @@ class MapVisualizer:
     def _toggle_neural_point_vis_mode(self, vis):
         self.neural_points_vis_mode = (
             self.neural_points_vis_mode + 1
-        ) % 5  # 0,1,2,3,4 # switch between different vis mode
+        ) % 2  # 0,1,2,3,4 # switch between different vis mode
+        # self.neural_points_vis_mode = (
+        #     self.neural_points_vis_mode + 1
+        # ) % 5  # 0,1,2,3,4 # switch between different vis mode
         print("Switch to neural point visualization mode:", self.neural_points_vis_mode)
 
     def _toggle_increase_mesh_res(self, vis):

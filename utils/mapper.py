@@ -261,6 +261,10 @@ class Mapper:
         else:
             update_points = transform_torch(frame_point_torch, cur_pose_torch)
             update_colors = frame_color_torch
+
+        # TODO: for faraway walls that are not measured by the lidar but was observed in the img
+        # if self.config.add_high_points:
+        #     update_points
             
         # prune map and recreate hash
         if self.config.prune_map_on and ((frame_id + 1) % self.config.prune_freq_frame == 0):
@@ -961,7 +965,7 @@ class Mapper:
         self.ba_done_flag = True
 
     # fit the gaussians
-    # TODO
+    # TODO: use keyframes pool
     def gs_mapping(self, iter_count):
 
         if iter_count < 1:
@@ -991,67 +995,90 @@ class Mapper:
             # add batch size
 
             cur_img_pool_size = len(self.cam_img_pool)
-            rand_idx = random.randint(0, cur_img_pool_size-1)
 
-            if iter == iter_count -1:
-                rand_idx = -1 # take the most recent one (for vis comparison)
+            rgb_loss_batch = 0
 
-            viewpoint_cam = self.cam_img_pool[rand_idx]
-
-            # print("Used cam id:", viewpoint_cam.uid)
+            # regularization losses
+            normal_loss_batch = 0
+            dist_loss_batch = 0
             
-            T_w_l = self.used_poses[viewpoint_cam.uid] # already in torch tensor, lidar pose # T_w_l
-            # need to convert to cam frame
-            T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device)
-            T_w_c = T_w_l @ T_l_c
+            gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
-            render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
-            
-            # rendered results
-            renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
 
-            gt_image = viewpoint_cam.original_image.to(self.device) # should be already in cuda?, then might be faster
-            
-            loss_l1 = l1_loss(renderd_image, gt_image)
+                viewpoint_cam = self.cam_img_pool[rand_idx]
 
-            loss = (1.0 - self.config.lambda_dssim) * loss_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
+                # print("Used cam id:", viewpoint_cam.uid)
+                
+                T_w_l = self.used_poses[viewpoint_cam.uid] # already in torch tensor, lidar pose
+                T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
+                T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
-            # print(loss)
+                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
+                
+                # rendered results
+                renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+
+                gt_image = viewpoint_cam.original_image.to(self.device) # should be already in cuda?, then might be faster
+                
+                loss_rgb_l1 = l1_loss(renderd_image, gt_image)
+
+                rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
+
+                # print(rgb_loss)
+
+                rgb_loss_batch += rgb_loss
+                
+                # # # regularization # this can be ignored currently
+                # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
+                # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
+
+                # # lambda_normal = self.config.lambda_normal
+                # # lambda_dist = self.config.lambda_dist
+
+                # rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
+                # rend_normal  = render_pkg['rend_normal'] # 3, H, W
+
+                # surf_depth = render_pkg["surf_depth"] # 1, H, W
+                # surf_normal = render_pkg['surf_normal'] # 3, H, W
+
+                # normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+                # normal_loss = lambda_normal * (normal_error).mean()
+                # dist_loss = lambda_dist * (rend_dist).mean()
+
+                # normal_loss_batch += normal_loss
+                # dist_loss_batch += dist_loss
 
             # add the isotropic loss
+            # scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
             scaling = self.neural_points.get_local_scaling
-            isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
+            isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
 
             # print(isotropic_loss)
 
-            loss += self.config.lambda_isotropic * isotropic_loss
+            # total loss
+            total_loss = (rgb_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss 
 
-            print(loss)
+            print(total_loss)
             
-            loss.backward()
+            total_loss.backward() 
 
             # update
             self.neural_points.optimizer.step()
             self.neural_points.optimizer.zero_grad(set_to_none=True)
             
-            # # regularization # this can be ignored currently
-            # lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
-            # lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+        # rendered the last frame for vis
 
-            rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
-            rend_normal  = render_pkg['rend_normal'] # 3, H, W
+        cur_viewpoint_cam = self.cam_img_pool[-1]
 
-            surf_depth = render_pkg["surf_depth"] # 1, H, W
-            surf_normal = render_pkg['surf_normal'] # 3, H, W
+        # print("Used cam id:", viewpoint_cam.uid)
+        
+        T_w_l = self.used_poses[cur_viewpoint_cam.uid] # already in torch tensor, lidar pose
+        T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
+        T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
-            # normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-            # normal_loss = lambda_normal * (normal_error).mean()
-            # dist_loss = lambda_dist * (rend_dist).mean()
-
-            # # loss
-            # total_loss = loss + dist_loss + normal_loss
-            
-            # total_loss.backward() 
+        render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
+        renderd_image, rend_dist, rend_normal, surf_depth, surf_normal = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"]
 
         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1065,14 +1092,13 @@ class Mapper:
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
 
         cv2.imshow("rendered_surface_depth", rendered_depth_np)
-        #cv2.waitKey(1) # 1ms
 
         # rendered_normal_np = (surf_normal.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 
         # cv2.imshow("rendered_surface_normal", rendered_normal_np)
-        # cv2.waitKey(1) # 1ms
 
+        cv2.waitKey(1)
 
         self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
         

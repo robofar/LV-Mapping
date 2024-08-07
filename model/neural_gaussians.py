@@ -138,6 +138,8 @@ class NeuralPoints(nn.Module):
         self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
         self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
+        self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
+
         self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
         self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
         self.denom = torch.empty(0, dtype=self.dtype, device=self.device)
@@ -173,6 +175,8 @@ class NeuralPoints(nn.Module):
         self.local_scaling = nn.Parameter()
         self.local_rotation = nn.Parameter()
         self.local_opacity = nn.Parameter()
+
+        self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
         # set neighborhood search region
         self.set_search_neighborhood(
@@ -370,6 +374,15 @@ class NeuralPoints(nn.Module):
 
             update_mask = (hash_idx == -1) | (dist2 > 3 * cur_resolution**2)
 
+            if sample_colors is not None:
+                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0)
+                color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
+                hash_idx_color_update = hash_idx[color_update_mask]
+                self.features_dc[hash_idx_color_update] = sample_colors[color_update_mask].view(-1, 1, 3) # N, 1, 3
+                self.valid_color_mask[hash_idx_color_update] = 1 # valid again now
+                
+                # print("# Color update count:", color_update_mask.sum().item()) 
+
             if self.temporal_local_map_on: # only done for the slam mode
                 # the voxel is not occupied before or the case when hash collision happens
                 # delta_t = (cur_ts - self.point_ts_create[hash_idx]) # use time diff
@@ -485,6 +498,11 @@ class NeuralPoints(nn.Module):
         init_opacity = 0.1 # 0.1
 
         new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
+        
+        if added_colors is not None:
+            new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white
+            self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
+
         self.opacity = torch.cat((self.opacity, new_opacities), 0)
 
         new_max_radii2D = torch.zeros((new_point_count), dtype=self.dtype, device=self.device)
@@ -549,6 +567,8 @@ class NeuralPoints(nn.Module):
         self.local_scaling = nn.Parameter(self.scaling[local_mask])
         self.local_rotation = nn.Parameter(self.rotation[local_mask])
         self.local_opacity = nn.Parameter(self.opacity[local_mask])
+
+        self.local_valid_color_mask = self.valid_color_mask[local_mask]
 
         local_mask = torch.cat(
             (local_mask, torch.tensor([True], device=self.device))
@@ -860,150 +880,180 @@ class NeuralPoints(nn.Module):
         ratio_vis = 1.5
         # TODO: visualize orientation as normal
 
-        if query_global:
-            neural_points_np = (
-                self.neural_points[::random_down_ratio]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-            # points_orientation_np = self.point_orientations[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
-        else:
-            neural_points_np = (
-                self.local_neural_points[::random_down_ratio]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-
         # neural_points_np = self.neural_points[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
         neural_pc_o3d = o3d.geometry.PointCloud()
 
-        if color_mode == 1:  # "geo_feature"
+        if color_mode == 0 or color_mode == 1:  # "gaussian fused color" # here we do not use random_down_ratio            
             if query_global:
-                neural_features_vis = self.geo_features[:-1:random_down_ratio].detach()
-            else:
-                neural_features_vis = self.local_geo_features[
-                    :-1:random_down_ratio
-                ].detach()
-            neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
-            neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
-            neural_pc_o3d.colors = o3d.utility.Vector3dVector(
-                neural_features_np[:, 0:3] * ratio_vis
-            )
-
-        elif color_mode == 0:  # "gaussian fused color"
-            if query_global:
-                xyz_displacement_np = (
-                    self.xyz[::random_down_ratio]
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
-                gaussian_rgb_np = (
-                    self.features_dc[::random_down_ratio, 0]
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
-            else:
-                xyz_displacement_np = (
-                    self.local_xyz[::random_down_ratio]
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
-                gaussian_rgb_np = (
-                    self.local_features_dc[::random_down_ratio, 0]
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
-            neural_points_np += xyz_displacement_np
-            
-            neural_pc_o3d.colors = o3d.utility.Vector3dVector(
-                gaussian_rgb_np
-            )
-        
-        # elif color_mode == 1:  # "color_feature"
-        #     if self.color_features is None:
-        #         return neural_pc_o3d
-        #     if query_global:
-        #         neural_features_vis = self.color_features[
-        #             :-1:random_down_ratio
-        #         ].detach()
-        #     else:
-        #         neural_features_vis = self.local_color_features[
-        #             :-1:random_down_ratio
-        #         ].detach()
-        #     neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
-        #     neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
-        #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(
-        #         neural_features_np[:, 0:3] * ratio_vis
-        #     )
-
-        elif color_mode == 2:  # "ts": # frame number (ts) as the color
-            if query_global:
-                if self.config.use_mid_ts:
-                    show_ts = ((self.point_ts_create + self.point_ts_update) / 2).int()
+                if color_mode == 0:
+                    neural_points_np = (
+                        self.get_gaussian_xyz[self.valid_color_mask]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
                 else:
-                    show_ts = self.point_ts_create
-                ts_np = (
-                    show_ts[::random_down_ratio]
+                    neural_points_np = (
+                        self.neural_points[self.valid_color_mask]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
+                gaussian_rgb_np = (
+                    self.features_dc[self.valid_color_mask, 0]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
                 )
+                # alpha_np =  (
+                #     self.get_local_opacity[self.valid_color_mask]
+                #     .cpu()
+                #     .detach()
+                #     .numpy()
+                #     .astype(np.float64)
+                # )
             else:
-                ts_np = (
-                    self.local_point_ts_update[::random_down_ratio]
+                if color_mode == 0:
+                    neural_points_np = (
+                        self.get_local_gaussian_xyz[self.local_valid_color_mask]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
+                else:
+                    neural_points_np = (
+                        self.local_neural_points[self.local_valid_color_mask]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
+                gaussian_rgb_np = (
+                    self.local_features_dc[self.local_valid_color_mask, 0]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
                 )
-            ts_np = np.clip(ts_np / self.max_ts, 0.0, 1.0)
-            color_map = cm.get_cmap("jet")
-            ts_color = color_map(ts_np)[:, :3].astype(np.float64)
-            neural_pc_o3d.colors = o3d.utility.Vector3dVector(ts_color)
+                # alpha_np =  (
+                #     self.get_opacity[self.local_valid_color_mask]
+                #     .cpu()
+                #     .detach()
+                #     .numpy()
+                #     .astype(np.float64)
+                # )
+            
+            neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np)
 
-        elif color_mode == 3:  # "certainty" # certainty as color
+        else:
             if query_global:
-                certainty_np = (
-                    1.0
-                    - self.point_certainties[::random_down_ratio]
+                neural_points_np = (
+                    self.neural_points[::random_down_ratio]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
-                    / 1000.0
                 )
+                # points_orientation_np = self.point_orientations[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
             else:
-                certainty_np = (
-                    1.0
-                    - self.local_point_certainties[::random_down_ratio]
+                neural_points_np = (
+                    self.local_neural_points[::random_down_ratio]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
-                    / 1000.0
                 )
-            # print(self.local_point_certainties)
-            certainty_color = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
-            neural_pc_o3d.colors = o3d.utility.Vector3dVector(certainty_color)
 
-        elif color_mode == 4:  # "random" # random color
-            random_color = np.random.rand(neural_points_np.shape[0], 3).astype(
-                np.float64
-            )
-            neural_pc_o3d.colors = o3d.utility.Vector3dVector(random_color)
+            if color_mode == 2:  # "geo_feature"
+                if query_global:
+                    neural_features_vis = self.geo_features[:-1:random_down_ratio].detach()
+                else:
+                    neural_features_vis = self.local_geo_features[
+                        :-1:random_down_ratio
+                    ].detach()
+                neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
+                neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
+                neural_pc_o3d.colors = o3d.utility.Vector3dVector(
+                    neural_features_np[:, 0:3] * ratio_vis
+                )
+
+            # elif color_mode == 1:  # "color_feature"
+            #     if self.color_features is None:
+            #         return neural_pc_o3d
+            #     if query_global:
+            #         neural_features_vis = self.color_features[
+            #             :-1:random_down_ratio
+            #         ].detach()
+            #     else:
+            #         neural_features_vis = self.local_color_features[
+            #             :-1:random_down_ratio
+            #         ].detach()
+            #     neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
+            #     neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
+            #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(
+            #         neural_features_np[:, 0:3] * ratio_vis
+            #     )
+
+            elif color_mode == 3:  # "ts": # frame number (ts) as the color
+                if query_global:
+                    if self.config.use_mid_ts:
+                        show_ts = ((self.point_ts_create + self.point_ts_update) / 2).int()
+                    else:
+                        show_ts = self.point_ts_create
+                    ts_np = (
+                        show_ts[::random_down_ratio]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
+                else:
+                    ts_np = (
+                        self.local_point_ts_update[::random_down_ratio]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
+                ts_np = np.clip(ts_np / self.max_ts, 0.0, 1.0)
+                color_map = cm.get_cmap("jet")
+                ts_color = color_map(ts_np)[:, :3].astype(np.float64)
+                neural_pc_o3d.colors = o3d.utility.Vector3dVector(ts_color)
+
+            elif color_mode == 4:  # "certainty" # certainty as color
+                if query_global:
+                    certainty_np = (
+                        1.0
+                        - self.point_certainties[::random_down_ratio]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                        / 1000.0
+                    )
+                else:
+                    certainty_np = (
+                        1.0
+                        - self.local_point_certainties[::random_down_ratio]
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                        / 1000.0
+                    )
+                # print(self.local_point_certainties)
+                certainty_color = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
+                neural_pc_o3d.colors = o3d.utility.Vector3dVector(certainty_color)
+
+            # elif color_mode == 4:  # "random" # random color
+            #     random_color = np.random.rand(neural_points_np.shape[0], 3).astype(
+            #         np.float64
+            #     )
+            #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(random_color)
 
         # coordinate
         neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)

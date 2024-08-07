@@ -110,8 +110,11 @@ class Trainer:
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
             # regularization
-            lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
-            lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+            # lambda_normal = self.config.lambda_normal if iteration > 7000 else 0.0
+            # lambda_dist = self.config.lambda_dist if iteration > 3000 else 0.0
+
+            lambda_normal = self.config.lambda_normal
+            lambda_dist = self.config.lambda_dist
 
             rend_dist = render_pkg["rend_dist"]
             rend_normal  = render_pkg['rend_normal']

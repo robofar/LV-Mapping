@@ -201,10 +201,14 @@ class Config:
 
         # gaussian splatting fitting 
         self.gs_iters: int = 0
+        self.gs_bs: int = 5
         self.img_pool_size: int = 30
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
+        self.lambda_normal: float = 0.05 # normal regularization weight
+        self.lambda_dist: float  = 100.0 # distance distortion regularization weight
+
 
         # tracking (odometry estimation)
         self.track_on: bool = True
@@ -504,6 +508,7 @@ class Config:
         # gaussian splatting
         if "gs" in config_args:
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
+            self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
 
 

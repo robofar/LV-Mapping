@@ -14,7 +14,8 @@ sampler:
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
 gs:
-  gs_iters: 10
+  gs_iters: 100
+  gs_bs: 5
   img_pool_size: 30
 continual:
   batch_size_new_sample: 1000
