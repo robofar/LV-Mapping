@@ -245,6 +245,7 @@ class Mapper:
         T2 = get_time()
 
         update_colors = None
+        update_normals = None # TODO: add this 
 
         # update the neural point map
         if self.config.from_sample_points:
@@ -271,7 +272,7 @@ class Mapper:
             if self.neural_points.prune_map(self.config.max_prune_certainty):
                 self.neural_points.recreate_hash(None, None, True, True, frame_id)
         self.neural_points.update(
-            update_points, update_colors, frame_origin_torch, frame_orientation_torch, frame_id
+            update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
         # local map is also updated here
 
@@ -1016,8 +1017,10 @@ class Mapper:
                 # rendered results
                 renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
-                gt_image = viewpoint_cam.original_image.to(self.device) # should be already in cuda?, then might be faster
-                
+                gt_image = viewpoint_cam.original_image
+                if gt_image.device != self.device: # this is one very time consuming part
+                    gt_image.to(self.device)
+
                 loss_rgb_l1 = l1_loss(renderd_image, gt_image)
 
                 rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
@@ -1069,8 +1072,13 @@ class Mapper:
         cur_viewpoint_cam = self.dataset.cur_cam_img
 
         # print("Used cam id:", viewpoint_cam.uid)
-        
-        T_w_l = self.used_poses[-1] # already in torch tensor, lidar pose for current frame
+
+        original_img_np = (cur_viewpoint_cam.original_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+        original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
+
+        cv2.imshow("Observed RGB", original_img_np)
+
+        T_w_l = self.used_poses[self.dataset.cur_cam_img.uid] # already in torch tensor, lidar pose for current frame
         T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
         T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
@@ -1081,19 +1089,19 @@ class Mapper:
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
         
-        cv2.imshow("rendered_rgb", renderd_image_np)
+        cv2.imshow("Rendered RGB", renderd_image_np)
         #cv2.waitKey(1) # 1ms
 
         rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
         rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow("rendered_surface_depth", rendered_depth_np)
+        cv2.imshow("Rendered Depth", rendered_depth_np)
 
         # rendered_normal_np = (surf_normal.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 
-        # cv2.imshow("rendered_surface_normal", rendered_normal_np)
+        # cv2.imshow("Rendered Normal", rendered_normal_np)
 
         cv2.waitKey(1)
 

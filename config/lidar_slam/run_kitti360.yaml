@@ -17,8 +17,8 @@ neuralpoints:
 # decoder:
 #   mlp_hidden_dim: 16
 gs:
-  gs_iters: 5
-  gs_bs: 2
+  gs_iters: 10
+  gs_bs: 5
   gs_keyframe_interval: 5
   img_pool_size: 10
   sh_degree: 1

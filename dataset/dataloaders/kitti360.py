@@ -122,8 +122,8 @@ class KITTI360Dataset:
         img = cv2.imread(img_file) # already numpy
         # print(img.shape)
         
-        cv2.imshow('cam0', img)
-        cv2.waitKey(1) # 1ms
+        # cv2.imshow('cam0', img)
+        # cv2.waitKey(1) # 1ms
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # img = np.array(img) # as np array

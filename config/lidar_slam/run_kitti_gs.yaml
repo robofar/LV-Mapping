@@ -14,8 +14,8 @@ sampler:
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
 gs:
-  gs_iters: 5
-  gs_bs: 2
+  gs_iters: 10
+  gs_bs: 5
   gs_keyframe_interval: 5
   img_pool_size: 10
   sh_degree: 1

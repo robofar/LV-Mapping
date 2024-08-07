@@ -348,6 +348,7 @@ class NeuralPoints(nn.Module):
         self,
         points: torch.Tensor,
         colors: torch.Tensor,
+        normals: torch.Tensor,
         sensor_position: torch.Tensor,
         sensor_orientation: torch.Tensor,
         cur_ts,
@@ -495,7 +496,8 @@ class NeuralPoints(nn.Module):
 
         # print(self.scaling[:10])
 
-        # this is actually different from the orientation
+        # this is actually different from the orientation 
+        # initialize it with the surface normal (TODO)
         new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # change to normal direction initialization
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
