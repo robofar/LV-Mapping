@@ -24,6 +24,7 @@ from utils.config import Config
 from utils.data_sampler import DataSampler
 from utils.loss import color_diff_loss, sdf_bce_loss, sdf_diff_loss, sdf_zhong_loss
 from utils.tools import (
+    colorize_depth_maps,
     get_gradient,
     get_time,
     setup_optimizer,
@@ -987,6 +988,8 @@ class Mapper:
             # keep the cameras in the local map
             # randomly select one camera
 
+            # add batch size
+
             cur_img_pool_size = len(self.cam_img_pool)
             rand_idx = random.randint(0, cur_img_pool_size-1)
 
@@ -1011,11 +1014,17 @@ class Mapper:
             
             loss_l1 = l1_loss(renderd_image, gt_image)
 
-            # loss = loss_l1
+            loss = (1.0 - self.config.lambda_dssim) * loss_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
 
-            lambda_dssim = self.neural_points.lambda_dssim # set as config
+            # print(loss)
 
-            loss = (1.0 - lambda_dssim) * loss_l1 + lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
+            # add the isotropic loss
+            scaling = self.neural_points.get_local_scaling
+            isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
+
+            # print(isotropic_loss)
+
+            loss += self.config.lambda_isotropic * isotropic_loss
 
             print(loss)
             
@@ -1029,9 +1038,12 @@ class Mapper:
             # lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
             # lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
 
-            # rend_dist = render_pkg["rend_dist"]
-            # rend_normal  = render_pkg['rend_normal']
-            # surf_normal = render_pkg['surf_normal']
+            rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
+            rend_normal  = render_pkg['rend_normal'] # 3, H, W
+
+            surf_depth = render_pkg["surf_depth"] # 1, H, W
+            surf_normal = render_pkg['surf_normal'] # 3, H, W
+
             # normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
             # normal_loss = lambda_normal * (normal_error).mean()
             # dist_loss = lambda_dist * (rend_dist).mean()
@@ -1043,12 +1055,24 @@ class Mapper:
 
         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        # print(np.shape(renderd_image_np))
-
         renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
         
-        cv2.imshow("rendered", renderd_image_np) # all white, does not work now
-        cv2.waitKey(1) # 1ms
+        cv2.imshow("rendered_rgb", renderd_image_np)
+        #cv2.waitKey(1) # 1ms
+
+        rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+        rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
+        rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
+
+        cv2.imshow("rendered_surface_depth", rendered_depth_np)
+        #cv2.waitKey(1) # 1ms
+
+        # rendered_normal_np = (surf_normal.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        # rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
+
+        # cv2.imshow("rendered_surface_normal", rendered_normal_np)
+        # cv2.waitKey(1) # 1ms
+
 
         self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
         

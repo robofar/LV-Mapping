@@ -203,6 +203,8 @@ class Config:
         self.gs_iters: int = 0
         self.img_pool_size: int = 30
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
+        self.lambda_dssim: float = 0.2 # weight for ssim
+        self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
 
         # tracking (odometry estimation)
         self.track_on: bool = True

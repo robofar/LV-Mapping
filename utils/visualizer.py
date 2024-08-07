@@ -83,7 +83,7 @@ class MapVisualizer:
         self._initialize_visualizer()
 
         # Visualization options
-        self.render_mesh: bool = True
+        self.render_mesh: bool = False # default off
         self.render_pointcloud: bool = True
         self.render_frame_axis: bool = True
         self.render_trajectory: bool = True

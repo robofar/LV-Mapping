@@ -145,12 +145,6 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp
     ) 
-
-    # print(radii)
-
-    # print(torch.max(radii))
-
-    # print(rendered_image) # why
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
@@ -170,7 +164,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     render_normal = allmap[2:5]
     render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
     
-    # get median depth map
+    # get median depth map # what does this mean? # TODO
     render_depth_median = allmap[5:6]
     render_depth_median = torch.nan_to_num(render_depth_median, 0, 0)
 
@@ -179,7 +173,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     render_depth_expected = (render_depth_expected / render_alpha)
     render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
     
-    # get depth distortion map
+    # get depth distortion map (this is depth distortion instead of depth)
     render_dist = allmap[6:7]
 
     # print(render_dist)

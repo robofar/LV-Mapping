@@ -16,7 +16,7 @@ neuralpoints:
 # decoder:
 #   mlp_hidden_dim: 16
 gs:
-  gs_iters: 20
+  gs_iters: 10
   img_pool_size: 30
 continual:
   batch_size_new_sample: 1000

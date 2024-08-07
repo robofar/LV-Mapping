@@ -275,7 +275,6 @@ class NeuralPoints(nn.Module):
         self.scaling_lr: float = 0.005 # 0.005
         self.rotation_lr: float = 0.001 # 0.001
         self.percent_dense: float = 0.01
-        self.lambda_dssim: float = 0.2
 
         # not very useful
         self.feature_rest_lr_init: float = 0.0025 / 20.
@@ -305,19 +304,21 @@ class NeuralPoints(nn.Module):
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
-        #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
-        #                                             lr_delay_mult=self.position_lr_delay_mult,
-        #                                             max_steps=self.position_lr_max_steps)
+        self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
+                                                    lr_final=self.position_lr_final*self.spatial_lr_scale,
+                                                    lr_delay_mult=self.position_lr_delay_mult,
+                                                    max_steps=self.position_lr_max_steps)
     
     # For GS
-    # def update_learning_rate(self, iteration):
-    #     ''' Learning rate scheduling per step '''
-    #     for param_group in self.optimizer.param_groups:
-    #         if param_group["name"] == "xyz":
-    #             lr = self.xyz_scheduler_args(iteration)
-    #             param_group['lr'] = lr
-    #             return lr
+    def update_learning_rate(self, iteration):
+        ''' Learning rate scheduling per step '''
+        for param_group in self.optimizer.param_groups:
+            if param_group["name"] == "xyz":
+                lr = self.xyz_scheduler_args(iteration)
+                param_group['lr'] = lr
+                return lr
+
+    # TODO: add GS pruning and densification related
 
 
     def print_memory(self):
