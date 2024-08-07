@@ -12,14 +12,16 @@ process:
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.3 # 0.5
+  voxel_size_m: 0.4 # 0.5
   from_sample_points: True
 # decoder:
 #   mlp_hidden_dim: 16
 gs:
   gs_iters: 5
   gs_bs: 2
-  img_pool_size: 30
+  gs_keyframe_interval: 5
+  img_pool_size: 10
+  sh_degree: 1
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7

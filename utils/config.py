@@ -202,7 +202,8 @@ class Config:
         # gaussian splatting fitting 
         self.gs_iters: int = 0
         self.gs_bs: int = 5
-        self.img_pool_size: int = 30
+        self.gs_keyframe_interval: int = 5
+        self.img_pool_size: int = 10
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
@@ -509,8 +510,9 @@ class Config:
         if "gs" in config_args:
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs)
+            self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
-
+            self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
 
         # vis and eval
         if "eval" in config_args:

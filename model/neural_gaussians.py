@@ -270,7 +270,9 @@ class NeuralPoints(nn.Module):
     # for GS
     def training_setup_gs(self):
 
-        self.position_lr_init: float = 0.00016
+        self.position_lr_init: float = 0.00016 # let the gaussians to move 
+        # self.position_lr_init: float = 0.0
+
         self.position_lr_final: float = 0.0000016
         self.position_lr_delay_mult: float = 0.01
         self.position_lr_max_steps: float = 30_000
@@ -293,6 +295,8 @@ class NeuralPoints(nn.Module):
         # densify_from_iter: int = 500
         # densify_until_iter: int = 15_000
         # densify_grad_threshold: float = 0.0002
+
+        # TODO: it's also necessary to duplicate, clone, split the gaussians
 
 
         self.xyz_gradient_accum = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)

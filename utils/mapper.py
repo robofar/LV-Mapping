@@ -450,13 +450,15 @@ class Mapper:
 
         T4 = get_time()
 
-        # img related 
+        # img related # TODO: use a better keyframe selection strategy
         if self.dataset.cur_cam_img is not None:
-            if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
-                self.cam_img_pool.pop(0) # pop the oldest cam
-                self.cam_img_pool_id.pop(0) # pop the oldest cam
-            self.cam_img_pool.append(self.dataset.cur_cam_img)
-            self.cam_img_pool_id.append(self.dataset.cur_cam_img.uid)
+            if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
+                if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
+                    self.cam_img_pool.pop(0) # pop the oldest cam
+                    self.cam_img_pool_id.pop(0) # pop the oldest cam
+                self.cam_img_pool.append(self.dataset.cur_cam_img)
+                self.cam_img_pool_id.append(self.dataset.cur_cam_img.uid)
+            
 
             # print(self.cam_img_pool_id)
             
@@ -989,11 +991,6 @@ class Mapper:
             # if iteration % 1000 == 0:
             #     gaussians.oneupSHdegree()
 
-            # keep the cameras in the local map
-            # randomly select one camera
-
-            # add batch size
-
             cur_img_pool_size = len(self.cam_img_pool)
 
             rgb_loss_batch = 0
@@ -1069,11 +1066,11 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        cur_viewpoint_cam = self.cam_img_pool[-1]
+        cur_viewpoint_cam = self.dataset.cur_cam_img
 
         # print("Used cam id:", viewpoint_cam.uid)
         
-        T_w_l = self.used_poses[cur_viewpoint_cam.uid] # already in torch tensor, lidar pose
+        T_w_l = self.used_poses[-1] # already in torch tensor, lidar pose for current frame
         T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
         T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
