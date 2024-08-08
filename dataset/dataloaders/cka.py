@@ -56,14 +56,28 @@ class CKADataset:
             width = intrinsic_data["width"]
             height = intrinsic_data["height"]
             self.depth_scale = intrinsic_data["depth_scale"]
+
+            self.fx = intrinsic_mat[0]
+            self.fy = intrinsic_mat[4]
+            self.cx = intrinsic_mat[6]
+            self.cy = intrinsic_mat[7]
+
+            self.K_mat = np.eye(3)
+            self.K_mat[0,0]=self.fx
+            self.K_mat[1,1]=self.fy
+            self.K_mat[0,2]=self.cx
+            self.K_mat[1,2]=self.cy
+
+            self.T_l_c = np.eye(4)
+            self.T_c_l = np.linalg.inv(self.T_l_c)
                     
             self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(height=height,
-                                        width=width,
-                                        fx=intrinsic_mat[0],
-                                        fy=intrinsic_mat[4],
-                                        cx=intrinsic_mat[6],
-                                        cy=intrinsic_mat[7])
+                                          width=width,
+                                          fx=self.fx,
+                                          fy=self.fy,
+                                          cx=self.cx,
+                                          cy=self.cy)
         
         self.max_depth_m = 1.5
         self.down_sample_on = False
@@ -95,6 +109,8 @@ class CKADataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-        frame_data = {"points": points_xyzrgb}
+        rgb_image = np.array(rgb_image)
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image}
 
         return frame_data 

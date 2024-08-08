@@ -82,6 +82,21 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 ## Run on Waymo dataset (under development)
 
+
+## Run on TUM RGBD dataset
+
+```
+python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
+
+```
+
+## Run on Replica RGBD dataset
+
+```
+python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl
+
+```
+
 ... ...
 
 ## Useful links

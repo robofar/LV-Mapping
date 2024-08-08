@@ -43,20 +43,29 @@ class TUMDataset:
         H, W = 480, 640
 
         if "freiburg1" in sequence:
-            fx, fy, cx, cy = 517.3, 516.5, 318.6, 255.3
+            self.fx, self.fy, self.cx, self.cy = 517.3, 516.5, 318.6, 255.3
         elif "freiburg2" in sequence:
-            fx, fy, cx, cy = 520.9, 521.0, 325.1, 249.7
+            self.fx, self.fy, self.cx, self.cy  = 520.9, 521.0, 325.1, 249.7
         elif "freiburg3" in sequence:
-            fx, fy, cx, cy = 535.4, 539.2, 320.1, 247.6
+            self.fx, self.fy, self.cx, self.cy  = 535.4, 539.2, 320.1, 247.6
         else: # default
-            fx, fy, cx, cy = 525.0, 525.0, 319.5, 239.5
+            self.fx, self.fy, self.cx, self.cy  = 525.0, 525.0, 319.5, 239.5
 
         self.intrinsic.set_intrinsics(height=H,
                                      width=W,
-                                     fx=fx,
-                                     fy=fy,
-                                     cx=cx,
-                                     cy=cy)
+                                     fx=self.fx,
+                                     fy=self.fy,
+                                     cx=self.cx,
+                                     cy=self.cy)
+        
+        self.K_mat = np.eye(3)
+        self.K_mat[0,0]=self.fx
+        self.K_mat[1,1]=self.fy
+        self.K_mat[0,2]=self.cx
+        self.K_mat[1,2]=self.cy
+
+        self.T_l_c = np.eye(4)
+        self.T_c_l = np.linalg.inv(self.T_l_c)
         
         self.down_sample_on = False
         self.rand_down_rate = 0.1
@@ -133,9 +142,11 @@ class TUMDataset:
 
         return images, depths, poses
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): 
         
         im_color = self.o3d.io.read_image(self.rgb_frames[idx])
+        # print(im_color)
+
         im_depth = self.o3d.io.read_image(self.depth_frames[idx]) 
         rgbd_image = self.o3d.geometry.RGBDImage.create_from_tum_format(im_color,
             im_depth, convert_rgb_to_intensity=False)
@@ -151,6 +162,8 @@ class TUMDataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-        frame_data = {'points': points_xyzrgb} # TODO: add img
+        im_color = np.array(im_color)
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": im_color}
 
         return frame_data 

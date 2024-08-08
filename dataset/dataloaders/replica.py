@@ -52,12 +52,29 @@ class ReplicaDataset:
 
         self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
         # From cam_params.json, shared by all sequences
+        
+        self.fx = 600.0
+        self.fy = 600.0
+        self.cx = 599.5
+        self.cy = 339.5
+
+        self.K_mat = np.eye(3)
+        self.K_mat[0,0]=self.fx
+        self.K_mat[1,1]=self.fy
+        self.K_mat[0,2]=self.cx
+        self.K_mat[1,2]=self.cy
+
+        self.T_l_c = np.eye(4)
+        self.T_c_l = np.linalg.inv(self.T_l_c)
+        
         self.intrinsic.set_intrinsics(height=680,
                                       width=1200,
-                                      fx=600.0,
-                                      fy=600.0,
-                                      cx=599.5,
-                                      cy=339.5)
+                                      fx=self.fx,
+                                      fy=self.fy,
+                                      cx=self.cx,
+                                      cy=self.cy)
+        
+
         self.depth_scale = 6553.5
         self.max_depth_m = 10.0
         self.down_sample_on = False
@@ -89,6 +106,8 @@ class ReplicaDataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-        frame_data = {"points": points_xyzrgb}
+        rgb_image = np.array(rgb_image)
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image}
 
         return frame_data 
