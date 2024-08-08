@@ -17,7 +17,7 @@ sampler:
   free_sample_end_dist_m: 0.1
   free_front_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.05
+  voxel_size_m: 0.04
 gs:
   gs_iters: 5
   gs_bs: 2
@@ -45,7 +45,7 @@ continual:
 #   term_deg: 1e-3
 #   term_m: 1e-4
 optimizer:
-  iters: 20
+  iters: 15
   batch_size: 16384
   ba_freq_frame: 20
   lr_pose_ba: 1e-3

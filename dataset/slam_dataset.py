@@ -33,6 +33,7 @@ from utils.tools import (
     transform_torch,
     voxel_down_sample_torch,
 )
+from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
 from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import focal2fov
@@ -171,6 +172,7 @@ class SLAMDataset(Dataset):
         self.cur_point_ts_torch = None
         self.cur_sem_labels_torch = None
         self.cur_sem_labels_full = None
+        self.cur_point_normals = None
 
         # source data for registration
         self.cur_source_points = None
@@ -469,6 +471,31 @@ class SLAMDataset(Dataset):
                 self.cur_point_cloud_torch, self.config.correction_deg
             )
 
+        # Tn0 = get_time()
+        if self.config.estimate_normal:
+            cur_points = self.cur_point_cloud_torch[:, :3].clone() # in sensor frame
+            cur_hasher = VoxelHasherIndex(cur_points, train_voxel_m, buffer_size=int(1e6))
+            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, train_voxel_m)
+            valid_mask = neighb_idx > 0
+            neighbors = cur_points[neighb_idx] # fix the point corresponding to -1 idx
+            neighbors[~valid_mask] = torch.ones(3).to(cur_points) * 9999.
+
+            pca_extractor = GeometricFeatureExtractor()
+            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, source_voxel_m)  
+            
+            # orient normals toward sensor
+            orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
+            valid_point_normals[orient_normal_mask] *= -1.0
+
+            self.cur_point_normals = torch.zeros_like(cur_points) # N, 3 
+            self.cur_point_normals[valid_normal_mask] = valid_point_normals # invalid part as 0
+
+        else:
+            self.cur_point_normals = None # about 6ms, not too slow
+        
+        # Tn1 = get_time()
+        # print("Normal estimation time (s):", (Tn1-Tn0)*1e3)
+
         # T3 = get_time()
 
         # prepare for the registration
@@ -490,6 +517,9 @@ class SLAMDataset(Dataset):
                 cur_source_ts = cur_ts[idx]
             else:
                 cur_source_ts = None
+
+            if self.cur_point_normals is not None:
+                self.cur_source_normals = self.cur_point_normals[idx] # invalid part as 0
 
             # deskewing (motion undistortion) for source point cloud
             if self.config.deskew and not self.lose_track:

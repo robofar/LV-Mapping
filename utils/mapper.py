@@ -172,6 +172,7 @@ class Mapper:
         self,
         point_cloud_torch: torch.tensor,
         frame_label_torch: torch.tensor,
+        frame_normal_torch: torch.tensor,
         cur_pose_torch: torch.tensor,
         frame_id: int,
         filter_dynamic: bool = False,
@@ -185,6 +186,9 @@ class Mapper:
         frame_origin_torch = cur_pose_torch[:3, 3]
         frame_orientation_torch = cur_pose_torch[:3, :3]
 
+        cur_pose_rot = torch.eye(4).to(cur_pose_torch)
+        cur_pose_rot[:3,:3] = frame_orientation_torch
+
         # point in local sensor frame
         frame_point_torch = point_cloud_torch[:, :3]
 
@@ -192,6 +196,7 @@ class Mapper:
         self.static_mask = torch.ones(
             frame_point_torch.shape[0], dtype=torch.bool, device=self.config.device
         )
+
         if filter_dynamic:
             # reset local map (consider the frame description for loop with latency) 
             self.neural_points.reset_local_map(frame_origin_torch, frame_orientation_torch, frame_id)
@@ -200,6 +205,7 @@ class Mapper:
             frame_point_torch_global = transform_torch(
                 frame_point_torch, cur_pose_torch
             )
+            
             self.static_mask = self.dynamic_filter(frame_point_torch_global)
             dynamic_count = (self.static_mask == 0).sum().item()
             if not self.silence:
@@ -216,8 +222,11 @@ class Mapper:
             if filter_dynamic:
                 frame_label_torch = frame_label_torch[self.static_mask]
 
-        frame_normal_torch = None  # not used yet
-        
+        if frame_normal_torch is not None: # not used yet
+            frame_normal_torch = frame_normal_torch[self.static_mask]  
+
+        # TODO
+
         self.dataset.static_mask = self.static_mask
 
         T1 = get_time()
@@ -245,7 +254,7 @@ class Mapper:
         T2 = get_time()
 
         update_colors = None
-        update_normals = None # TODO: add this 
+        update_normals = None 
 
         # update the neural point map
         if self.config.from_sample_points:
@@ -253,17 +262,26 @@ class Mapper:
                 update_points = coord
                 if frame_color_torch is not None:
                     update_colors = color_label
+                if frame_normal_torch is not None:
+                    update_normals = normal_label
             else:
                 sample_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio
                 update_points = coord[sample_mask, :]
-                update_points = transform_torch(update_points, cur_pose_torch)
                 if frame_color_torch is not None:
                     update_colors = color_label[sample_mask, :]
+                if frame_normal_torch is not None:
+                    update_normals = normal_label[sample_mask, :]
         else:
-            update_points = transform_torch(frame_point_torch, cur_pose_torch)
+            update_points = frame_point_torch 
             update_colors = frame_color_torch
+            update_normals = frame_normal_torch
+        
+        update_points = transform_torch(update_points, cur_pose_torch)
 
-        # TODO: for faraway walls that are not measured by the lidar but was observed in the img
+        if update_normals is not None:
+            update_normals = transform_torch(update_normals, cur_pose_rot)
+
+        # TODO(for GS): for faraway walls that are not measured by the lidar but was observed in the img 
         # if self.config.add_high_points:
         #     update_points
             
@@ -1035,21 +1053,21 @@ class Mapper:
                 # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
                 # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
 
-                # # lambda_normal = self.config.lambda_normal
-                # # lambda_dist = self.config.lambda_dist
+                lambda_normal = self.config.lambda_normal
+                lambda_dist = self.config.lambda_dist
 
-                # rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
-                # rend_normal  = render_pkg['rend_normal'] # 3, H, W
+                rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
+                rend_normal  = render_pkg['rend_normal'] # 3, H, W
 
-                # surf_depth = render_pkg["surf_depth"] # 1, H, W
-                # surf_normal = render_pkg['surf_normal'] # 3, H, W
+                surf_depth = render_pkg["surf_depth"] # 1, H, W
+                surf_normal = render_pkg['surf_normal'] # 3, H, W
 
-                # normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-                # normal_loss = lambda_normal * (normal_error).mean()
-                # dist_loss = lambda_dist * (rend_dist).mean()
+                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+                normal_loss = lambda_normal * (normal_error).mean()
+                dist_loss = lambda_dist * (rend_dist).mean()
 
-                # normal_loss_batch += normal_loss
-                # dist_loss_batch += dist_loss
+                normal_loss_batch += normal_loss
+                dist_loss_batch += dist_loss
 
             # add the isotropic loss
             # scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
@@ -1085,7 +1103,7 @@ class Mapper:
         T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
         render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
-        renderd_image, rend_dist, rend_normal, surf_depth, surf_normal = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"]
+        renderd_image, rend_dist, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
 
         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1100,10 +1118,16 @@ class Mapper:
 
         cv2.imshow("Rendered Depth", rendered_depth_np)
 
-        # rendered_normal_np = (surf_normal.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        # rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
+        surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color
+        rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 
-        # cv2.imshow("Rendered Normal", rendered_normal_np)
+        cv2.imshow("Rendered Normal", rendered_normal_np)
+
+        rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
+
+        cv2.imshow("Rendered Alpha", rendered_alpha_np)
 
         cv2.waitKey(1)
 

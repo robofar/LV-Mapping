@@ -447,6 +447,21 @@ def quat_multiply(q1: torch.tensor, q2: torch.tensor):
 
     return torch.stack((w, x, y, z), dim=1) # N, 4
 
+# def vec2quat(vec: torch.tensor):
+#     v = v / v.norm()
+
+#     # Angle of rotation (in radians)
+#     theta = torch.tensor(torch.pi)  # For example, a 180-degree rotation
+
+#     # Compute the quaternion components
+#     w = torch.cos(theta / 2)
+#     x = v[0] * torch.sin(theta / 2)
+#     y = v[1] * torch.sin(theta / 2)
+#     z = v[2] * torch.sin(theta / 2)
+
+#     # Quaternion
+#     quaternion = torch.tensor([w, x, y, z])
+
 
 def torch2o3d(points_torch):
     pc_o3d = o3d.geometry.PointCloud()

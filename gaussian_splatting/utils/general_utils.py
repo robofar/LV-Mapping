@@ -133,8 +133,6 @@ def safe_state(silent):
     torch.cuda.set_device(torch.device("cuda:0"))
 
 
-
-
 def create_rotation_matrix_from_direction_vector_batch(direction_vectors):
     # Normalize the batch of direction vectors
     direction_vectors = direction_vectors / torch.norm(direction_vectors, dim=-1, keepdim=True)
@@ -175,3 +173,56 @@ def colormap(img, cmap='jet'):
     img = torch.from_numpy(data / 255.).float().permute(2,0,1)
     plt.close()
     return img
+
+# reference: https://github.com/turandai/gaussian_surfels
+# High-quality Surface Reconstruction using Gaussian Surfels
+def normal2rotation(n):
+    # construct a random rotation matrix from normal
+    # it would better be positive definite and orthogonal
+    n = torch.nn.functional.normalize(n)
+    # w0 = torch.rand_like(n)
+    w0 = torch.tensor([[1, 0, 0]]).to(n).expand(n.shape)
+    R0 = w0 - torch.sum(w0 * n, -1, True) * n
+    R0 *= torch.sign(R0[:, :1])
+    R0 = torch.nn.functional.normalize(R0)
+    R1 = torch.cross(n, R0)
+    
+    # i = 7859
+    # print(R1[i])
+    R1 *= torch.sign(R1[:, 1:2]) * torch.sign(n[:, 2:])
+    # print(R1[i])
+    R = torch.stack([R0, R1, n], -1)
+    # print(R[i], torch.det(R).sum(), torch.trace(R[i]))
+    q = rotmat2quaternion(R)
+    # print(q[i], torch.norm(q[i]))
+    # R = quaternion2rotmat(q)
+    # print(R[i])
+    # for i in range(len(q)):
+    #     if torch.isnan(q[i].sum()):
+    #         print(i)
+    # exit()
+    return q
+
+def quaternion2rotmat(q):
+    r, x, y, z = q.split(1, -1)
+    # R = torch.eye(4).expand([len(q), 4, 4]).to(q.device)
+    R = torch.stack([
+        1 - 2 * (y * y + z * z), 2 * (x * y - r * z), 2 * (x * z + r * y),
+        2 * (x * y + r * z), 1 - 2 * (x * x + z * z), 2 * (y * z - r * x),
+        2 * (x * z - r * y), 2 * (y * z + r * x), 1 - 2 * (x * x + y * y)
+    ], -1).reshape([len(q), 3, 3]);
+    return R
+
+def rotmat2quaternion(R, normalize=False):
+    tr = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2] + 1e-6
+    r = torch.sqrt(1 + tr) / 2
+    # print(torch.sum(torch.isnan(r)))
+    q = torch.stack([
+        r,
+        (R[:, 2, 1] - R[:, 1, 2]) / (4 * r),
+        (R[:, 0, 2] - R[:, 2, 0]) / (4 * r),
+        (R[:, 1, 0] - R[:, 0, 1]) / (4 * r)
+    ], -1)
+    if normalize:
+        q = torch.nn.functional.normalize(q, dim=-1)
+    return q

@@ -38,7 +38,7 @@ from utils.tools import (
     voxel_down_sample_torch,
 )
 
-from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, build_scaling_rotation
+from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, build_scaling_rotation, normal2rotation
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
 
@@ -366,6 +366,10 @@ class NeuralPoints(nn.Module):
         if colors is not None:
             sample_colors = colors[sample_idx]
 
+        sample_normals = None
+        if normals is not None:
+            sample_normals = normals[sample_idx]
+
         grid_coords = (sample_points / cur_resolution).floor().to(self.primes)
         buffer_size = int(self.buffer_size)
         hash = torch.fmod((grid_coords * self.primes).sum(-1), buffer_size)
@@ -408,6 +412,10 @@ class NeuralPoints(nn.Module):
         added_colors = None
         if sample_colors is not None:
             added_colors = sample_colors[update_mask]
+
+        added_normals = None
+        if sample_normals is not None:
+            added_normals = sample_normals[update_mask]
 
         new_point_count = added_pt.shape[0]
 
@@ -495,13 +503,15 @@ class NeuralPoints(nn.Module):
         self.scaling = torch.cat((self.scaling, new_scales), 0) 
 
         # print(self.scaling[:10])
-
-        # this is actually different from the orientation 
-        # initialize it with the surface normal (TODO)
-        new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # change to normal direction initialization
+        
+        new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
+        if added_normals is not None: # initialize it with the valid surface normal 
+            valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
+            new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask])
+        
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
-        init_opacity = 0.1 # 0.1
+        init_opacity = self.config.gs_init_opacity # 0.1
 
         new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
         

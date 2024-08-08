@@ -60,6 +60,8 @@ class Config:
         self.max_range: float = 60.0 # filter far-away points
         self.adaptive_range_on: bool = False # use an adpative range
 
+        self.estimate_normal: bool = True # TODO: ! default False
+
         # filter for z coordinates (unit: m)
         self.min_z: float = -5.0  
         self.max_z: float = 60.0
@@ -209,6 +211,7 @@ class Config:
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal regularization weight
         self.lambda_dist: float  = 100.0 # distance distortion regularization weight
+        self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
 
         # tracking (odometry estimation)
@@ -368,6 +371,7 @@ class Config:
             self.dynamic_sdf_ratio_thre = config_args["process"].get("dynamic_sdf_ratio_thre", self.dynamic_sdf_ratio_thre)
             self.dynamic_certainty_thre = config_args["process"].get("dynamic_certainty_thre", self.dynamic_certainty_thre)
             self.adaptive_range_on = config_args["process"].get("adaptive_range_on", self.adaptive_range_on)
+            self.estimate_normal = config_args["process"].get("estimate_normal", self.estimate_normal)
 
         # sampler
         if "sampler" in config_args:
