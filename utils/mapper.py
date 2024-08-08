@@ -983,6 +983,8 @@ class Mapper:
 
         renderd_image = None
 
+        # still too slow, figure it out how to make the process faster
+
         for iter in tqdm(range(iter_count), disable=self.silence):       
         # for iter in range(iter_count):
 

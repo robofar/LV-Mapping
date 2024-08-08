@@ -327,12 +327,12 @@ class SLAMDataset(Dataset):
                         .to(self.cur_point_cloud_torch)
                     )
                 elif (
-                    self.cur_point_cloud_torch.shape[0] == 128 * 1024
+                    self.cur_point_cloud_torch.shape[0] == 128 * 2048
                 ):  # for Ouster 128-beam LiDAR
                     if not self.silence:
                         print("Ouster-128 point cloud deskewed")
                     self.cur_point_ts_torch = (
-                        (torch.floor(torch.arange(128 * 1024) / 128) / 1024)
+                        (torch.floor(torch.arange(128 * 2048) / 128) / 2048)
                         .reshape(-1, 1)
                         .to(self.cur_point_cloud_torch)
                     )

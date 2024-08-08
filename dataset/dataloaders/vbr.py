@@ -26,80 +26,90 @@ import os
 import cv2
 import numpy as np
 
+import yaml
+
+from datetime import datetime
+
 # VBR dataset in kitti-like format
 
 class VBRDataset:
-    def __init__(self, data_dir, sequence: str, *_, **__):
-        self.sequence_id = str(sequence).zfill(2)
-        self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
-        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
-        self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
+    def __init__(self, data_dir, *_, **__):
+
+        self.ouster_dir = os.path.join(data_dir, "ouster_points", "data/")
+        self.scan_files = sorted(glob.glob(self.ouster_dir + "*.bin"))
         scan_count = len(self.scan_files)
+        self.scan_ts = self.read_timestamps(os.path.join(data_dir, "ouster_points", "timestamps.txt"))
 
-        # cam 2 (color)
-        self.img2_dir = os.path.join(self.kitti_sequence_dir, "image_2/")
-        self.img2_files = sorted(glob.glob(self.img2_dir + "*.png"))
-        img2_count = len(self.img2_files)
-        if img2_count == scan_count:
-            self.image_available = True
-        else:
-            self.image_available = False
+        # camera left (color)
+        self.img_left_dir = os.path.join(data_dir, "camera_left", "data/")
+        self.img_left_files = sorted(glob.glob(self.img_left_dir + "*.png"))
+        
+        self.img_left_ts = self.read_timestamps(os.path.join(data_dir, "camera_left", "timestamps.txt"))
 
-        # cam 3 (color)
-        self.img3_dir = os.path.join(self.kitti_sequence_dir, "image_3/")
-        self.img3_files = sorted(glob.glob(self.img3_dir + "*.png"))
+        # synchronize lidar and camera
+        self.img_left_ts_sync, img_left_idx_sync = self.associate_img_to_lidar(self.scan_ts, self.img_left_ts)
+        self.img_left_files = [self.img_left_files[i] for i in img_left_idx_sync] # get the synchronized files
+        img_left_count = len(self.img_left_files)
 
-        self.calibration = self.read_calib_file(os.path.join(self.kitti_sequence_dir, "calib.txt"))
+        self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "vbr_calib.yaml"))
 
-        calib_data = self._load_calib() # load all calib first
-
-        if self.image_available: # now we use cam2 (left color)
-            # intrinsic
-            self.K_mat = calib_data["K_cam2"]
-            self.fx = self.K_mat[0,0]
-            self.fy = self.K_mat[1,1]
-            self.cx = self.K_mat[0,2]
-            self.cy = self.K_mat[1,2]
-            # extrinsic
-            self.T_c_l = calib_data['T_cam2_velo']
-            self.T_l_c = np.linalg.inv(self.T_c_l)
-
-        # Load GT Poses (if available)
-        if int(sequence) < 11:
-            self.poses_fn = os.path.join(data_dir, f"poses/{self.sequence_id}.txt")
-            self.gt_poses = self.load_poses(self.poses_fn)
+        gt_poses_file = os.path.join(data_dir, "gt.txt")
+        if os.path.exists(gt_poses_file):
+            self.gt_poses, self.scan_timestamps = self.load_tum_format_gt_poses(gt_poses_file) 
+            self.gt_poses = np.array(self.gt_poses)
 
     def __getitem__(self, idx):
         
         points = self.scans(idx)
-        point_ts = self.get_timestamps(points)
 
-        if self.image_available:
-            img = self.read_img(self.img2_files[idx]) # just for vis here
+        img = self.read_img(self.img_left_files[idx]) # just for vis here
 
-            # project to the image plane to get the corresponding color
-            points_color = self.project_points_to_cam(points, img)
+        # project to the image plane to get the corresponding color (the deskewing is not yet considered here)
+        points_color = self.project_points_to_cam(points, img)
 
-            # we skip the intensity here for now (and also the color mask)
-            points = np.hstack((points[:,:3], points_color[:,:3]))
+        # we skip the intensity here for now (and also the color mask)
+        points = np.hstack((points[:,:3], points_color[:,:3]))
 
-            frame_data = {"points": points, "point_ts": point_ts, "img": img}
-        else:
-            frame_data = {"points": points, "point_ts": point_ts}
+        frame_data = {"points": points, "point_ts": None, "img": img} # TODO
 
         return frame_data
 
     def __len__(self):
         return len(self.scan_files)
+    
+    def read_timestamps(self, file_path):
+        timestamps = []
+        # pip install datetime
+        with open(file_path, 'r') as file:
+            for line in file:
+                time_part = line.split("T")[1]
+                # print(time_part)
+                # Parse the time string into a datetime object
+                time_obj = datetime.strptime(time_part[:-4], "%H:%M:%S.%f") # we ignore the nanosecond digits and count for the microsecond part 
+                # Calculate the total number of seconds since 00:00:00
+                time_seconds = (time_obj.hour * 3600) + (time_obj.minute * 60) + time_obj.second + (time_obj.microsecond / 1_000_000)
+                timestamps.append(time_seconds)
+                # print(time_seconds)
+        timestamps = np.array(timestamps)   
+        return timestamps
+    
+    def associate_img_to_lidar(self, lidar_ts, img_ts):
+        # for each lidar ts, find the closest img_ts
+        img_ts_associated = []
+        img_associated_idx = []
+        for i in range(lidar_ts.shape[0]):
+            cur_lidar_ts = lidar_ts[i]
+            j = np.argmin(np.abs(img_ts - cur_lidar_ts))
+            img_ts_associated.append(img_ts[j])
+            img_associated_idx.append(j)
+        img_ts_associated = np.array(img_ts_associated)
+        img_associated_idx = np.array(img_associated_idx, dtype=np.int32)
+        # print(img_associated_idx)
+        return img_ts_associated, img_associated_idx        
 
     def scans(self, idx):
         return self.read_point_cloud(self.scan_files[idx])
 
-    def apply_calibration(self, poses: np.ndarray) -> np.ndarray:
-        """Converts from Velodyne to Camera Frame"""
-        Tr = np.eye(4, dtype=np.float64)
-        Tr[:3, :4] = self.calibration["Tr"].reshape(3, 4)
-        return Tr @ poses @ np.linalg.inv(Tr)
 
     def read_point_cloud(self, scan_file: str):
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
@@ -108,61 +118,77 @@ class VBRDataset:
     def read_img(self, img_file: str):
         img = cv2.imread(img_file)
         # print(img.shape)
-        
-        cv2.imshow('cam0', img)
-        cv2.waitKey(1) # 1ms
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # img = np.array(img) # as np array
         
         return img
-    
-    # velodyne lidar
-    @staticmethod
-    def get_timestamps(points):
-        x = points[:, 0]
-        y = points[:, 1]
-        yaw = -np.arctan2(y, x)
-        timestamps = 0.5 * (yaw / np.pi + 1.0)
-        return timestamps
 
-    def load_poses(self, poses_file):
-        def _lidar_pose_gt(poses_gt):
-            _tr = self.calibration["Tr"].reshape(3, 4)
-            tr = np.eye(4, dtype=np.float64)
-            tr[:3, :4] = _tr
-            left = np.einsum("...ij,...jk->...ik", np.linalg.inv(tr), poses_gt)
-            right = np.einsum("...ij,...jk->...ik", left, tr)
-            return right
+    def load_tum_format_gt_poses(self, filename: str):
+        """
+        read pose file (with the tum format), support txt file
+        # timestamp tx ty tz qx qy qz qw
+        returns -> list, transformation before calibration transformation
+        """
+        from pyquaternion import Quaternion
 
-        poses = np.loadtxt(poses_file, delimiter=" ")
-        n = poses.shape[0]
-        poses = np.concatenate(
-            (poses, np.zeros((n, 3), dtype=np.float32), np.ones((n, 1), dtype=np.float32)), axis=1
-        )
-        poses = poses.reshape((n, 4, 4))  # [N, 4, 4]
-        return _lidar_pose_gt(poses)
+        poses = []
+        timestamps = []
+        with open(filename, 'r') as file:
+            first_line = file.readline().strip()
+            
+            # check if the first line contains any numeric characters
+            # if contain, then skip the first line # timestamp tx ty tz qx qy qz qw
+            if any(char.isdigit() for char in first_line):
+                file.seek(0)
+            
+            for line in file: # read each line in the file 
+                values = line.strip().split()
+                if len(values) != 8 and len(values) != 9: 
+                    print('Not a tum format pose file')
+                    return None, None
+                # some tum format pose file also contain the idx before timestamp
+                idx_col =  len(values) - 8 # 0 or 1
+                values = [float(value) for value in values]
+                timestamps.append(values[idx_col])
+                trans = np.array(values[1+idx_col:4+idx_col])
+                quat = Quaternion(np.array([values[7+idx_col], values[4+idx_col], values[5+idx_col], values[6+idx_col]])) # w, i, j, k
+                rot = quat.rotation_matrix
+                # Build numpy transform matrix
+                odom_tf = np.eye(4)
+                odom_tf[0:3, 3] = trans
+                odom_tf[0:3, 0:3] = rot
+                poses.append(odom_tf)
+        
+        return poses, timestamps
 
-    def get_frames_timestamps(self) -> np.ndarray:
-        timestamps = np.loadtxt(os.path.join(self.kitti_sequence_dir, "times.txt")).reshape(-1, 1)
-        return timestamps
+    def read_calib_file(self, yaml_file_path: str) -> dict:
 
-    @staticmethod
-    def read_calib_file(file_path: str) -> dict:
+        # TODO: add for other sensors
         calib_dict = {}
-        with open(file_path, "r") as calib_file:
-            for line in calib_file.readlines():
-                tokens = line.split(" ")
-                if tokens[0] == "calib_time:":
-                    continue
-                # Only read with float data
-                if len(tokens) > 0:
-                    values = [float(token) for token in tokens[1:]]
-                    values = np.array(values, dtype=np.float32)
+        with open(yaml_file_path, 'r') as file:
+            calib_dict = yaml.safe_load(file)
 
-                    # The format in KITTI's file is <key>: <f1> <f2> <f3> ...\n -> Remove the ':'
-                    key = tokens[0][:-1]
-                    calib_dict[key] = values
+            # for the left camera
+            cam_left_calib_dict = calib_dict["cam_l"]
+            cam_left_intrinsic = cam_left_calib_dict["intrinsics"]
+
+            # intrinsic
+            self.fx = cam_left_intrinsic[0]
+            self.fy = cam_left_intrinsic[1]
+            self.cx = cam_left_intrinsic[2]
+            self.cy = cam_left_intrinsic[3]
+
+            self.K_mat = np.eye(3)
+            self.K_mat[0,0]=self.fx
+            self.K_mat[1,1]=self.fy
+            self.K_mat[0,2]=self.cx
+            self.K_mat[1,2]=self.cy
+
+            # extrinsic
+            self.T_l_c = np.array(cam_left_calib_dict['T_b'], dtype=np.float64) # T_l_c
+            self.T_c_l = np.linalg.inv(self.T_l_c)
+
         return calib_dict
     
     def project_points_to_cam(self, points, img):
@@ -220,58 +246,3 @@ class VBRDataset:
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
-    
-    # from pykitti
-    def _load_calib(self):
-        """Load and compute intrinsic and extrinsic calibration parameters."""
-        # We'll build the calibration parameters as a dictionary, then
-        # convert it to a namedtuple to prevent it from being modified later
-        data = {}
-
-        filedata = self.calibration
-
-        # Create 3x4 projection matrices
-        P_rect_00 = np.reshape(filedata['P0'], (3, 4))
-        P_rect_10 = np.reshape(filedata['P1'], (3, 4))
-        P_rect_20 = np.reshape(filedata['P2'], (3, 4))
-        P_rect_30 = np.reshape(filedata['P3'], (3, 4))
-
-        data['P_rect_00'] = P_rect_00
-        data['P_rect_10'] = P_rect_10
-        data['P_rect_20'] = P_rect_20
-        data['P_rect_30'] = P_rect_30
-
-        # Compute the rectified extrinsics from cam0 to camN
-        T1 = np.eye(4)
-        T1[0, 3] = P_rect_10[0, 3] / P_rect_10[0, 0]
-        T2 = np.eye(4)
-        T2[0, 3] = P_rect_20[0, 3] / P_rect_20[0, 0]
-        T3 = np.eye(4)
-        T3[0, 3] = P_rect_30[0, 3] / P_rect_30[0, 0]
-
-        # Compute the velodyne to rectified camera coordinate transforms
-        data['T_cam0_velo'] = np.reshape(filedata['Tr'], (3, 4))
-        data['T_cam0_velo'] = np.vstack([data['T_cam0_velo'], [0, 0, 0, 1]])
-        data['T_cam1_velo'] = T1.dot(data['T_cam0_velo'])
-        data['T_cam2_velo'] = T2.dot(data['T_cam0_velo'])
-        data['T_cam3_velo'] = T3.dot(data['T_cam0_velo'])
-
-        # Compute the camera intrinsics
-        data['K_cam0'] = P_rect_00[0:3, 0:3]
-        data['K_cam1'] = P_rect_10[0:3, 0:3]
-        data['K_cam2'] = P_rect_20[0:3, 0:3]
-        data['K_cam3'] = P_rect_30[0:3, 0:3]
-
-        # Compute the stereo baselines in meters by projecting the origin of
-        # each camera frame into the velodyne frame and computing the distances
-        # between them
-        p_cam = np.array([0, 0, 0, 1])
-        p_velo0 = np.linalg.inv(data['T_cam0_velo']).dot(p_cam)
-        p_velo1 = np.linalg.inv(data['T_cam1_velo']).dot(p_cam)
-        p_velo2 = np.linalg.inv(data['T_cam2_velo']).dot(p_cam)
-        p_velo3 = np.linalg.inv(data['T_cam3_velo']).dot(p_cam)
-
-        data['b_gray'] = np.linalg.norm(p_velo1 - p_velo0)  # gray baseline
-        data['b_rgb'] = np.linalg.norm(p_velo3 - p_velo2)   # rgb baseline
-
-        return data
