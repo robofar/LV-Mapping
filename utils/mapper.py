@@ -1100,7 +1100,7 @@ class Mapper:
 
         # print("Used cam id:", viewpoint_cam.uid)
 
-        vis_down_rate = 0
+        vis_down_rate = 1 # TODO: add to config
 
         original_img_np = (cur_viewpoint_cam.original_image_list[vis_down_rate].permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
         original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)

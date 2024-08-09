@@ -108,6 +108,7 @@ python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Repl
 
 ## TODO List
 
+- [ ] Add pruning
 - [ ] Keyframe strategy
 - [ ] Add SDF / SDF gradient consistency loss
 - [ ] Support multi-cam datasets

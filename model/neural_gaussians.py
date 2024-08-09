@@ -139,6 +139,7 @@ class NeuralPoints(nn.Module):
         self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
         self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
+        self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning
 
         self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
         self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
@@ -176,7 +177,11 @@ class NeuralPoints(nn.Module):
         self.local_rotation = nn.Parameter()
         self.local_opacity = nn.Parameter()
 
+        # this is just for vis
         self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device)
+        # this is for gs (as a kind of pruning)
+        self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
+
 
         # set neighborhood search region
         self.set_search_neighborhood(
@@ -1092,11 +1097,8 @@ class NeuralPoints(nn.Module):
         # coordinate
         neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)
 
-        if cur_sensor_position is not None and neural_pc_o3d.has_normals():
-            neural_pc_o3d.orient_normals_towards_camera_location(cur_sensor_position) # np.array
-
-        # print(neural_pc_o3d)
-        # print(neural_pc_o3d.normals)
+        # if cur_sensor_position is not None and neural_pc_o3d.has_normals():
+        #     neural_pc_o3d.orient_normals_towards_camera_location(cur_sensor_position) # np.array
 
         return neural_pc_o3d
 
