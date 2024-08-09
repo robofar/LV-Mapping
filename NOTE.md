@@ -99,9 +99,21 @@ python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1
 
 ```
 python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl
+
+python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl --range 0 2000 5
+
 ```
 
 ... ...
+
+## TODO List
+
+- [ ] Keyframe strategy
+- [ ] Add SDF / SDF gradient consistency loss
+- [ ] Support multi-cam datasets
+- [ ] Deal with dynamic objects
+- [ ] Evaluate Chamfer distance and PSNR
+
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)

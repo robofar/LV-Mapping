@@ -47,7 +47,7 @@ continual:
 #   term_deg: 1e-3
 #   term_m: 1e-4
 optimizer:
-  iters: 15
+  iters: 10
   batch_size: 16384
   ba_freq_frame: 20
   lr_pose_ba: 1e-3
