@@ -7,8 +7,9 @@ process:
   min_range_m: 0.05
   max_range_m: 3.0  # distance filter for each frame
   min_z_m: -10.0 
-  vox_down_m: 0.01 # TODO
-sampler:
+  vox_down_m: 0.005 # TODO
+  estimate_normal: True
+1sampler:
   surface_sample_range_m: 0.03
   surface_sample_n: 4 # 4
   free_sample_begin_ratio: 0.5

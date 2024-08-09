@@ -81,7 +81,7 @@ class GeometricFeatureExtractor(nn.Module):
         super().__init__()
 
     def forward(self, points: torch.Tensor, neighborhoods: torch.Tensor,
-                radius: float = 1,  normal_only: bool = True, min_valid_neigh = 4):
+                radius: float = 1,  normal_only: bool = True, min_valid_neigh = 5):
         """computes geometric features in a given neighborhood
 
         Args:

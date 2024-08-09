@@ -60,7 +60,7 @@ class Config:
         self.max_range: float = 60.0 # filter far-away points
         self.adaptive_range_on: bool = False # use an adpative range
 
-        self.estimate_normal: bool = True # TODO: ! default False
+        self.estimate_normal: bool = False
 
         # filter for z coordinates (unit: m)
         self.min_z: float = -5.0  

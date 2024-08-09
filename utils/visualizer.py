@@ -481,8 +481,10 @@ class MapVisualizer:
         if self.render_pointcloud:
             if scan is not None:
                 self.scan.points = o3d.utility.Vector3dVector(scan.points)
-                self.scan.colors = o3d.utility.Vector3dVector(scan.colors)
-                self.scan.normals = o3d.utility.Vector3dVector(scan.normals)
+                if scan.has_colors():
+                    self.scan.colors = o3d.utility.Vector3dVector(scan.colors)
+                if scan.has_normals():
+                    self.scan.normals = o3d.utility.Vector3dVector(scan.normals)
                 if self.pc_uniform_color or (
                     self.vis_pc_color
                     and (self.config.color_channel == 0)
@@ -530,14 +532,22 @@ class MapVisualizer:
         # Neural Points Map (toggled by "P")
         if neural_points is not None:
             if self.render_neural_points:
+                # self.neural_points = neural_points
                 self.neural_points.points = o3d.utility.Vector3dVector(
                     neural_points.points
                 )
-                self.neural_points.colors = o3d.utility.Vector3dVector(
-                    neural_points.colors
-                )
+                if neural_points.has_colors():
+                    self.neural_points.colors = o3d.utility.Vector3dVector(
+                        neural_points.colors
+                    )
+                if neural_points.has_normals():
+                    self.neural_points.normals = o3d.utility.Vector3dVector(
+                        neural_points.normals
+                    )
             else:
                 self.neural_points.points = o3d.utility.Vector3dVector()
+                self.neural_points.colors = o3d.utility.Vector3dVector()
+                self.neural_points.normals = o3d.utility.Vector3dVector()
         else:
             self.neural_points.points = o3d.utility.Vector3dVector()
         if self.ego_view and pose is not None:

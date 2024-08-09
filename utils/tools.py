@@ -102,6 +102,10 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     # set the random seed for all
     setup_seed(config.seed)
 
+    # disable lidar deskewing when not input per frame 
+    if config.step_frame > 1:
+        config.deskew = False
+
     return run_path
 
 

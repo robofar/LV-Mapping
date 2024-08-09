@@ -11,6 +11,8 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
+
 import numpy as np
 from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View2, getProjectionMatrix
 
@@ -70,16 +72,35 @@ class Camera(nn.Module):
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0) # T_wi
         self.camera_center = self.world_view_transform.inverse()[3, :3]
 
-# used by as
+# used by us
 class CamImage:
     def __init__(self, frame_id, image, fovy, fovx, device):
         
         self.uid = frame_id
 
-        self.original_image = image.clamp(0.0, 1.0).to(device)
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
- 
+        image = image.clamp(0.0, 1.0)
+        self.image_width = image.shape[2]
+        self.image_height = image.shape[1]
+
+        # pyramid of images
+        self.original_image_list = []
+
+        self.original_image = image.to(device)
+
+        self.original_image_list.append(self.original_image)
+
+        # Downsample to 3x(H/2)x(W/2)
+        down_level1_image = F.interpolate(self.original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        self.original_image_list.append(down_level1_image)
+        
+        # Downsample to 3x(H/4)x(W/4)
+        down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        self.original_image_list.append(down_level2_image)
+
+        # Downsample to 3x(H/8)x(W/8)
+        down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        self.original_image_list.append(down_level3_image)
+
         self.FoVy = fovy
         self.FoVx = fovx
         self.zfar = 100.0 # not this problem # 100.0

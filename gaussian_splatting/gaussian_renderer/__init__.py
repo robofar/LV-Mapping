@@ -19,9 +19,10 @@ from gaussian_splatting.utils.sh_utils import eval_sh
 from gaussian_splatting.utils.point_utils import depth_to_normal
 from gaussian_splatting.utils.graphics_utils import getWorld2View
 
+# the mian gaussain rendering function
 def render(viewpoint_camera, camera_pose: torch.Tensor,
            neural_gaussians: NeuralPoints, bg_color: torch.Tensor, 
-           scaling_modifier = 1.0, override_color = None):
+           scaling_modifier = 1.0, override_color = None, down_rate=0):
     """
     Render the scene. 
     
@@ -55,6 +56,8 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
 
     means2D = screenspace_points
 
+    img_scale = 2**down_rate
+
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
@@ -72,9 +75,14 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     viewpoint_camera.full_proj_transform = full_proj_transform
     viewpoint_camera.camera_center = cam_center
 
+    resolution_width = int(viewpoint_camera.image_width/img_scale)
+    resolution_height = int(viewpoint_camera.image_height/img_scale)
+
+    # print(resolution_height, resolution_width)
+
     raster_settings = GaussianRasterizationSettings(
-        image_height=int(viewpoint_camera.image_height),
-        image_width=int(viewpoint_camera.image_width),
+        image_height=resolution_height,
+        image_width=resolution_width,
         tanfovx=tanfovx,
         tanfovy=tanfovy,
         bg=bg_color,
@@ -156,6 +164,8 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
 
     # additional regularizations
     render_alpha = allmap[1:2]
+
+    # print(render_alpha.shape)
 
     # print(torch.max(render_alpha)) # not rendering anything
 

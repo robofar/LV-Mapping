@@ -203,6 +203,12 @@ def normal2rotation(n):
     # exit()
     return q
 
+def rotation2normal(q):
+    R = quaternion2rotmat(q) # B,3,3
+    n = R[...,2] # B,3
+    n = torch.nn.functional.normalize(n)
+    return n
+
 def quaternion2rotmat(q):
     r, x, y, z = q.split(1, -1)
     # R = torch.eye(4).expand([len(q), 4, 4]).to(q.device)
@@ -210,7 +216,7 @@ def quaternion2rotmat(q):
         1 - 2 * (y * y + z * z), 2 * (x * y - r * z), 2 * (x * z + r * y),
         2 * (x * y + r * z), 1 - 2 * (x * x + z * z), 2 * (y * z - r * x),
         2 * (x * z - r * y), 2 * (y * z + r * x), 1 - 2 * (x * x + y * y)
-    ], -1).reshape([len(q), 3, 3]);
+    ], -1).reshape([len(q), 3, 3])
     return R
 
 def rotmat2quaternion(R, normalize=False):
@@ -226,3 +232,5 @@ def rotmat2quaternion(R, normalize=False):
     if normalize:
         q = torch.nn.functional.normalize(q, dim=-1)
     return q
+
+# add rotation to normal

@@ -349,7 +349,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
             neural_pcd = None
             if o3d_vis.render_neural_points or (frame_id == last_frame): # last frame also vis
-                neural_pcd = neural_points.get_neural_points_o3d(query_global=o3d_vis.vis_global, color_mode=o3d_vis.neural_points_vis_mode, random_down_ratio=1) # select from geo_feature, ts and certainty
+                neural_pcd = neural_points.get_neural_points_o3d(query_global=o3d_vis.vis_global, color_mode=o3d_vis.neural_points_vis_mode, 
+                                                                 random_down_ratio=1, cur_sensor_position=dataset.cur_pose_ref[:3,3]) # select from geo_feature, ts and certainty
 
             # reconstruction by marching cubes
             if config.mesh_freq_frame > 0:

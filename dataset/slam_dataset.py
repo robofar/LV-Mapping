@@ -252,12 +252,9 @@ class SLAMDataset(Dataset):
                 self.fovx = focal2fov(self.fx, self.width)
                 self.fovy = focal2fov(self.fy, self.height)
 
-                # print(self.fovx, self.fovy) # seems to be not wrong 
+                # lot of time also spent here
+                self.cur_cam_img = CamImage(frame_id, cur_img, self.fovy, self.fovx, self.device) # create a pyramid of imgs
 
-                self.cur_cam_img = CamImage(frame_id, cur_img, self.fovy, self.fovx, self.device)
-                # print(self.cur_cam_img)
-
-                # print(self.cur_img.shape)
             if "imus" in dict_keys:
                 self.cur_frame_imus = frame_data["imus"]
          
@@ -475,17 +472,21 @@ class SLAMDataset(Dataset):
         if self.config.estimate_normal:
             cur_points = self.cur_point_cloud_torch[:, :3].clone() # in sensor frame
             cur_hasher = VoxelHasherIndex(cur_points, train_voxel_m, buffer_size=int(1e6))
-            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, train_voxel_m)
+            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, train_voxel_m*1.0)
+            # print(neighb_idx.shape)
             valid_mask = neighb_idx > 0
             neighbors = cur_points[neighb_idx] # fix the point corresponding to -1 idx
             neighbors[~valid_mask] = torch.ones(3).to(cur_points) * 9999.
 
             pca_extractor = GeometricFeatureExtractor()
-            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, source_voxel_m)  
+            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, train_voxel_m)  
             
             # orient normals toward sensor
             orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
             valid_point_normals[orient_normal_mask] *= -1.0
+
+            # print(cur_points.shape)
+            # print(valid_point_normals.shape)
 
             self.cur_point_normals = torch.zeros_like(cur_points) # N, 3 
             self.cur_point_normals[valid_normal_mask] = valid_point_normals # invalid part as 0
@@ -629,6 +630,13 @@ class SLAMDataset(Dataset):
                 frame_colors_np.astype(np.float64)
             )
 
+        # if self.cur_point_normals is not None:
+        #     frame_normals_np = (
+        #         self.cur_point_normals[:, :3].detach().cpu().numpy().astype(np.float64)
+        #     )
+        #     frame_o3d.normals = o3d.utility.Vector3dVector(frame_normals_np)
+        #     frame_o3d.orient_normals_towards_camera_location()
+
         frame_o3d = frame_o3d.transform(self.cur_pose_ref)
 
         if self.config.color_channel > 0:
@@ -648,7 +656,7 @@ class SLAMDataset(Dataset):
                 np.asarray(frame_label_color, dtype=np.float64) / 255.0
             )
             frame_o3d.colors = o3d.utility.Vector3dVector(frame_label_color_np)
-
+        
         self.cur_frame_o3d = frame_o3d
         if self.cur_frame_o3d.has_points():
             self.cur_bbx = self.cur_frame_o3d.get_axis_aligned_bounding_box()

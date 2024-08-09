@@ -35,7 +35,7 @@ from utils.tools import (
 from gaussian_splatting.gaussian_renderer import render
 from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from gaussian_splatting.utils.graphics_utils import focal2fov
-from gaussian_splatting.scene.cameras import Camera
+from gaussian_splatting.scene.cameras import CamImage
 
 class Mapper:
     def __init__(
@@ -1003,6 +1003,8 @@ class Mapper:
 
         # still too slow, figure it out how to make the process faster
 
+        down_rate = 2 # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
+
         for iter in tqdm(range(iter_count), disable=self.silence):       
         # for iter in range(iter_count):
 
@@ -1024,7 +1026,7 @@ class Mapper:
 
             for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
 
-                viewpoint_cam = self.cam_img_pool[rand_idx]
+                viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
 
                 # print("Used cam id:", viewpoint_cam.uid)
                 
@@ -1032,14 +1034,18 @@ class Mapper:
                 T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
                 T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
-                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
+                # gt_image = viewpoint_cam.original_image
+                gt_image = viewpoint_cam.original_image_list[down_rate]
+
+                if gt_image.device != self.device: # this is one very time consuming part
+                    gt_image.to(self.device)
+
+                # print(gt_image.shape)
+
+                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians
                 
                 # rendered results
                 renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
-                gt_image = viewpoint_cam.original_image
-                if gt_image.device != self.device: # this is one very time consuming part
-                    gt_image.to(self.device)
 
                 loss_rgb_l1 = l1_loss(renderd_image, gt_image)
 
@@ -1053,6 +1059,7 @@ class Mapper:
                 # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
                 # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
 
+                # Turn on or off
                 lambda_normal = self.config.lambda_normal
                 lambda_dist = self.config.lambda_dist
 
@@ -1093,7 +1100,9 @@ class Mapper:
 
         # print("Used cam id:", viewpoint_cam.uid)
 
-        original_img_np = (cur_viewpoint_cam.original_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+        vis_down_rate = 0
+
+        original_img_np = (cur_viewpoint_cam.original_image_list[vis_down_rate].permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
         original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
 
         cv2.imshow("Observed RGB", original_img_np)
@@ -1102,7 +1111,7 @@ class Mapper:
         T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
         T_w_c = T_w_l @ T_l_c # need to convert to cam frame
 
-        render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background) # render gaussians
+        render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
         renderd_image, rend_dist, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
 
         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
@@ -1124,10 +1133,10 @@ class Mapper:
 
         cv2.imshow("Rendered Normal", rendered_normal_np)
 
-        rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
+        # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
 
-        cv2.imshow("Rendered Alpha", rendered_alpha_np)
+        # cv2.imshow("Rendered Alpha", rendered_alpha_np)
 
         cv2.waitKey(1)
 

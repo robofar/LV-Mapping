@@ -38,7 +38,7 @@ from utils.tools import (
     voxel_down_sample_torch,
 )
 
-from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, build_scaling_rotation, normal2rotation
+from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_scaling_rotation, normal2rotation, rotation2normal
 from gaussian_splatting.utils.sh_utils import RGB2SH
 from gaussian_splatting.utils.system_utils import mkdir_p
 
@@ -507,7 +507,7 @@ class NeuralPoints(nn.Module):
         new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
         if added_normals is not None: # initialize it with the valid surface normal 
             valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
-            new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask])
+            new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
         
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
@@ -891,6 +891,7 @@ class NeuralPoints(nn.Module):
         query_global: bool = True,
         color_mode: int = -1,
         random_down_ratio: int = 1,
+        cur_sensor_position = None
     ):
 
         ratio_vis = 1.5
@@ -925,12 +926,19 @@ class NeuralPoints(nn.Module):
                     .astype(np.float64)
                 )
                 # alpha_np =  (
-                #     self.get_local_opacity[self.valid_color_mask]
+                #     self.get_opacity[self.valid_color_mask]
                 #     .cpu()
                 #     .detach()
                 #     .numpy()
                 #     .astype(np.float64)
                 # )
+                normal_np =  (
+                    rotation2normal(self.get_rotation[self.valid_color_mask])
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
             else:
                 if color_mode == 0:
                     neural_points_np = (
@@ -956,14 +964,24 @@ class NeuralPoints(nn.Module):
                     .astype(np.float64)
                 )
                 # alpha_np =  (
-                #     self.get_opacity[self.local_valid_color_mask]
+                #     self.get_local_opacity[self.local_valid_color_mask]
                 #     .cpu()
                 #     .detach()
                 #     .numpy()
                 #     .astype(np.float64)
                 # )
-            
+                normal_np =  (
+                    rotation2normal(self.get_local_rotation[self.local_valid_color_mask])
+                    .cpu()
+                    .detach()
+                    .numpy()
+                    .astype(np.float64)
+                )
+
             neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np)
+            # neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np * alpha_np)
+            neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
+
 
         else:
             if query_global:
@@ -1073,6 +1091,12 @@ class NeuralPoints(nn.Module):
 
         # coordinate
         neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)
+
+        if cur_sensor_position is not None and neural_pc_o3d.has_normals():
+            neural_pc_o3d.orient_normals_towards_camera_location(cur_sensor_position) # np.array
+
+        # print(neural_pc_o3d)
+        # print(neural_pc_o3d.normals)
 
         return neural_pc_o3d
 

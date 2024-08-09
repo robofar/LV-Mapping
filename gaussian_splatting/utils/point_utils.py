@@ -8,7 +8,7 @@ import math
 
 def depths_to_points(view, depthmap):
     c2w = (view.world_view_transform.T).inverse()
-    W, H = view.image_width, view.image_height
+    W, H = depthmap.shape[2], depthmap.shape[1]
     ndc2pix = torch.tensor([
         [W / 2, 0, 0, (W) / 2],
         [0, H / 2, 0, (H) / 2],
@@ -28,10 +28,12 @@ def depth_to_normal(view, depth):
         view: view camera
         depth: depthmap 
     """
+    # print(depth.shape)
     points = depths_to_points(view, depth).reshape(*depth.shape[1:], 3)
     output = torch.zeros_like(points)
     dx = torch.cat([points[2:, 1:-1] - points[:-2, 1:-1]], dim=0)
     dy = torch.cat([points[1:-1, 2:] - points[1:-1, :-2]], dim=1)
     normal_map = torch.nn.functional.normalize(torch.cross(dx, dy, dim=-1), dim=-1)
     output[1:-1, 1:-1, :] = normal_map
+    # as the gradient of depth
     return output

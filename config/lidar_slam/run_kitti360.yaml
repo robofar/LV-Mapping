@@ -9,6 +9,7 @@ setting:
 process:
   max_range_m: 60.0 # 80.0
   vox_down_m: 0.08
+  estimate_normal: True
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
@@ -18,7 +19,7 @@ neuralpoints:
 #   mlp_hidden_dim: 16
 gs:
   gs_iters: 5
-  gs_bs: 5
+  gs_bs: 2
   gs_keyframe_interval: 5
   img_pool_size: 10
   sh_degree: 1
