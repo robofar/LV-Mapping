@@ -18,7 +18,7 @@ sampler:
   free_sample_end_dist_m: 0.1
   free_front_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.04
+  voxel_size_m: 0.03
   from_sample_points: False
 gs:
   gs_iters: 5

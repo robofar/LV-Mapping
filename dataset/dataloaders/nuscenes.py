@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 from typing import List
 
+import cv2
 import numpy as np
 
 
@@ -48,8 +49,13 @@ class NuScenesDataset:
         #  split: str = "train"
         nusc_version: str = "v1.0-mini"
         split: str = "mini_train"
-        self.lidar_name: str = "LIDAR_TOP"
-        self.cam_name: str = "CAM_FRONT" # we actually need all these images
+        # self.lidar_name: str = "LIDAR_TOP" # this is unique
+        # self.cam_name: str = "CAM_FRONT" # we actually need all these images
+
+        self.used_part: str = "sample_data"
+        self.keyframe_only: bool = True
+
+        # self.used_part: str = "sample"
 
         # Lazy loading
         from nuscenes.nuscenes import NuScenes
@@ -88,8 +94,15 @@ class NuScenesDataset:
 
         # Use only the samples from the current split.
         scene_token = self._get_scene_token(split_logs) # get all the samples in a scene, each sample contains different sensor data 
-        self.lidar_tokens = self._get_lidar_tokens(scene_token) # 382
-        self.cam_front_tokens = self._get_img_tokens(scene_token) # 224 # why so few
+        self.lidar_tokens = self._get_sensor_tokens(scene_token, "LIDAR_TOP", self.keyframe_only) # 382
+        self.cam_front_tokens = self._get_sensor_tokens(scene_token, "CAM_FRONT", self.keyframe_only) # 224 # why so few
+        self.cam_front_left_tokens = self._get_sensor_tokens(scene_token, "CAM_FRONT_LEFT", self.keyframe_only) 
+        self.cam_front_right_tokens = self._get_sensor_tokens(scene_token, "CAM_FRONT_RIGHT", self.keyframe_only) 
+        self.cam_back_tokens = self._get_sensor_tokens(scene_token, "CAM_BACK", self.keyframe_only) 
+        self.cam_back_left_tokens = self._get_sensor_tokens(scene_token, "CAM_BACK_LEFT", self.keyframe_only) 
+        self.cam_back_right_tokens = self._get_sensor_tokens(scene_token, "CAM_BACK_RIGHT", self.keyframe_only) 
+
+        self._load_calib() # load calibs
 
         # print(len(self.lidar_tokens))
         # print(len(self.cam_front_tokens))
@@ -100,42 +113,87 @@ class NuScenesDataset:
         return len(self.lidar_tokens)
 
     def __getitem__(self, idx):
-        # self.read_img(self.cam_front_tokens[idx])
-        return self.read_point_cloud(self.lidar_tokens[idx])
+       
+        points = self.read_point_cloud(self.lidar_tokens[idx])
+
+        point_ts = self.get_timestamps(points)
+
+        points_rgb = np.ones_like(points)
+    
+        img_front = self.read_img(self.cam_front_tokens[idx])
+        img_front_left = self.read_img(self.cam_front_left_tokens[idx])
+        img_front_right = self.read_img(self.cam_front_right_tokens[idx])
+        img_back = self.read_img(self.cam_back_tokens[idx])
+        img_back_left = self.read_img(self.cam_back_left_tokens[idx])
+        img_back_right = self.read_img(self.cam_back_right_tokens[idx])
+
+        # project to the image plane to get the corresponding color        
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_back_left, self.T_cbl_l, self.K_back_left)
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_back, self.T_cb_l, self.K_back)
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_back_right, self.T_cbr_l, self.K_back_right)
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_front_right, self.T_cfr_l, self.K_front_right)
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_front, self.T_cf_l, self.K_front)
+        points_rgb = self.project_points_to_cam(points, points_rgb, img_front_left, self.T_cfl_l, self.K_front_left)
+
+        # we skip the intensity here for now (and also the color mask)
+        points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_front}
+
+        return frame_data
+    
+    # velodyne lidar
+    @staticmethod
+    def get_timestamps(points):
+        x = points[:, 0]
+        y = points[:, 1]
+        yaw = -np.arctan2(y, x)
+        timestamps = 0.5 * (yaw / np.pi + 1.0)
+        return timestamps
 
     def read_point_cloud(self, token: str):
-        filename = self.nusc.get("sample_data", token)["filename"]
+        filename = self.nusc.get(self.used_part, token)["filename"]
         # print("LiDAR name:", filename)
         pcl = self.load_point_cloud(os.path.join(self.nusc.dataroot, filename))
         points = pcl.points.T[:, :4] # include intensity
         return points.astype(np.float64)
     
     def read_img(self, token: str):
-        filename = self.nusc.get("sample_data", token)["filename"]
-        print("Img name:", filename)
+        filename = self.nusc.get(self.used_part, token)["filename"]
+        # print("Img name:", filename)
+        file_path = os.path.join(self.nusc.dataroot, filename)
+        # print(file_path)
+
+        img = cv2.imread(file_path)
+        
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        return img
 
     def _load_poses(self) -> np.ndarray:
         from nuscenes.utils.geometry_utils import transform_matrix
         from pyquaternion import Quaternion
 
-        poses = np.empty((len(self), 4, 4), dtype=np.float32)
-        for i, lidar_token in enumerate(self.lidar_tokens):
-            sd_record_lid = self.nusc.get("sample_data", lidar_token)
-            cs_record_lid = self.nusc.get(
+        sd_record_lid = self.nusc.get(self.used_part, self.lidar_tokens[0])
+        cs_record_lid = self.nusc.get(
                 "calibrated_sensor", sd_record_lid["calibrated_sensor_token"]
             )
-            ep_record_lid = self.nusc.get("ego_pose", sd_record_lid["ego_pose_token"])
-
-            car_to_velo = transform_matrix(
+        car_to_velo = transform_matrix(
                 cs_record_lid["translation"],
                 Quaternion(cs_record_lid["rotation"]),
-            ) # car body frame to lidar frame
+            ) # lidar frame to car body frame # T_b_l
+
+        poses = np.empty((len(self), 4, 4), dtype=np.float32)
+        for i, lidar_token in enumerate(self.lidar_tokens):
+            sd_record_lid = self.nusc.get(self.used_part, lidar_token)
+            ep_record_lid = self.nusc.get("ego_pose", sd_record_lid["ego_pose_token"]) # ego_pose per frame (or keyframe)
+
             pose_car = transform_matrix(
                 ep_record_lid["translation"],
                 Quaternion(ep_record_lid["rotation"]),
             ) # in car body frame
 
-            poses[i:, :] = pose_car @ car_to_velo # poses in LiDAR frame
+            poses[i:, :] = pose_car @ car_to_velo # poses in LiDAR frame T_w_b @ T_b_l = T_w_l
 
         # print(poses) # global coordinate
 
@@ -143,6 +201,97 @@ class NuScenesDataset:
         first_pose = poses[0, :, :]
         poses = np.linalg.inv(first_pose) @ poses
         return poses
+    
+    def _load_calib(self):
+        from nuscenes.utils.geometry_utils import transform_matrix
+        from pyquaternion import Quaternion
+
+        sd_record_lid = self.nusc.get(self.used_part, self.lidar_tokens[0])
+        cs_record_lid = self.nusc.get(
+                "calibrated_sensor", sd_record_lid["calibrated_sensor_token"]
+            )
+        car_to_velo = transform_matrix(
+                cs_record_lid["translation"],
+                Quaternion(cs_record_lid["rotation"]),
+            ) # lidar frame to car body frame # T_b_l
+        self.T_b_l = car_to_velo
+        
+        sd_record_cam_front = self.nusc.get(self.used_part, self.cam_front_tokens[0])
+        cs_record_cam_front = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_front["calibrated_sensor_token"]
+            )
+        self.T_b_cf = transform_matrix(
+                cs_record_cam_front["translation"],
+                Quaternion(cs_record_cam_front["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cf
+        self.T_cf_l = np.linalg.inv(self.T_b_cf) @ self.T_b_l
+        self.K_front = np.array(cs_record_cam_front["camera_intrinsic"])
+
+        sd_record_cam_front_left = self.nusc.get(self.used_part, self.cam_front_left_tokens[0])
+        cs_record_cam_front_left = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_front_left["calibrated_sensor_token"]
+            )
+        self.T_b_cfl = transform_matrix(
+                cs_record_cam_front_left["translation"],
+                Quaternion(cs_record_cam_front_left["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cfl
+        self.T_cfl_l = np.linalg.inv(self.T_b_cfl) @ self.T_b_l
+        self.K_front_left = np.array(cs_record_cam_front_left["camera_intrinsic"])
+
+        sd_record_cam_front_right = self.nusc.get(self.used_part, self.cam_front_right_tokens[0])
+        cs_record_cam_front_right = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_front_right["calibrated_sensor_token"]
+            )
+        self.T_b_cfr = transform_matrix(
+                cs_record_cam_front_right["translation"],
+                Quaternion(cs_record_cam_front_right["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cfr
+        self.T_cfr_l = np.linalg.inv(self.T_b_cfr) @ self.T_b_l
+        self.K_front_right = np.array(cs_record_cam_front_right["camera_intrinsic"])
+
+        sd_record_cam_back = self.nusc.get(self.used_part, self.cam_back_tokens[0])
+        cs_record_cam_back = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_back["calibrated_sensor_token"]
+            )
+        self.T_b_cb = transform_matrix(
+                cs_record_cam_back["translation"],
+                Quaternion(cs_record_cam_back["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cb
+        self.T_cb_l = np.linalg.inv(self.T_b_cb) @ self.T_b_l
+        self.K_back = np.array(cs_record_cam_back["camera_intrinsic"])
+
+        sd_record_cam_back_left = self.nusc.get(self.used_part, self.cam_back_left_tokens[0])
+        cs_record_cam_back_left = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_back_left["calibrated_sensor_token"]
+            )
+        self.T_b_cbl = transform_matrix(
+                cs_record_cam_back_left["translation"],
+                Quaternion(cs_record_cam_back_left["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cbl
+        self.T_cbl_l = np.linalg.inv(self.T_b_cbl) @ self.T_b_l
+        self.K_back_left = np.array(cs_record_cam_back_left["camera_intrinsic"])
+
+        sd_record_cam_back_right = self.nusc.get(self.used_part, self.cam_back_right_tokens[0])
+        cs_record_cam_back_right = self.nusc.get(
+                "calibrated_sensor", sd_record_cam_back_right["calibrated_sensor_token"]
+            )
+        self.T_b_cbr = transform_matrix(
+                cs_record_cam_back_right["translation"],
+                Quaternion(cs_record_cam_back_right["rotation"]),
+            ) # front cam frame to car body frame  # T_b_cbl
+        self.T_cbr_l = np.linalg.inv(self.T_b_cbr) @ self.T_b_l
+        self.K_back_right = np.array(cs_record_cam_back_right["camera_intrinsic"])
+
+        # intrinsic 
+        self.K_mat = self.K_front
+        # print(self.K_mat)
+        self.fx = self.K_mat[0,0]
+        self.fy = self.K_mat[1,1]
+        self.cx = self.K_mat[0,2]
+        self.cy = self.K_mat[1,2]
+        # extrinsic
+        self.T_c_l = self.T_cf_l # inv(T_b_c) @ T_b_l
+        self.T_l_c = np.linalg.inv(self.T_c_l)
 
     def _get_scene_token(self, split_logs: List[str]) -> str:
         """
@@ -155,31 +304,87 @@ class NuScenesDataset:
         log = self.nusc.get("log", scene["log_token"])
         return scene["token"] if log["logfile"] in split_logs else ""
 
-    def _get_lidar_tokens(self, scene_token: str) -> List[str]:
+    def _get_sensor_tokens(self, scene_token: str, sensor_name: str, keyframe_only = True) -> List[str]:
         # Get records from DB.
         scene_rec = self.nusc.get("scene", scene_token)
         start_sample_rec = self.nusc.get("sample", scene_rec["first_sample_token"])
-        sd_rec = self.nusc.get("sample_data", start_sample_rec["data"][self.lidar_name])
+        sd_rec = self.nusc.get(self.used_part, start_sample_rec["data"][sensor_name])
 
         # Make list of frames
         cur_sd_rec = sd_rec
         sd_tokens = [cur_sd_rec["token"]]
         while cur_sd_rec["next"] != "":
-            cur_sd_rec = self.nusc.get("sample_data", cur_sd_rec["next"])
-            sd_tokens.append(cur_sd_rec["token"])
+            cur_sd_rec = self.nusc.get(self.used_part, cur_sd_rec["next"])
+            if not keyframe_only or cur_sd_rec["is_key_frame"]:
+                sd_tokens.append(cur_sd_rec["token"])
         return sd_tokens
     
-    # TODO: img count is smaller, we should only use the keyframes (which are synchron)
-    def _get_img_tokens(self, scene_token: str) -> List[str]: 
-        # Get records from DB.
-        scene_rec = self.nusc.get("scene", scene_token)
-        start_sample_rec = self.nusc.get("sample", scene_rec["first_sample_token"])
-        sd_rec = self.nusc.get("sample_data", start_sample_rec["data"][self.cam_name])
+    # # TODO: img count is smaller, we should only use the keyframes (which are synchron)
+    # def _get_img_tokens(self, scene_token: str, cam_name: str, keyframe_only = True) -> List[str]: 
+    #     # Get records from DB.
+    #     scene_rec = self.nusc.get("scene", scene_token)
+    #     start_sample_rec = self.nusc.get("sample", scene_rec["first_sample_token"])
+    #     sd_rec = self.nusc.get(self.used_part, start_sample_rec["data"][cam_name])
 
-        # Make list of frames
-        cur_sd_rec = sd_rec
-        sd_tokens = [cur_sd_rec["token"]]
-        while cur_sd_rec["next"] != "":
-            cur_sd_rec = self.nusc.get("sample_data", cur_sd_rec["next"])
-            sd_tokens.append(cur_sd_rec["token"])
-        return sd_tokens
+    #     # Make list of frames
+    #     cur_sd_rec = sd_rec
+    #     sd_tokens = [cur_sd_rec["token"]]
+    #     while cur_sd_rec["next"] != "":
+    #         cur_sd_rec = self.nusc.get(self.used_part, cur_sd_rec["next"])
+    #         if not keyframe_only or cur_sd_rec["is_key_frame"]:
+    #             sd_tokens.append(cur_sd_rec["token"])
+    #     return sd_tokens
+    
+    def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
+        
+        # points as np.numpy (N,4)
+
+        # cm = plt.get_cmap('jet')
+        points[:,3] = 1 # homo coordinate
+
+        # transfrom velodyne points to camera coordinate
+        points_cam = np.matmul(T_c_l, points.T).T # N, 4
+        points_cam = points_cam[:,:3] # N, 3
+
+        # project to image space
+        u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
+        u = u.astype(np.int32)
+        v = v.astype(np.int32)
+
+        img_height, img_width, _ = np.shape(img)
+
+        # prepare depth map for visualization
+        depth_map = np.zeros((img_height, img_width))
+        depth_img = np.zeros((img_height, img_width, 3))
+        mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
+        
+        # visualize points within 30 meters
+        min_depth = 1.0
+        max_depth = 100.0
+        mask = np.logical_and(np.logical_and(mask, depth>min_depth), depth<max_depth)
+        
+        v_valid = v[mask]
+        u_valid = u[mask]
+
+        depth_map[v_valid,u_valid] = depth[mask]
+
+        # print(np.shape(points_rgb))
+
+        points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
+        points_rgb[mask, 3] = 0 # has color
+
+        return points_rgb
+    
+    def persepective_cam2image(self, points, K_mat):
+        ndim = points.ndim
+        if ndim == 2:
+            points = np.expand_dims(points, 0)
+        points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
+        depth = points_proj[:,2,:]
+        depth[depth==0] = -1e-6
+        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
+        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(np.int32)
+
+        if ndim==2:
+            u = u[0]; v=v[0]; depth=depth[0]
+        return u, v, depth

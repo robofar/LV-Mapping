@@ -50,9 +50,11 @@ python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 03 -i ./data/k
 ## Run on Nuscenes dataset (under development)
 
 ```
-python pin_slam.py ./config/lidar_slam/run_fast.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
 
-python pin_slam.py ./config/lidar_slam/run_fast.yaml nuscenes 0655 -i ./data/nuscenes/v1.0-mini/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+
 ```
 
 ### available scenes for Nuscenes
@@ -105,6 +107,13 @@ python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Repl
 ```
 
 ... ...
+
+
+## Web Visualizer
+
+https://projects.markkellogg.org/threejs/demo_gaussian_splats_3d.php
+
+https://antimatter15.com/splat/
 
 ## TODO List
 

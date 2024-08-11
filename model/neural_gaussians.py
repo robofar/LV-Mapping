@@ -201,20 +201,21 @@ class NeuralPoints(nn.Module):
     def local_count(self):
         return self.local_neural_points.shape[0]
     
+    @staticmethod
+    def build_covariance_from_scaling_rotation(center, scaling, scaling_modifier, rotation):
+        RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0,2,1)
+        trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
+        trans[:,:3,:3] = RS
+        trans[:, 3,:3] = center
+        trans[:, 3, 3] = 1
+        return trans
+    
     # for GS
     def setup_functions(self):
-        def build_covariance_from_scaling_rotation(center, scaling, scaling_modifier, rotation):
-            RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0,2,1)
-            trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
-            trans[:,:3,:3] = RS
-            trans[:, 3,:3] = center
-            trans[:, 3, 3] = 1
-            return trans
-        
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
 
-        self.covariance_activation = build_covariance_from_scaling_rotation
+        self.covariance_activation = self.build_covariance_from_scaling_rotation
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
         self.rotation_activation = torch.nn.functional.normalize
@@ -317,10 +318,10 @@ class NeuralPoints(nn.Module):
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
-                                                    lr_final=self.position_lr_final*self.spatial_lr_scale,
-                                                    lr_delay_mult=self.position_lr_delay_mult,
-                                                    max_steps=self.position_lr_max_steps)
+        # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
+        #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
+        #                                             lr_delay_mult=self.position_lr_delay_mult,
+        #                                             max_steps=self.position_lr_max_steps)
     
     # For GS
     def update_learning_rate(self, iteration):
@@ -523,6 +524,8 @@ class NeuralPoints(nn.Module):
         if added_colors is not None:
             new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white
             self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
+        else:
+            self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)
 
         self.opacity = torch.cat((self.opacity, new_opacities), 0)
 
@@ -883,6 +886,8 @@ class NeuralPoints(nn.Module):
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        # scale_z = np.ones((xyz.shape[0], 1))*1e-3
+        # print(scale_z.shape)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
@@ -1125,6 +1130,17 @@ class NeuralPoints(nn.Module):
             self.point_ts_update = self.point_ts_update[~prune_mask]
             self.point_certainties = self.point_certainties[~prune_mask]
 
+            # Gaussian related
+            self.xyz = self.xyz[~prune_mask]
+            self.features_dc = self.features_dc[~prune_mask]
+            self.features_rest = self.features_rest[~prune_mask]
+            self.scaling = self.scaling[~prune_mask]
+            self.rotation = self.rotation[~prune_mask]
+            self.opacity = self.opacity[~prune_mask]
+        
+            self.valid_color_mask = self.valid_color_mask[~prune_mask]
+            # self.valid_gs_mask = self.valid_gs_mask[~prune_mask]
+
             # with padding
             prune_mask = torch.cat(
                 (prune_mask, torch.tensor([False]).to(prune_mask)), dim=0
@@ -1225,6 +1241,17 @@ class NeuralPoints(nn.Module):
                 self.color_features = self.color_features[
                     sample_idx_pad
                 ]  # with padding in the end
+
+            # Gaussian related
+            self.xyz = self.xyz[sample_idx]
+            self.features_dc = self.features_dc[sample_idx]
+            self.features_rest = self.features_rest[sample_idx]
+            self.scaling = self.scaling[sample_idx]
+            self.rotation = self.rotation[sample_idx]
+            self.opacity = self.opacity[sample_idx]
+
+            self.valid_color_mask = self.valid_color_mask[sample_idx]
+            # self.valid_gs_mask = self.valid_gs_mask[sample_idx]
 
             new_point_count = self.neural_points.shape[0]
 
@@ -1361,6 +1388,18 @@ class NeuralPoints(nn.Module):
         self.local_color_features = nn.Parameter()
         self.local_point_certainties = None
         self.local_point_ts_update = None
+        
+        # gaussain related
+        self.local_xyz = None
+        self.local_opacity = None
+        self.local_rotation = None
+        self.local_scaling = None
+        self.local_features_dc = None
+        self.local_features_rest = None
+        
+        self.local_valid_color_mask = None
+        self.local_valid_gs_mask = None
+        
         self.local_mask = None
         self.global2local = None
 
