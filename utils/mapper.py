@@ -1103,12 +1103,13 @@ class Mapper:
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
 
-        vis_down_rate = 1 # TODO: add to config
+        vis_down_rate = self.config.gs_vis_down_rate # TODO: add to config
 
         original_img_np = (cur_viewpoint_cam.original_image_list[vis_down_rate].permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
         original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
+        cam_name = cur_viewpoint_cam.cam_id
 
-        cv2.imshow("Observed RGB", original_img_np)
+        cv2.imshow(cam_name + "Observed RGB", original_img_np)
 
         T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
         T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
@@ -1121,20 +1122,20 @@ class Mapper:
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
         
-        cv2.imshow("Rendered RGB", renderd_image_np)
+        cv2.imshow(cam_name + "Rendered RGB", renderd_image_np)
         #cv2.waitKey(1) # 1ms
 
         rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
         rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow("Rendered Depth", rendered_depth_np)
+        cv2.imshow(cam_name + "Rendered Depth", rendered_depth_np)
 
         surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color
         rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow("Rendered Normal", rendered_normal_np)
+        cv2.imshow(cam_name + "Rendered Normal", rendered_normal_np)
 
         # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  

@@ -74,7 +74,7 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, cam_id: str = "cam", device = "cuda"):
+    def __init__(self, frame_id: int, image, K_mat, cam_id: str = "cam", img_down_rate = 0, device = "cuda"):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
@@ -95,11 +95,17 @@ class CamImage:
 
         self.original_image = image.to(device)
 
-        self.original_image_list.append(self.original_image)
+        if img_down_rate == 0:
+            self.original_image_list.append(self.original_image)
+        else:
+            self.original_image_list.append(None)
 
         # Downsample to 3x(H/2)x(W/2)
         down_level1_image = F.interpolate(self.original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        self.original_image_list.append(down_level1_image)
+        if img_down_rate <= 1:
+            self.original_image_list.append(down_level1_image)
+        else:
+            self.original_image_list.append(None)
         
         # Downsample to 3x(H/4)x(W/4)
         down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)

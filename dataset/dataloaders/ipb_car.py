@@ -32,11 +32,12 @@ import yaml
 from datetime import datetime
 
 # IPB car dataset in kitti-like format
+# This now support the data sequences collected before 2024 (still using ROS1)
 
 class IPBCarDataset:
     def __init__(self, data_dir, *_, **__):
         
-        self.use_only_lidar_h = True
+        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "os_h_points" # "lidar_horizontal_points"
         self.lidar_v_topic_name = "os_v_points" # "lidar_vertical_points"

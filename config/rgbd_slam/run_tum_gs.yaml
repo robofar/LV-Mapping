@@ -24,6 +24,7 @@ gs:
   gs_keyframe_interval: 10
   img_pool_size: 20
   gs_down_rate: 1
+  gs_vis_down_rate: 1
   sh_degree: 1
 decoder:
   mlp_level: 1

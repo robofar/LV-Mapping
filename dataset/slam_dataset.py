@@ -232,7 +232,7 @@ class SLAMDataset(Dataset):
 
         points = None
         point_ts = None
-        img = None
+        img_dict = None
         imus = None
 
         if isinstance(frame_data, dict):
@@ -249,7 +249,9 @@ class SLAMDataset(Dataset):
                 self.cur_cam_img = {}
                 for cam_name in cam_list:
                     cur_img = torch.from_numpy(img_dict[cam_name]).float().permute(2,0,1)/255
-                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], cam_name, self.device)
+                    img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
+                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
+                                                          cam_name, img_down_rate, self.device)
 
             if "imus" in dict_keys:
                 self.cur_frame_imus = frame_data["imus"]

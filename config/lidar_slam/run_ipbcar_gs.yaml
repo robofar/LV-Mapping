@@ -3,7 +3,7 @@ setting:
   output_root: "./experiments"
   deskew: True
   color_channel: 3
-  color_map_on: False # pin slam does not make use of color
+  color_map_on: True # pin slam does not make use of color
 process:
   min_range_m: 3.0
   max_range_m: 80.0
@@ -14,8 +14,8 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
+  voxel_size_m: 0.3
   search_alpha: 0.5
-  weighted_first: False
 loss:
   loss_weight_on: True
   dist_weight_scale: 0.8
@@ -23,10 +23,11 @@ loss:
   weight_e: 0.5
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 2e7
+  pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
-  source_vox_down_m: 1.0
+  source_vox_down_m: 1.2
+  term_deg: 0.1
   iter_n: 50
 pgo:
   map_context: True
@@ -35,9 +36,10 @@ pgo:
 gs:
   gs_iters: 5
   gs_bs: 5
-  gs_keyframe_interval: 5
-  img_pool_size: 30
-  gs_down_rate: 1
+  gs_keyframe_interval: 2
+  img_pool_size: 40
+  gs_down_rate: 2
+  gs_vis_down_rate: 1
   sh_degree: 1
 optimizer: # mapper
   iters: 15  # iterations per frame

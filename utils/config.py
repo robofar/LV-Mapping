@@ -96,7 +96,7 @@ class Config:
         self.use_mid_ts: bool = False # use the middle of the created and last updated timestamp for adjusting or just use the created timestamp
         self.search_alpha: float = 0.2 # the larger this value is, the larger neighborhood region would be, the more robust to the highly dynamic motion and also the more time-consuming
         self.idw_index: int = 2 # the index for IDW (inverse distance weighting), 2 means square inverse
-        self.buffer_size: int = int(5e7) # buffer size for hashing, the smaller, the more likely to collision
+        self.buffer_size: int = int(2e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
 
         # shared by both kinds of feature 
         self.feature_dim: int = 8  # length of the feature for each grid feature
@@ -207,6 +207,7 @@ class Config:
         self.gs_keyframe_interval: int = 5
         self.img_pool_size: int = 10
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
+        self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
@@ -518,6 +519,7 @@ class Config:
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
+            self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
 
         # vis and eval
