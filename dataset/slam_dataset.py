@@ -54,7 +54,8 @@ class SLAMDataset(Dataset):
         self.poses_ts = None # timestamp for each reference pose, also as np.array
         self.gt_poses = None
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
-        
+        # "Tr" is used for KITTI, as the reference pose is not in LiDAR frame
+
         self.loader = None
         if config.use_dataloader: 
 
@@ -75,9 +76,12 @@ class SLAMDataset(Dataset):
                 self.gt_pose_provided = False
             if hasattr(self.loader, 'calibration'):
                 self.calib["Tr"][:3, :4] = self.loader.calibration["Tr"].reshape(3, 4)
-            if hasattr(self.loader, 'T_l_c'): # add camera to lidar calib
-                self.calib["T_l_c"] = self.loader.T_l_c
-                # print(self.calib["T_l_c"]) # available
+            if hasattr(self.loader, "K_mats"): # as dictionary
+                self.K_mats = self.loader.K_mats
+                self.cam_names = list(self.K_mats.keys())
+            if hasattr(self.loader, "T_c_l_mats"):
+                self.T_c_l_mats = self.loader.T_c_l_mats # as dictionary
+                # print(self.T_c_l_mats)
             
         else: # original pin-slam generic loader
             # point cloud files
@@ -180,7 +184,7 @@ class SLAMDataset(Dataset):
         self.cur_source_colors = None
 
         # img data
-        self.cur_cam_img = None # CamImage
+        self.cur_cam_img = None # dict of CamImage
 
         # imu data
         self.cur_frame_imus = None
@@ -235,25 +239,17 @@ class SLAMDataset(Dataset):
             dict_keys = list(frame_data.keys())
             if not self.silence:
                 print("Available data source:", dict_keys)
-            if "points" in dict_keys:
+            if "points" in dict_keys: # TODO: support multiple LiDAR
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
-            if "img" in dict_keys:
-                img = frame_data["img"]
-                cur_img = torch.from_numpy(img).float().permute(2,0,1)/255
-                self.width = cur_img.shape[2]
-                self.height = cur_img.shape[1]
-                self.fx = self.loader.fx
-                self.fy = self.loader.fy
-                self.cx = self.loader.cx # then these are not used, might be directly assumed as the center of the image
-                self.cy = self.loader.cy
-
-                self.fovx = focal2fov(self.fx, self.width)
-                self.fovy = focal2fov(self.fy, self.height)
-
-                # lot of time also spent here
-                self.cur_cam_img = CamImage(frame_id, cur_img, self.fovy, self.fovx, self.device) # create a pyramid of imgs
+            if "img" in dict_keys: # TODO: support multiple cameras
+                img_dict: dict = frame_data["img"]
+                cam_list = list(img_dict.keys())
+                self.cur_cam_img = {}
+                for cam_name in cam_list:
+                    cur_img = torch.from_numpy(img_dict[cam_name]).float().permute(2,0,1)/255
+                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], cam_name, self.device)
 
             if "imus" in dict_keys:
                 self.cur_frame_imus = frame_data["imus"]
@@ -485,6 +481,7 @@ class SLAMDataset(Dataset):
             orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
             valid_point_normals[orient_normal_mask] *= -1.0
 
+            # all points and prints with valid normal
             # print(cur_points.shape)
             # print(valid_point_normals.shape)
 

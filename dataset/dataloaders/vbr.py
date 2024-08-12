@@ -42,16 +42,20 @@ class VBRDataset:
         self.scan_ts = self.read_timestamps(os.path.join(data_dir, "ouster_points", "timestamps.txt"))
 
         # camera left (color)
-        self.img_left_dir = os.path.join(data_dir, "camera_left", "data/")
+        self.left_cam_name = "camera_left"
+        self.img_left_dir = os.path.join(data_dir, self.left_cam_name, "data/")
         self.img_left_files = sorted(glob.glob(self.img_left_dir + "*.png"))
         
-        self.img_left_ts = self.read_timestamps(os.path.join(data_dir, "camera_left", "timestamps.txt"))
+        self.img_left_ts = self.read_timestamps(os.path.join(data_dir, self.left_cam_name, "timestamps.txt"))
 
         # synchronize lidar and camera
         self.img_left_ts_sync, img_left_idx_sync = self.associate_img_to_lidar(self.scan_ts, self.img_left_ts)
         self.img_left_files = [self.img_left_files[i] for i in img_left_idx_sync] # get the synchronized files
         img_left_count = len(self.img_left_files)
 
+        self.K_mats = {}
+        self.T_c_l_mats = {}
+       
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "vbr_calib.yaml"))
 
         gt_poses_file = os.path.join(data_dir, "gt.txt")
@@ -65,13 +69,17 @@ class VBRDataset:
 
         img = self.read_img(self.img_left_files[idx]) # just for vis here
 
-        # project to the image plane to get the corresponding color (the deskewing is not yet considered here)
-        points_color = self.project_points_to_cam(points, img)
+        img_dict = {self.left_cam_name: img}
+
+        points_color = np.ones_like(points)
+
+        # project to the image plane to get the corresponding color
+        points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_color[:,:3]))
 
-        frame_data = {"points": points, "point_ts": None, "img": img} # TODO
+        frame_data = {"points": points, "point_ts": None, "img": img_dict}
 
         return frame_data
 
@@ -110,7 +118,6 @@ class VBRDataset:
 
     def scans(self, idx):
         return self.read_point_cloud(self.scan_files[idx])
-
 
     def read_point_cloud(self, scan_file: str):
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
@@ -190,21 +197,22 @@ class VBRDataset:
             self.T_l_c = np.array(cam_left_calib_dict['T_b'], dtype=np.float64) # T_l_c
             self.T_c_l = np.linalg.inv(self.T_l_c)
 
+            self.T_c_l_mats[self.left_cam_name] = self.T_c_l
+            self.K_mats[self.left_cam_name] = self.K_mat
+
         return calib_dict
     
-    def project_points_to_cam(self, points, img):
+    def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
-
-        # cm = plt.get_cmap('jet')
         points[:,3] = 1 # homo coordinate
 
         # transfrom velodyne points to camera coordinate
-        points_cam = np.matmul(self.T_c_l, points.T).T # N, 4
+        points_cam = np.matmul(T_c_l, points.T).T # N, 4
         points_cam = points_cam[:,:3] # N, 3
 
         # project to image space
-        u, v, depth= self.persepective_cam2image(points_cam.T) 
+        u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
         u = u.astype(np.int32)
         v = v.astype(np.int32)
 
@@ -225,8 +233,6 @@ class VBRDataset:
 
         depth_map[v_valid,u_valid] = depth[mask]
 
-        points_rgb = np.ones_like(points) # N,4, last channel for the mask
-
         # print(np.shape(points_rgb))
 
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
@@ -234,11 +240,11 @@ class VBRDataset:
 
         return points_rgb
     
-    def persepective_cam2image(self, points):
+    def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim
         if ndim == 2:
             points = np.expand_dims(points, 0)
-        points_proj = np.matmul(self.K_mat[:3,:3].reshape([1,3,3]), points)
+        points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
         depth[depth==0] = -1e-6
         u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)

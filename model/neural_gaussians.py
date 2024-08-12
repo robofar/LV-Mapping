@@ -901,7 +901,8 @@ class NeuralPoints(nn.Module):
         query_global: bool = True,
         color_mode: int = -1,
         random_down_ratio: int = 1,
-        cur_sensor_position = None
+        cur_sensor_position = None,
+        vis_normals = False
     ):
 
         ratio_vis = 1.5
@@ -942,13 +943,14 @@ class NeuralPoints(nn.Module):
                 #     .numpy()
                 #     .astype(np.float64)
                 # )
-                normal_np =  (
-                    rotation2normal(self.get_rotation[self.valid_color_mask])
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
+                if vis_normals:
+                    normal_np =  (
+                        rotation2normal(self.get_rotation[self.valid_color_mask])
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
             else:
                 if color_mode == 0:
                     neural_points_np = (
@@ -980,17 +982,19 @@ class NeuralPoints(nn.Module):
                 #     .numpy()
                 #     .astype(np.float64)
                 # )
-                normal_np =  (
-                    rotation2normal(self.get_local_rotation[self.local_valid_color_mask])
-                    .cpu()
-                    .detach()
-                    .numpy()
-                    .astype(np.float64)
-                )
+                if vis_normals:
+                    normal_np =  (
+                        rotation2normal(self.get_local_rotation[self.local_valid_color_mask])
+                        .cpu()
+                        .detach()
+                        .numpy()
+                        .astype(np.float64)
+                    )
 
             neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np)
             # neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np * alpha_np)
-            neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
+            if vis_normals:
+                neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
 
 
         else:

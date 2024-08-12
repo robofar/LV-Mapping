@@ -104,7 +104,7 @@ class Mapper:
 
         # for GS
         self.cam_img_pool = []
-        self.cam_img_pool_id = []
+        self.cam_img_pool_id = [] # not really useful
 
     def dynamic_filter(self, points_torch, type_2_on: bool = False):
 
@@ -475,13 +475,13 @@ class Mapper:
                 if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
                     self.cam_img_pool.pop(0) # pop the oldest cam
                     self.cam_img_pool_id.pop(0) # pop the oldest cam
-                self.cam_img_pool.append(self.dataset.cur_cam_img)
-                self.cam_img_pool_id.append(self.dataset.cur_cam_img.uid)
-            
 
-            # print(self.cam_img_pool_id)
-            
+                for cam_name in self.dataset.cam_names:
+                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    self.cam_img_pool.append(cur_view_cam)
+                    self.cam_img_pool_id.append(cur_view_cam.uid)
 
+                    # print(self.cam_img_pool_id)
 
         # FIXME:
         # cur_cam_img = Camera(colmap_id=frame_id, R=cam_info.R, T=cam_info.T, 
@@ -992,6 +992,8 @@ class Mapper:
         if iter_count < 1:
             return
 
+        print("GS fitting on")
+        
         # TODO
         self.neural_points.training_setup_gs()
 
@@ -1003,7 +1005,7 @@ class Mapper:
 
         # still too slow, figure it out how to make the process faster
 
-        down_rate = 2 # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
+        down_rate = self.config.gs_down_rate # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
 
         for iter in tqdm(range(iter_count), disable=self.silence):       
         # for iter in range(iter_count):
@@ -1030,9 +1032,9 @@ class Mapper:
 
                 # print("Used cam id:", viewpoint_cam.uid)
                 
-                T_w_l = self.used_poses[viewpoint_cam.uid] # already in torch tensor, lidar pose
-                T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
-                T_w_c = T_w_l @ T_l_c # need to convert to cam frame
+                T_w_l = self.used_poses[viewpoint_cam.frame_id] # already in torch tensor, lidar pose
+                T_c_l = torch.tensor(self.dataset.T_c_l_mats[viewpoint_cam.cam_id], device=self.device) 
+                T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame # Here there could be different cameras, support this
 
                 # gt_image = viewpoint_cam.original_image
                 gt_image = viewpoint_cam.original_image_list[down_rate]
@@ -1096,9 +1098,10 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        cur_viewpoint_cam = self.dataset.cur_cam_img
+        vis_cam_name = self.dataset.cam_names[0] # TODO
+        cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
-        # print("Used cam id:", viewpoint_cam.uid)
+        # print("Used cam id:", cur_viewpoint_cam.uid)
 
         vis_down_rate = 1 # TODO: add to config
 
@@ -1107,9 +1110,9 @@ class Mapper:
 
         cv2.imshow("Observed RGB", original_img_np)
 
-        T_w_l = self.used_poses[self.dataset.cur_cam_img.uid] # already in torch tensor, lidar pose for current frame
-        T_l_c = torch.tensor(self.dataset.calib["T_l_c"], device=self.device) 
-        T_w_c = T_w_l @ T_l_c # need to convert to cam frame
+        T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
+        T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
+        T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
         render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
         renderd_image, rend_dist, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]

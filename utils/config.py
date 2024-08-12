@@ -206,6 +206,7 @@ class Config:
         self.gs_bs: int = 5
         self.gs_keyframe_interval: int = 5
         self.img_pool_size: int = 10
+        self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
@@ -516,6 +517,7 @@ class Config:
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
+            self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
 
         # vis and eval

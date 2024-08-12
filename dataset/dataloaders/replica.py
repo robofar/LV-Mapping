@@ -64,8 +64,12 @@ class ReplicaDataset:
         self.K_mat[0,2]=self.cx
         self.K_mat[1,2]=self.cy
 
+        self.K_mats = {"cam": self.K_mat}
+
         self.T_l_c = np.eye(4)
         self.T_c_l = np.linalg.inv(self.T_l_c)
+
+        self.T_c_l_mats = {"cam": self.T_c_l}
         
         self.intrinsic.set_intrinsics(height=680,
                                       width=1200,
@@ -108,6 +112,8 @@ class ReplicaDataset:
 
         rgb_image = np.array(rgb_image)
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image}
+        rgb_image_dict = {"cam": rgb_image}
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image_dict}
 
         return frame_data 

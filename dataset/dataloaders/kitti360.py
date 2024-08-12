@@ -62,21 +62,23 @@ class KITTI360Dataset:
         # img_type = "data_rgb" # 512, 1392
         img_type = "data_rect" # 376, 1408
 
+        self.T_c_l_mats = {}
+        self.K_mats = {}
+
         # left cam
         self.cam0_dir = os.path.join(self.img_root_dir, f"image_00/{img_type}/")
         self.img0_files = sorted(glob.glob(self.cam0_dir + "*.png"))
 
-        self.K_mat = self.calib_intrinsic['P_rect_00'] # for rectified cam 0
-        self.fx = self.K_mat[0,0]
-        self.fy = self.K_mat[1,1]
-        self.cx = self.K_mat[0,2]
-        self.cy = self.K_mat[1,2]
+        self.K_mat_left = self.calib_intrinsic['P_rect_00'] # for rectified cam 0
 
         self.T_cr_co = np.eye(4)
         self.T_cr_co[:3,:3] = self.calib_intrinsic['R_rect_00'] # from camera to rectified camera frame # 4,4
 
         self.T_c_l = np.matmul(self.T_cr_co, self.T_co_l) # tran from lidar to rectified camera frame
         self.T_l_c = np.linalg.inv(self.T_c_l)
+
+        self.T_c_l_mats["cam_left_rect"] = self.T_c_l
+        self.K_mats["cam_left_rect"] = self.K_mat_left
 
         # right cam
         self.cam1_dir = os.path.join(self.img_root_dir, f"image_00/{img_type}/")
@@ -101,14 +103,18 @@ class KITTI360Dataset:
         points, point_ts = self.read_point_cloud(self.scan_files[idx])
         # now we use only the left cam
         img = self.read_img(self.img0_files[idx])
+        cam_name = "cam_left_rect"
+        img_dict = {cam_name: img}
+        
+        points_color = np.ones_like(points)
 
         # project to the image plane to get the corresponding color
-        points_color = self.project_points_to_cam(points, img)
+        points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_color[:,:3]))
 
-        frame_data = {"points": points, "point_ts": point_ts, "img": img}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         # print(frame_data)
 
         return frame_data
@@ -120,29 +126,21 @@ class KITTI360Dataset:
     
     def read_img(self, img_file: str):
         img = cv2.imread(img_file) # already numpy
-        # print(img.shape)
-        
-        # cv2.imshow('cam0', img)
-        # cv2.waitKey(1) # 1ms
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # img = np.array(img) # as np array
         
         return img
     
-    def project_points_to_cam(self, points, img):
+    def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
-
-        # cm = plt.get_cmap('jet')
         points[:,3] = 1 # homo coordinate
 
         # transfrom velodyne points to camera coordinate
-        points_cam = np.matmul(self.T_c_l, points.T).T # N, 4
+        points_cam = np.matmul(T_c_l, points.T).T # N, 4
         points_cam = points_cam[:,:3] # N, 3
 
         # project to image space
-        u, v, depth= self.persepective_cam2image(points_cam.T) 
+        u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
         u = u.astype(np.int32)
         v = v.astype(np.int32)
 
@@ -163,45 +161,18 @@ class KITTI360Dataset:
 
         depth_map[v_valid,u_valid] = depth[mask]
 
-        points_rgb = np.ones_like(points) # N,4, last channel for the mask
-
         # print(np.shape(points_rgb))
 
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
         points_rgb[mask, 3] = 0 # has color
 
         return points_rgb
-
-        # layout = (2,1) if cam_id in [0,1] else (1,2)
-        # sub_dir = 'data_rect' if cam_id in [0,1] else 'data_rgb'
-        # fig, axs = plt.subplots(*layout, figsize=(18,12))
-
-        # # load RGB image for visualization
-        # imagePath = os.path.join(kitti360Path, 'data_2d_raw', sequence, 'image_%02d' % cam_id, sub_dir, '%010d.png' % frame)
-        # if not os.path.isfile(imagePath):
-        #     raise RuntimeError('Image file %s does not exist!' % imagePath)
-
-        # colorImage = np.array(Image.open(imagePath)) / 255.
-        # depthImage = cm(depthMap/depthMap.max())[...,:3]
-        # colorImage[depthMap>0] = depthImage[depthMap>0]
-
-        # cv2.imshow('cam0', img)
-        # cv2.waitKey(1) # 1ms
-
-        # axs[0].imshow(depthMap, cmap='jet')
-        # axs[0].title.set_text('Projected Depth')
-        # axs[0].axis('off')
-        # axs[1].imshow(colorImage)
-        # axs[1].title.set_text('Projected Depth Overlaid on Image')
-        # axs[1].axis('off')
-        # plt.suptitle('Sequence %04d, Camera %02d, Frame %010d' % (seq, cam_id, frame))
-        # plt.show()
-
-    def persepective_cam2image(self, points):
+    
+    def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim
         if ndim == 2:
             points = np.expand_dims(points, 0)
-        points_proj = np.matmul(self.K_mat[:3,:3].reshape([1,3,3]), points)
+        points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
         depth[depth==0] = -1e-6
         u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
@@ -210,6 +181,7 @@ class KITTI360Dataset:
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
+
 
     def get_linear_velocity(self, idx):
         packet = self.oxts[idx].packet

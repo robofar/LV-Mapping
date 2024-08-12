@@ -25,6 +25,7 @@ gs:
   gs_bs: 2
   gs_keyframe_interval: 5
   img_pool_size: 40
+  gs_down_rate: 1
   sh_degree: 1
 loss:
   sigma_sigmoid_m: 0.08

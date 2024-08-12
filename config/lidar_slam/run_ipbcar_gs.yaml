@@ -32,6 +32,13 @@ pgo:
   map_context: True
   pgo_freq_frame: 30
   virtual_side_count: 6
+gs:
+  gs_iters: 5
+  gs_bs: 5
+  gs_keyframe_interval: 5
+  img_pool_size: 30
+  gs_down_rate: 1
+  sh_degree: 1
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 16384

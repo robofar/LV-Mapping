@@ -45,6 +45,9 @@ class IPBCarDataset:
         self.cam_front_topic_name = "cam_front" # "camera_front"
         self.cam_rear_topic_name = "cam_rear"   # "camera_rear"
 
+        self.K_mats = {}
+        self.T_c_l_mats = {}
+
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, self.lidar_h_topic_name, "data/")
         self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.bin"))
@@ -117,19 +120,19 @@ class IPBCarDataset:
         img_front = self.read_img(self.img_front_files[idx])
         img_rear = self.read_img(self.img_rear_files[idx])
 
+        img_dict = {self.cam_front_topic_name: img_front, self.cam_left_topic_name: img_left, 
+                    self.cam_rear_topic_name: img_rear, self.cam_right_topic_name: img_right}
+
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
         
-        # project to the image plane to get the corresponding color (the deskewing is not yet considered here)
-        # calib seems to be somehow wrong, figure it out. TODO
-        # points_rgb = self.project_points_to_cam(points, points_rgb, img_left, self.T_cleft_lh, self.K_cleft)
-        # points_rgb = self.project_points_to_cam(points, points_rgb, img_right, self.T_cright_lh, self.K_cright)
-        # points_rgb = self.project_points_to_cam(points, points_rgb, img_front, self.T_cfront_lh, self.K_cfront)
-        # points_rgb = self.project_points_to_cam(points, points_rgb, img_rear, self.T_crear_lh, self.K_crear)
+        for cam_name in list(img_dict.keys()):
+            # calib seems to be somehow wrong, figure it out. TODO
+            points_rgb = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
         # # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        frame_data = {"points": points, "point_ts": points_ts}
+        frame_data = {"points": points, "point_ts": points_ts, "img": img_dict}
 
         return frame_data
 
@@ -193,56 +196,34 @@ class IPBCarDataset:
         with open(yaml_file_path, 'r') as file:
             calib_dict = yaml.safe_load(file)
 
-            # # for the left camera
-            # cam_left_calib_dict = calib_dict["cam_l"]
-            # cam_left_intrinsic = cam_left_calib_dict["intrinsics"]
-
-            # # intrinsic
-            # self.fx = cam_left_intrinsic[0]
-            # self.fy = cam_left_intrinsic[1]
-            # self.cx = cam_left_intrinsic[2]
-            # self.cy = cam_left_intrinsic[3]
-
-            # self.K_mat = np.eye(3)
-            # self.K_mat[0,0]=self.fx
-            # self.K_mat[1,1]=self.fy
-            # self.K_mat[0,2]=self.cx
-            # self.K_mat[1,2]=self.cy
-
-            # # extrinsic
-            # self.T_l_c = np.array(cam_left_calib_dict['T_b'], dtype=np.float64) # T_l_c
-            # self.T_c_l = np.linalg.inv(self.T_l_c)
-
             lidar_v_calib = calib_dict["os_vpoints"]
             self.T_lv_lh = np.array(lidar_v_calib["os_hpoints"])
 
-            camera_front_calib = calib_dict["cam_front"]
-            self.K_cfront = np.array(camera_front_calib["K"])
-            self.T_cfront_lh = np.array(camera_front_calib["os_hpoints"])
+            camera_front_calib = calib_dict[self.cam_front_topic_name]
+            self.K_mats[self.cam_front_topic_name] = np.array(camera_front_calib["K"])
+            self.T_c_l_mats[self.cam_front_topic_name] = np.array(camera_front_calib["os_hpoints"])
 
             # print(self.T_cfront_lh)
 
-            camera_rear_calib = calib_dict["cam_rear"]
-            self.K_crear = np.array(camera_rear_calib["K"])
-            self.T_crear_lh = np.array(camera_rear_calib["os_hpoints"])
+            camera_rear_calib = calib_dict[self.cam_rear_topic_name]
+            self.K_mats[self.cam_rear_topic_name] = np.array(camera_rear_calib["K"])
+            self.T_c_l_mats[self.cam_rear_topic_name] = np.array(camera_rear_calib["os_hpoints"])
 
             # print(self.T_crear_lh)
 
-            camera_left_calib = calib_dict["cam_left"]
-            self.K_cleft = np.array(camera_left_calib["K"])
-            self.T_cleft_lh = np.array(camera_left_calib["os_hpoints"])
+            camera_left_calib = calib_dict[self.cam_left_topic_name]
+            self.K_mats[self.cam_left_topic_name] = np.array(camera_left_calib["K"])
+            self.T_c_l_mats[self.cam_left_topic_name] = np.array(camera_left_calib["os_hpoints"])
 
-            camera_right_calib = calib_dict["cam_right"]
-            self.K_cright = np.array(camera_right_calib["K"])
-            self.T_cright_lh = np.array(camera_right_calib["os_hpoints"])
+            camera_right_calib = calib_dict[self.cam_right_topic_name]
+            self.K_mats[self.cam_right_topic_name] = np.array(camera_right_calib["K"])
+            self.T_c_l_mats[self.cam_right_topic_name] = np.array(camera_right_calib["os_hpoints"])
 
         return calib_dict
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
-
-        # cm = plt.get_cmap('jet')
         points[:,3] = 1 # homo coordinate # TODO, this would override the intensity part
 
         # transfrom velodyne points to camera coordinate

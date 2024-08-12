@@ -22,6 +22,7 @@ gs:
   gs_bs: 2
   gs_keyframe_interval: 5
   img_pool_size: 10
+  gs_down_rate: 1
   sh_degree: 1
 continual:
   batch_size_new_sample: 1000

@@ -309,8 +309,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if frame_id % config.mapping_freq_frame == 0:
             mapper.mapping(cur_iter_num)
 
-        # TODO: GS training here (camera pose might be wrong, need the transform)
-        print("GS fitting on")
         # gs_iter_num = config.gs_iters * config.init_iter_ratio if frame_id == 0 else config.gs_iters # same, more iter for first frame
         gs_iter_num = config.gs_iters
         mapper.gs_mapping(gs_iter_num) 

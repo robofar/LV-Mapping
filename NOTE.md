@@ -37,6 +37,8 @@ python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitt
 python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -dvl
 ```
 
+**pass**
+
 
 ## Run on KITTI 360 dataset
 
@@ -46,9 +48,9 @@ python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 00 -i ./data/k
 python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 03 -i ./data/kitti360/ -dvl
 ```
 
+**pass**
 
-## Run on Nuscenes dataset (under development)
-
+## Run on Nuscenes dataset
 ```
 python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
 
@@ -56,6 +58,8 @@ python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./d
 python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
 
 ```
+
+**pass**
 
 ### available scenes for Nuscenes
 
@@ -85,17 +89,30 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 ## Run on Waymo dataset (under development)
 
 
+## Run on IPB car dataset (under development)
+
+There's some issues of the calibration for IPB car dataset
+
+```
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl
+```
+
+**pass**
+
 ## Run on VBR dataset
 
 ```
 python pin_slam.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_slam/spagna/spagna_train0/kitti_format/ -dvl
 ```
+**pass**
 
 ## Run on TUM RGBD dataset
 
 ```
 python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
 ```
+
+**pass**
 
 ## Run on Replica RGBD dataset
 
@@ -105,6 +122,19 @@ python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Repl
 python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl --range 0 2000 5
 
 ```
+**pass**
+
+## Run on Neural RGBD dataset
+
+```
+python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/neural_rgbd_data/breakfast_room/ -dvl 
+```
+
+**pass**
+
+## Run on CKA greenhouse dataset (under development)
+
+
 
 ... ...
 

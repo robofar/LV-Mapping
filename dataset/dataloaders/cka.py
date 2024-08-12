@@ -68,8 +68,12 @@ class CKADataset:
             self.K_mat[0,2]=self.cx
             self.K_mat[1,2]=self.cy
 
+            self.K_mats = {"cam_mid": self.K_mat}
+
             self.T_l_c = np.eye(4)
             self.T_c_l = np.linalg.inv(self.T_l_c)
+
+            self.T_c_l_mats = {"cam_mid": self.T_c_l}
                     
             self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(height=height,
@@ -111,6 +115,8 @@ class CKADataset:
 
         rgb_image = np.array(rgb_image)
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image}
+        rgb_image_dict = {"cam_mid": rgb_image}
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image_dict}
 
         return frame_data 

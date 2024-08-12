@@ -64,6 +64,8 @@ class NeuralRGBDDataset:
         self.K_mat[0,2]=self.cx
         self.K_mat[1,2]=self.cy
 
+        self.K_mats = {"cam": self.K_mat}
+
         self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
         self.intrinsic.set_intrinsics(height=H,
                                       width=W,
@@ -77,7 +79,9 @@ class NeuralRGBDDataset:
         self.T_l_c = self.extrinsic.astype(np.float64)
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
-        # self.calibration = {"Tr": np.ravel(self.T_l_c)[:12]}
+        self.T_c_l_mats = {"cam": self.T_c_l}
+
+        self.calibration = {"Tr": np.ravel(self.T_l_c)[:12]} # FIXME
 
         self.depth_scale = 1000.0
         self.max_depth_m = 10.0
@@ -127,6 +131,8 @@ class NeuralRGBDDataset:
 
         rgb_image = np.array(rgb_image)
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image}
+        rgb_image_dict = {"cam": rgb_image}
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image_dict}
 
         return frame_data 

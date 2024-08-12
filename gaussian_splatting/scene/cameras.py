@@ -14,7 +14,7 @@ from torch import nn
 import torch.nn.functional as F
 
 import numpy as np
-from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View2, getProjectionMatrix
+from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View2, getProjectionMatrix, focal2fov
 
 
 # this is important
@@ -74,13 +74,21 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id, image, fovy, fovx, device):
+    def __init__(self, frame_id: int, image, K_mat, cam_id: str = "cam", device = "cuda"):
         
-        self.uid = frame_id
+        self.frame_id = frame_id
+        self.cam_id = cam_id
+        self.uid = f"{frame_id:05d}_{cam_id}"
 
         image = image.clamp(0.0, 1.0)
         self.image_width = image.shape[2]
         self.image_height = image.shape[1]
+
+        self.fx = K_mat[0,0]
+        self.fy = K_mat[1,1]
+
+        self.FoVx = focal2fov(self.fx, self.image_width)
+        self.FoVy = focal2fov(self.fy, self.image_height)
 
         # pyramid of images
         self.original_image_list = []
@@ -101,8 +109,6 @@ class CamImage:
         down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
         self.original_image_list.append(down_level3_image)
 
-        self.FoVy = fovy
-        self.FoVx = fovx
         self.zfar = 100.0 # not this problem # 100.0
         self.znear = 0.01
 

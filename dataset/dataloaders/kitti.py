@@ -54,15 +54,9 @@ class KITTIOdometryDataset:
         calib_data = self._load_calib() # load all calib first
 
         if self.image_available: # now we use cam2 (left color)
-            # intrinsic
-            self.K_mat = calib_data["K_cam2"]
-            self.fx = self.K_mat[0,0]
-            self.fy = self.K_mat[1,1]
-            self.cx = self.K_mat[0,2]
-            self.cy = self.K_mat[1,2]
-            # extrinsic
-            self.T_c_l = calib_data['T_cam2_velo']
-            self.T_l_c = np.linalg.inv(self.T_c_l)
+            self.left_cam_name = "cam2"
+            self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
+            self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
 
         # Load GT Poses (if available)
         if int(sequence) < 11:
@@ -76,14 +70,17 @@ class KITTIOdometryDataset:
 
         if self.image_available:
             img = self.read_img(self.img2_files[idx]) # just for vis here
+            img_dict = {self.left_cam_name: img}
+
+            points_color = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_color = self.project_points_to_cam(points, img)
+            points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
 
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_color[:,:3]))
 
-            frame_data = {"points": points, "point_ts": point_ts, "img": img}
+            frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         else:
             frame_data = {"points": points, "point_ts": point_ts}
 
@@ -109,9 +106,6 @@ class KITTIOdometryDataset:
         img = cv2.imread(img_file)
         # print(img.shape)
         
-        # cv2.imshow('cam0', img)
-        # cv2.waitKey(1) # 1ms
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # img = np.array(img) # as np array
         
@@ -165,19 +159,17 @@ class KITTIOdometryDataset:
                     calib_dict[key] = values
         return calib_dict
     
-    def project_points_to_cam(self, points, img):
+    def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
-
-        # cm = plt.get_cmap('jet')
         points[:,3] = 1 # homo coordinate
 
         # transfrom velodyne points to camera coordinate
-        points_cam = np.matmul(self.T_c_l, points.T).T # N, 4
+        points_cam = np.matmul(T_c_l, points.T).T # N, 4
         points_cam = points_cam[:,:3] # N, 3
 
         # project to image space
-        u, v, depth= self.persepective_cam2image(points_cam.T) 
+        u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
         u = u.astype(np.int32)
         v = v.astype(np.int32)
 
@@ -198,8 +190,6 @@ class KITTIOdometryDataset:
 
         depth_map[v_valid,u_valid] = depth[mask]
 
-        points_rgb = np.ones_like(points) # N,4, last channel for the mask
-
         # print(np.shape(points_rgb))
 
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
@@ -207,11 +197,11 @@ class KITTIOdometryDataset:
 
         return points_rgb
     
-    def persepective_cam2image(self, points):
+    def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim
         if ndim == 2:
             points = np.expand_dims(points, 0)
-        points_proj = np.matmul(self.K_mat[:3,:3].reshape([1,3,3]), points)
+        points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
         depth[depth==0] = -1e-6
         u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)

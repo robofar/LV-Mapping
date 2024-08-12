@@ -64,8 +64,12 @@ class TUMDataset:
         self.K_mat[0,2]=self.cx
         self.K_mat[1,2]=self.cy
 
+        self.K_mats = {"cam": self.K_mat}
+
         self.T_l_c = np.eye(4)
         self.T_c_l = np.linalg.inv(self.T_l_c)
+
+        self.T_c_l_mats = {"cam": self.T_c_l}
         
         self.down_sample_on = False
         self.rand_down_rate = 0.1
@@ -164,6 +168,8 @@ class TUMDataset:
 
         im_color = np.array(im_color)
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": im_color}
+        im_color_dict = {"cam": im_color}
+
+        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": im_color_dict}
 
         return frame_data 
