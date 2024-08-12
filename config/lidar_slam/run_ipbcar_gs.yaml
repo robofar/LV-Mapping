@@ -22,7 +22,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 continual:
-  batch_size_new_sample: 3000
+  batch_size_new_sample: 1000
   pool_capacity: 2e7
   pool_filter_freq: 10
 tracker:
@@ -41,7 +41,7 @@ gs:
   sh_degree: 1
 optimizer: # mapper
   iters: 15  # iterations per frame
-  batch_size: 16384
+  batch_size: 8000
 eval:
   sensor_cad_path: ./cad/ipb_car.ply
   mesh_freq_frame: 50 # reconstruct the mesh every x frames

@@ -91,11 +91,11 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 ## Run on IPB car dataset (under development)
 
-There's some issues of the calibration for IPB car dataset
-
 ```
 python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl
 ```
+
+The light across different cameras seem to be not identical, figure out a way to do the correction
 
 **pass**
 

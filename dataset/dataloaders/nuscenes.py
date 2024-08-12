@@ -122,7 +122,7 @@ class NuScenesDataset:
 
         point_ts = self.get_timestamps(points)
 
-        points_rgb = np.ones_like(points)
+        
 
         # use all the imgs
         img_front = self.read_img(self.cam_front_tokens[idx])
@@ -136,12 +136,9 @@ class NuScenesDataset:
                     "cam_back": img_back, "cam_back_left": img_back_left, "cam_back_right": img_back_right}
 
         # project to the image plane to get the corresponding color        
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_back_left, self.T_cbl_l, self.K_back_left)
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_back, self.T_cb_l, self.K_back)
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_back_right, self.T_cbr_l, self.K_back_right)
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_front_right, self.T_cfr_l, self.K_front_right)
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_front, self.T_cf_l, self.K_front)
-        points_rgb = self.project_points_to_cam(points, points_rgb, img_front_left, self.T_cfl_l, self.K_front_left)
+        points_rgb = np.ones_like(points)
+        for cam_name in list(img_dict.keys()):
+            points_rgb = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
