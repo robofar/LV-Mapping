@@ -116,6 +116,10 @@ class IPBCarDataset:
 
             points_ts = np.tile(points_ts, (2, 1)) # 2N, 1
 
+        valid_mask = ~np.all(points == 0, axis=1) 
+        points = points[valid_mask]
+        points_ts = points_ts[valid_mask]
+
         img_left = self.read_img(self.img_left_files[idx])
         img_right = self.read_img(self.img_right_files[idx])
         img_front = self.read_img(self.img_front_files[idx])
@@ -277,7 +281,7 @@ class IPBCarDataset:
         depth[depth==0] = -1e-6
         u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
         v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(np.int32)
-
+        
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth

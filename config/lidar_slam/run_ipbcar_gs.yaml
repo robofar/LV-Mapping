@@ -10,7 +10,7 @@ process:
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.4
+  voxel_size_m: 0.3
   search_alpha: 0.5
 loss:
   loss_weight_on: True
@@ -30,7 +30,7 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  gs_iters: 5
+  gs_iters: 50
   gs_bs: 5
   gs_keyframe_interval: 2
   img_pool_size: 30

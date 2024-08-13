@@ -1100,7 +1100,7 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        vis_cam_name = self.dataset.cam_names[-1] # TODO
+        vis_cam_name = self.dataset.cam_names[0] # TODO # -1
         cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)

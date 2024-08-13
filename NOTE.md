@@ -139,11 +139,15 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 ... ...
 
 
-## Web Visualizer
+## GS Visualizer
 
-https://projects.markkellogg.org/threejs/demo_gaussian_splats_3d.php
+[Three.js Viewer](https://projects.markkellogg.org/threejs/demo_gaussian_splats_3d.php)
 
-https://antimatter15.com/splat/
+[WebGL Viewer](https://antimatter15.com/splat/)
+
+[PolyCam Viewer](https://poly.cam/tools/gaussian-splatting)
+
+[SuperSplat Viewer](https://playcanvas.com/supersplat/editor)
 
 ## TODO List
 
@@ -153,6 +157,7 @@ https://antimatter15.com/splat/
 - [ ] Add SDF / SDF gradient consistency loss
 - [x] Support multi-cam datasets
 - [ ] Deal with dynamic objects
+- [ ] Sky masking
 - [ ] Level of details
 - [ ] Evaluate Chamfer distance and PSNR
 
@@ -167,15 +172,27 @@ https://antimatter15.com/splat/
 
 + [GS-ICP-SLAM](https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM)
 
-+ [Street-Gaussians](https://github.com/LightwheelAI/street-gaussians-ns)
++ [Street-Gaussians](https://github.com/zju3dv/street_gaussians)
+
++ [Street-Gaussians-NerfStudio](https://github.com/LightwheelAI/street-gaussians-ns)
 
 + [Scaffold-GS](https://github.com/city-super/Scaffold-GS)
 
 + [Driving Gaussians](https://github.com/YuePanEdward/DrivingGS)
 
++ [GaussianPro](https://github.com/kcheng1021/GaussianPro)
+
 + [Hierarchical 3DGS](https://github.com/graphdeco-inria/hierarchical-3d-gaussians)
 
 + [GSDF](https://github.com/city-super/GSDF)
+
++ [GauStudio](https://github.com/GAP-LAB-CUHK-SZ/gaustudio)
+
++ [NerfStudio-Splatfacto](https://docs.nerf.studio/nerfology/methods/splat.html)
+
++ [LargeScale_3DGS](https://github.com/DeepLabc/LargeScale_3DGS)
+
++ [GS4Robo](https://github.com/dtc111111/awesome-3dgs-for-robotics)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
 
