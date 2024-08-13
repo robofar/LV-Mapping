@@ -1039,6 +1039,8 @@ class Mapper:
                 # gt_image = viewpoint_cam.original_image
                 gt_image = viewpoint_cam.original_image_list[down_rate]
 
+                # print(viewpoint_cam.original_image_list[0])
+
                 if gt_image.device != self.device: # this is one very time consuming part
                     gt_image.to(self.device)
 
@@ -1098,7 +1100,7 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        vis_cam_name = self.dataset.cam_names[0] # TODO
+        vis_cam_name = self.dataset.cam_names[-1] # TODO
         cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
@@ -1109,7 +1111,7 @@ class Mapper:
         original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
         cam_name = cur_viewpoint_cam.cam_id
 
-        cv2.imshow(cam_name + "Observed RGB", original_img_np)
+        cv2.imshow(cam_name + ": Observed RGB", original_img_np)
 
         T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
         T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
@@ -1122,20 +1124,20 @@ class Mapper:
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
         
-        cv2.imshow(cam_name + "Rendered RGB", renderd_image_np)
+        cv2.imshow(cam_name + ": Rendered RGB", renderd_image_np)
         #cv2.waitKey(1) # 1ms
 
         rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
         rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow(cam_name + "Rendered Depth", rendered_depth_np)
+        cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
 
         surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color
         rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow(cam_name + "Rendered Normal", rendered_normal_np)
+        cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
 
         # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  

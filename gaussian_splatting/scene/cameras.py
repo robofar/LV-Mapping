@@ -93,33 +93,32 @@ class CamImage:
         # pyramid of images
         self.original_image_list = []
 
-        self.original_image = image.to(device)
-
-        if img_down_rate == 0:
-            self.original_image_list.append(self.original_image)
-        else:
-            self.original_image_list.append(None)
-
+        original_image = image.to(device)
         # Downsample to 3x(H/2)x(W/2)
-        down_level1_image = F.interpolate(self.original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        if img_down_rate <= 1:
-            self.original_image_list.append(down_level1_image)
-        else:
-            self.original_image_list.append(None)
-        
+        down_level1_image = F.interpolate(original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
         # Downsample to 3x(H/4)x(W/4)
         down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        self.original_image_list.append(down_level2_image)
-
         # Downsample to 3x(H/8)x(W/8)
         down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+
+        if img_down_rate > 0:
+            original_image = None
+        self.original_image_list.append(original_image)
+
+        if img_down_rate > 1:
+            down_level1_image = None
+        self.original_image_list.append(down_level1_image)
+
+        if img_down_rate > 2:
+            down_level2_image = None
+        self.original_image_list.append(down_level2_image)
+
         self.original_image_list.append(down_level3_image)
 
         self.zfar = 100.0 # not this problem # 100.0
         self.znear = 0.01
 
         # GL
-        # self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy)
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).T # T_gi
 
 # what does this mean?

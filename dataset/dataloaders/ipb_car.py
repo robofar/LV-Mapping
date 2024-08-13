@@ -37,7 +37,7 @@ from datetime import datetime
 class IPBCarDataset:
     def __init__(self, data_dir, *_, **__):
         
-        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "os_h_points" # "lidar_horizontal_points"
         self.lidar_v_topic_name = "os_v_points" # "lidar_vertical_points"

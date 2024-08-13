@@ -149,11 +149,12 @@ https://antimatter15.com/splat/
 
 - [ ] Add pruning
 - [ ] Keyframe strategy
+- [ ] Batch mode
 - [ ] Add SDF / SDF gradient consistency loss
-- [ ] Support multi-cam datasets
+- [x] Support multi-cam datasets
 - [ ] Deal with dynamic objects
+- [ ] Level of details
 - [ ] Evaluate Chamfer distance and PSNR
-
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)
@@ -169,6 +170,12 @@ https://antimatter15.com/splat/
 + [Street-Gaussians](https://github.com/LightwheelAI/street-gaussians-ns)
 
 + [Scaffold-GS](https://github.com/city-super/Scaffold-GS)
+
++ [Driving Gaussians](https://github.com/YuePanEdward/DrivingGS)
+
++ [Hierarchical 3DGS](https://github.com/graphdeco-inria/hierarchical-3d-gaussians)
+
++ [GSDF](https://github.com/city-super/GSDF)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
 

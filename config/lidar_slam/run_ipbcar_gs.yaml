@@ -8,13 +8,9 @@ process:
   min_range_m: 3.0
   max_range_m: 80.0
 sampler:
-  surface_sample_range_m: 0.25
-  surface_sample_n: 4
-  free_sample_begin_ratio: 0.5
-  free_sample_end_dist_m: 1.0
-  free_front_sample_n: 2
+  surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.3
+  voxel_size_m: 0.4
   search_alpha: 0.5
 loss:
   loss_weight_on: True
@@ -37,9 +33,9 @@ gs:
   gs_iters: 5
   gs_bs: 5
   gs_keyframe_interval: 2
-  img_pool_size: 40
+  img_pool_size: 30
   gs_down_rate: 2
-  gs_vis_down_rate: 1
+  gs_vis_down_rate: 2
   sh_degree: 1
 optimizer: # mapper
   iters: 15  # iterations per frame
