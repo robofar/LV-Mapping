@@ -5,7 +5,7 @@ setting:
   color_channel: 3
 process:
   min_range_m: 0.05
-  max_range_m: 3.0  # distance filter for each frame
+  max_range_m: 2.5  # distance filter for each frame
   min_z_m: -10.0 
   vox_down_m: 0.005 # TODO
   estimate_normal: True

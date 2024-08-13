@@ -74,7 +74,7 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, cam_id: str = "cam", img_down_rate = 0, device = "cuda"):
+    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, device = "cuda"):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
@@ -115,8 +115,8 @@ class CamImage:
 
         self.original_image_list.append(down_level3_image)
 
-        self.zfar = 100.0 # not this problem # 100.0
-        self.znear = 0.01
+        self.zfar = z_max # 100.0
+        self.znear = z_min # 0.1
 
         # GL
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).T # T_gi

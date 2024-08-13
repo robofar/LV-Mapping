@@ -275,6 +275,8 @@ For example:
 
 ```
 python3 pin_slam_ros.py ./config/lidar_slam/run.yaml /os_cloud_node/points
+
+python3 pin_slam_ros.py ./config/lidar_slam/run.yaml /velodyne_points # for the exploration experiment
 ```
 
 After playing the ROS bag or launching the sensor you can then visualize the results in Rviz by:

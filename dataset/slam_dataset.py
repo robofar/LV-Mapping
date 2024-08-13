@@ -251,6 +251,7 @@ class SLAMDataset(Dataset):
                     cur_img = torch.from_numpy(img_dict[cam_name]).float().permute(2,0,1)/255
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
+                                                          self.config.min_range*0.8, self.config.max_range*1.2,
                                                           cam_name, img_down_rate, self.device)
 
             if "imus" in dict_keys:
