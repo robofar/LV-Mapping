@@ -7,7 +7,7 @@ setting:
   first_frame_ref: False
 process:
   min_range_m: 0.05
-  max_range_m: 10.0
+  max_range_m: 6.0
   min_z_m: -10.0
   vox_down_m: 0.015
   estimate_normal: True

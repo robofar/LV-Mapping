@@ -22,6 +22,8 @@ We may change this to [gaussian-surfels](https://github.com/turandai/gaussian_su
 
 3. Prepare the KITTI dataset, KITTI-360 dataset and Nuscenes dataset. You may directly contact Yue to get the dataset in the required structure.
 
+4. Add the `-s` flag to saved the resulting GS map in `.ply` format for offline inspection and evaluation 
+
 ### Visualization
 
 you can visualize the neural gaussians as point cloud in the visualizer by pressing `P`. For the other instructions for visualizer, please refer to the readme file
@@ -61,6 +63,9 @@ python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./d
 
 **pass**
 
+<details>
+  <summary>[Details (click to expand)]</summary>
+
 ### available scenes for Nuscenes
 
 for the `v1.0-mini` split
@@ -85,6 +90,8 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 + for the keyframes, all the sensor data are available
 + only 20 seconds for a scene (40 keyframes, 400 lidar frames, fewer img frames)
 + timestamps and pose are available for each measurement of each sensor
+
+</details>
 
 ## Run on Waymo dataset (under development)
 
@@ -171,6 +178,8 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 
 + [Gaussian-Surfels](https://github.com/turandai/gaussian_surfels)
 
++ [2.5D-GS](https://github.com/hugoycj/2.5d-gaussian-splatting)
+
 + [MonoGS](https://github.com/muskie82/MonoGS)
 
 + [GS-ICP-SLAM](https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM)
@@ -188,6 +197,10 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 + [Hierarchical 3DGS](https://github.com/graphdeco-inria/hierarchical-3d-gaussians)
 
 + [GSDF](https://github.com/city-super/GSDF)
+
++ [GOF](https://github.com/autonomousvision/gaussian-opacity-fields)
+
++ [MipGS](https://github.com/autonomousvision/mip-splatting)
 
 + [GauStudio](https://github.com/GAP-LAB-CUHK-SZ/gaustudio)
 
