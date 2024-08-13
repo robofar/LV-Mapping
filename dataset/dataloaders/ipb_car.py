@@ -116,7 +116,7 @@ class IPBCarDataset:
 
             points_ts = np.tile(points_ts, (2, 1)) # 2N, 1
 
-        valid_mask = ~np.all(points == 0, axis=1) 
+        valid_mask = ~np.all(points[:,:3] == 0, axis=1) 
         points = points[valid_mask]
         points_ts = points_ts[valid_mask]
 
@@ -245,14 +245,14 @@ class IPBCarDataset:
 
         # project to image space
         u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
-        u = u.astype(np.int32)
-        v = v.astype(np.int32)
+        u = u.astype(int)
+        v = v.astype(int)
 
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
         depth_map = np.zeros((img_height, img_width))
-        depth_img = np.zeros((img_height, img_width, 3))
+        # depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters
@@ -278,10 +278,11 @@ class IPBCarDataset:
             points = np.expand_dims(points, 0)
         points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
-        depth[depth==0] = -1e-6
-        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
-        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(np.int32)
-        
+        depth[depth==0] = -1e-5
+
+        u = np.round(points_proj[:,0,:]/np.abs(depth))
+        v = np.round(points_proj[:,1,:]/np.abs(depth))
+
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth

@@ -276,8 +276,10 @@ class NeuralPoints(nn.Module):
     # for GS
     def training_setup_gs(self):
 
-        self.position_lr_init: float = 0.00016 # let the gaussians to move 
-        # self.position_lr_init: float = 0.0
+        if self.config.movable_gs:
+            self.position_lr_init: float = 0.00016 # let the gaussians to move 
+        else:
+            self.position_lr_init: float = 0.0 # not movable
 
         self.position_lr_final: float = 0.0000016
         self.position_lr_delay_mult: float = 0.01

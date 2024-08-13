@@ -1028,6 +1028,8 @@ class Mapper:
 
             for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
 
+                T1 = get_time()
+
                 viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
 
                 # print("Used cam id:", viewpoint_cam.uid)
@@ -1046,7 +1048,7 @@ class Mapper:
 
                 # print(gt_image.shape)
 
-                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians
+                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
                 
                 # rendered results
                 renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
@@ -1080,6 +1082,10 @@ class Mapper:
                 normal_loss_batch += normal_loss
                 dist_loss_batch += dist_loss
 
+                T2 = get_time()
+
+                # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
+
             # add the isotropic loss
             # scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
             scaling = self.neural_points.get_local_scaling
@@ -1096,7 +1102,11 @@ class Mapper:
 
             # update
             self.neural_points.optimizer.step()
-            self.neural_points.optimizer.zero_grad(set_to_none=True)
+            self.neural_points.optimizer.zero_grad(set_to_none=True) 
+
+            T3 = get_time()
+
+            # print("Optimization iter time (ms):", (T3-T2)*1e3) # still, this backpropagation is slow, but better to do this in batch
             
         # rendered the last frame for vis
 
@@ -1133,7 +1143,7 @@ class Mapper:
 
         cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
 
-        surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color
+        surf_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
         rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 

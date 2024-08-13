@@ -93,6 +93,8 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 ```
 python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl --range 600 1000 1
 ```
 
 The light across different cameras seem to be not identical, figure out a way to do the correction
@@ -155,9 +157,10 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 - [ ] Keyframe strategy
 - [ ] Batch mode
 - [ ] Add SDF / SDF gradient consistency loss
+- [ ] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
-- [ ] Deal with dynamic objects
-- [ ] Sky masking
+- [ ] Deal with dynamic objects (tracking, filtering or 4DGS)
+- [ ] Sky (out-of-lidar-fov) masking
 - [ ] Level of details
 - [ ] Evaluate Chamfer distance and PSNR
 

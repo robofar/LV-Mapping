@@ -7,16 +7,12 @@ setting:
 process:
   min_range_m: 3.0
   max_range_m: 80.0
+  estimate_normal: True
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.3
+  voxel_size_m: 0.4
   search_alpha: 0.5
-loss:
-  loss_weight_on: True
-  dist_weight_scale: 0.8
-  ekional_loss_on: True
-  weight_e: 0.5
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7
@@ -30,13 +26,14 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  gs_iters: 50
+  gs_iters: 5
   gs_bs: 5
-  gs_keyframe_interval: 2
+  gs_keyframe_interval: 1
   img_pool_size: 30
-  gs_down_rate: 2
+  gs_down_rate: 3
   gs_vis_down_rate: 2
   sh_degree: 1
+  movable_gs: False
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8000
