@@ -1,54 +1,52 @@
 setting:
   name: "test_cka_pepper"
-  output_root: "/media/yuepan/DATA/1_data/pin_slam/experiments"
-  # pc_path: "/media/yuepan/DATA/1_data/CKA/CKA_sweet_pepper/BUP20/CKA_sweet_pepper_2020_summer/20200924/row5_kitti_format/rgbd_ply"
-  pc_path: "/media/yuepan/DATA/1_data/AgriBot/greenhouse/row5_kitti_format/rgbd_ply"
-  pose_path: "/media/yuepan/DATA/1_data/AgriBot/greenhouse/row5_kitti_format/poses.txt" # "/media/yuepan/DATA/1_data/CKA/CKA_sweet_pepper/BUP20/CKA_sweet_pepper_2020_summer/20200924/row5_kitti_format/poses.txt"
+  output_root: "./experiments"
   color_channel: 3
   first_frame_ref: False
-  begin_frame: 300
-  end_frame: 5000
 process:
   min_range_m: 0.9
-  max_range_m: 1.4  # distance filter for each frame
-  min_z_m: -10.0
-  vox_down_m: 0.005
+  max_range_m: 1.5  # distance filter for each frame
+  vox_down_m: 0.003
 sampler:
-  surface_sample_range_m: 0.03
-  surface_sample_n: 4 # 4
-  free_sample_begin_ratio: 0.7
+  surface_sample_range_m: 0.02
+  surface_sample_n: 3
+  free_sample_begin_ratio: 0.8
   free_sample_end_dist_m: 0.1
-  free_front_sample_n: 2 # 2
+  free_front_sample_n: 1 # 2
   free_behind_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.03
-  feature_dim: 8
-  query_nn_k: 6
-  search_alpha: 0.3
+  voxel_size_m: 0.02
 loss:
   sigma_sigmoid_m: 0.01
-  loss_weight_on: False # False
-  behind_dropoff_on: False
   ekional_loss_on: True
   weight_e: 0.5
-  numerical_grad_on: False
 continual: # the data sample pool
-  batch_size_new_sample: 3000
+  batch_size_new_sample: 2000
   pool_capacity: 1e7
-tracker:
-  track_on: True
-  photo_loss: True
-  source_vox_down_m: 0.02
-  iter_n: 20
-  lm_lambda: 1e-4 # 0.01
+  pool_filter_freq: 10
+gs:
+  gs_iters: 5
+  gs_bs: 2
+  gs_keyframe_interval: 2
+  img_pool_size: 20
+  sh_degree: 1
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
+# tracker:
+#   track_on: True
+#   photo_loss: True
+#   source_vox_down_m: 0.02
+#   iter_n: 20
+#   lm_lambda: 1e-4 # 0.01
 optimizer:
-  iters: 15  # iterations per frame
-  batch_size: 16384 # 16384 # 8192
+  iters: 10  # iterations per frame
+  batch_size: 8000 # 16384 # 8192
   ba_freq_frame: 15
   ba_local_frame: 30
 eval:
   wandb_vis_on: False # log to wandb or not
   o3d_vis_on: True # visualize the mapping or not
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mc_res_m: 0.01 
-  sensor_cad_path: ./cad/camera_cka.ply
+  mesh_min_nn: 25
+  mc_res_m: 0.01
+  sensor_cad_path: ./cad/camera.ply

@@ -26,14 +26,14 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  gs_iters: 5
+  gs_iters: 20
   gs_bs: 5
-  gs_keyframe_interval: 1
-  img_pool_size: 30
+  gs_keyframe_interval: 5
+  img_pool_size: 50
   gs_down_rate: 2
-  gs_vis_down_rate: 2
+  gs_vis_down_rate: 1
   sh_degree: 1
-  movable_gs: False
+  movable_gs: True
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8000

@@ -523,7 +523,9 @@ class Config:
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.movable_gs = config_args["gs"].get("movable_gs", self.movable_gs)
-
+            self.lambda_dist = config_args["gs"].get("lambda_dist", self.lambda_dist) # weight for the distance distortion loss
+            self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
+        
         # vis and eval
         if "eval" in config_args:
             # use weight and bias to monitor the experiment or not

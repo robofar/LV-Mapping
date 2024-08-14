@@ -13,7 +13,6 @@ import open3d as o3d
 import torch
 import torch.nn.functional as F
 import wandb
-import random
 from rich import print
 from tqdm import tqdm
 
@@ -35,6 +34,7 @@ from utils.tools import (
 from gaussian_splatting.gaussian_renderer import render
 from gaussian_splatting.utils.loss_utils import l1_loss, ssim
 from gaussian_splatting.utils.graphics_utils import focal2fov
+from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.scene.cameras import CamImage
 
 class Mapper:
@@ -478,16 +478,11 @@ class Mapper:
 
                 for cam_name in self.dataset.cam_names:
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    cur_view_cam.train_view = True
                     self.cam_img_pool.append(cur_view_cam)
                     self.cam_img_pool_id.append(cur_view_cam.uid)
 
                     # print(self.cam_img_pool_id)
-
-        # FIXME:
-        # cur_cam_img = Camera(colmap_id=frame_id, R=cam_info.R, T=cam_info.T, 
-        #           FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
-        #           image=gt_image, gt_alpha_mask=loaded_mask,
-        #           image_name=cam_info.image_name, uid=id, data_device=args.data_device)
 
         # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
         # print("time for sampling              (ms):", (T2-T1)*1e3)
@@ -1110,14 +1105,15 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        vis_cam_name = self.dataset.cam_names[0] # TODO # -1
+        vis_cam_name = self.dataset.cam_names[-1] # TODO # -1
         cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
 
         vis_down_rate = self.config.gs_vis_down_rate # TODO: add to config
 
-        original_img_np = (cur_viewpoint_cam.original_image_list[vis_down_rate].permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+        original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
+        original_img_np = (original_img.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
         original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
         cam_name = cur_viewpoint_cam.cam_id
 
@@ -1155,6 +1151,13 @@ class Mapper:
         # cv2.imshow("Rendered Alpha", rendered_alpha_np)
 
         cv2.waitKey(1)
+
+        # cur psnr
+        cur_pnsr = psnr(renderd_image, original_img).mean().item()
+        if cur_viewpoint_cam.train_view:
+            print("Current PSNR (train view):", cur_pnsr)
+        else:
+            print("Current PSNR (test view):", cur_pnsr)
 
         self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
         

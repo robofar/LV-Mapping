@@ -13,13 +13,14 @@ sampler:
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
 gs: # why this does not work FIXME
-  gs_iters: 5 
+  gs_iters: 20
   gs_bs: 5
   gs_keyframe_interval: 1
   img_pool_size: 50
   gs_down_rate: 1
   gs_vis_down_rate: 1
   sh_degree: 1
+  movable_gs: False
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7

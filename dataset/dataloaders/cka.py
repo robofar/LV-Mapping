@@ -44,9 +44,26 @@ class CKADataset:
 
         self.rgb_frames = sorted(glob.glob(self.rgb_dir + '*.png'))
         self.depth_frames = sorted(glob.glob(self.depth_dir + '*.npy'))
-        
-        # self.poses_fn = os.path.join(sequence_dir, "traj.txt")
-        # self.gt_poses = self.load_poses(self.poses_fn)
+
+        assert len(self.rgb_frames) == len(self.depth_frames), "RGB frame and depth frame count are not identical"
+
+        # for the shape completion challenge dataset
+
+        pose_file = os.path.join(data_dir, "poses_metashape.npz") # poses_metashape.npz
+        if os.path.exists(pose_file):
+            self.gt_poses=np.load(pose_file, allow_pickle=True)['arr_0']
+        else:
+            pose_dir = os.path.join(data_dir, "poses/")
+            assert os.path.exists(pose_dir)
+            self.pose_frames = sorted(glob.glob(pose_dir + '*.txt'))
+
+            # load gt poses
+            gt_poses_list = []
+            assert len(self.pose_frames) == len(self.depth_frames), "frame poses and depth frame count are not identical"
+            for pose_frame in self.pose_frames:
+                cur_pose = np.loadtxt(pose_frame)
+                gt_poses_list.append(cur_pose)
+            self.gt_poses = np.array(gt_poses_list) # N,4,4
 
         self.intrinsic_file = os.path.join(data_dir, "intrinsic.json")
 
@@ -55,7 +72,10 @@ class CKADataset:
             intrinsic_mat = intrinsic_data["intrinsic_matrix"]
             width = intrinsic_data["width"]
             height = intrinsic_data["height"]
-            self.depth_scale = intrinsic_data["depth_scale"]
+            if "depth_scale" in list(intrinsic_data.keys()):
+                self.depth_scale = intrinsic_data["depth_scale"]
+            else:
+                self.depth_scale = 1.0
 
             self.fx = intrinsic_mat[0]
             self.fy = intrinsic_mat[4]
@@ -83,7 +103,7 @@ class CKADataset:
                                           cx=self.cx,
                                           cy=self.cy)
         
-        self.max_depth_m = 1.5
+        self.max_depth_m = 2.0
         self.down_sample_on = False
         self.rand_down_rate = 0.1
 
@@ -91,7 +111,6 @@ class CKADataset:
 
     def __len__(self):
         return len(self.depth_frames)
-
 
     def __getitem__(self, idx):
         rgb_image = self.o3d.io.read_image(self.rgb_frames[idx])

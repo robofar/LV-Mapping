@@ -6,6 +6,7 @@ setting:
   kitti_correct: True
   correct_deg: 0.195
   color_map_on: False # pin slam does not make use of color
+  # semantic_on: True
 process:
   max_range_m: 60.0 # 80.0
   vox_down_m: 0.08
@@ -15,12 +16,16 @@ sampler:
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
 gs:
-  gs_iters: 5
-  gs_bs: 5
-  gs_keyframe_interval: 5
-  img_pool_size: 10
+  gs_iters: 200
+  gs_bs: 1
+  gs_keyframe_interval: 1
+  img_pool_size: 20
   gs_down_rate: 1
+  gs_vis_down_rate: 1
   sh_degree: 1
+  lambda_dist: 0.0
+  lambda_normal: 0.0
+  movable_gs: True
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7

@@ -23,7 +23,7 @@ neuralpoints:
 gs:
   gs_iters: 5
   gs_bs: 2
-  gs_keyframe_interval: 10
+  gs_keyframe_interval: 5
   img_pool_size: 20
   gs_down_rate: 1
   gs_vis_down_rate: 1

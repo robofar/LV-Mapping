@@ -80,6 +80,8 @@ class CamImage:
         self.cam_id = cam_id
         self.uid = f"{frame_id:05d}_{cam_id}"
 
+        self.train_view = False # is used as train view or test view
+
         image = image.clamp(0.0, 1.0)
         self.image_width = image.shape[2]
         self.image_height = image.shape[1]

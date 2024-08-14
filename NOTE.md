@@ -141,10 +141,14 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 
 **pass**
 
-## Run on CKA greenhouse dataset (under development)
+## Run on CKA greenhouse dataset
+```
+python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -dvl
 
+python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -dvl
+```
 
-
+**pass**
 ... ...
 
 
@@ -209,6 +213,8 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 + [LargeScale_3DGS](https://github.com/DeepLabc/LargeScale_3DGS)
 
 + [GS4Robo](https://github.com/dtc111111/awesome-3dgs-for-robotics)
+
++ [Grounded-SAM2](https://github.com/IDEA-Research/Grounded-SAM-2)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
 

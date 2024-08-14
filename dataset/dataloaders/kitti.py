@@ -32,9 +32,21 @@ class KITTIOdometryDataset:
     def __init__(self, data_dir, sequence: str, *_, **__):
         self.sequence_id = str(sequence).zfill(2)
         self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
-        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
+        
+        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodynes/")
+        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne_static_mos/") # static point cloud
+
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
         scan_count = len(self.scan_files)
+
+        # point cloud semantic labels (from semantic kitti)
+        self.sem_labels_dir = os.path.join(self.kitti_sequence_dir, "labels/")
+        self.sem_files = sorted(glob.glob(self.sem_labels_dir + "*.label"))
+        sem_file_count = len(self.sem_files)
+        if sem_file_count == scan_count:
+            self.sem_available = True
+        else:
+            self.sem_available = False
 
         # cam 2 (color)
         self.img2_dir = os.path.join(self.kitti_sequence_dir, "image_2/")

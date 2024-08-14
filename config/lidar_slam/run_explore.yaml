@@ -6,15 +6,15 @@ process:
   max_range_m: 80.0
   vox_down_m: 0.1
 sampler:
-  surface_sample_range_m: 0.35 
+  surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.6
+  voxel_size_m: 0.5
 continual:
   batch_size_new_sample: 800
   pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
-  source_vox_down_m: 1.5
+  source_vox_down_m: 1.2
   iter_n: 15
   term_deg: 0.1
 pgo:
@@ -27,4 +27,4 @@ optimizer: # mappers
 eval:
   mesh_freq_frame: 50 # reconstruct the mesh every x frames
   mesh_min_nn: 9
-  silence_log: False
+  # silence_log: False
