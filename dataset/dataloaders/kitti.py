@@ -33,8 +33,8 @@ class KITTIOdometryDataset:
         self.sequence_id = str(sequence).zfill(2)
         self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
         
-        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodynes/")
-        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne_static_mos/") # static point cloud
+        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodynes/")
+        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne_static_mos/") # static point cloud
 
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
         scan_count = len(self.scan_files)

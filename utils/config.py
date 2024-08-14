@@ -213,7 +213,8 @@ class Config:
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal regularization weight
-        self.lambda_dist: float  = 100.0 # distance distortion regularization weight
+        self.lambda_dist: float = 100.0 # distance distortion regularization weight
+        self.lambda_sdf: float = 1.0
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
 

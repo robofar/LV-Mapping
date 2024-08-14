@@ -311,7 +311,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # gs_iter_num = config.gs_iters * config.init_iter_ratio if frame_id == 0 else config.gs_iters # same, more iter for first frame
         gs_iter_num = config.gs_iters
-        mapper.gs_mapping(gs_iter_num) 
+        # mapper.gs_mapping(gs_iter_num) 
+        mapper.joint_gsdf_mapping(gs_iter_num) 
         
         T6 = get_time()
 
