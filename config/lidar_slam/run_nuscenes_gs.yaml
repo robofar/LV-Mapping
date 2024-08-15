@@ -9,7 +9,7 @@ process:
   vox_down_m: 0.08
   estimate_normal: False
 sampler:
-  surface_sample_range_m: 0.3 
+  surface_sample_range_m: 0.25 
 neuralpoints:
   voxel_size_m: 0.3 # 0.5
 gs: # why this does not work FIXME
@@ -20,7 +20,7 @@ gs: # why this does not work FIXME
   gs_down_rate: 1
   gs_vis_down_rate: 1
   sh_degree: 1
-  movable_gs: False
+  movable_gs: True
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7
@@ -36,8 +36,8 @@ continual:
 #   virtual_side_count: 10
 #   local_loop_dist_thre: 15.0
 optimizer: # mappers 
-  batch_size: 4000
+  batch_size: 8000
   adaptive_iters: True
 eval:
-  mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  mesh_freq_frame: 5 # reconstruct the mesh every x frames
   mesh_min_nn: 9

@@ -55,6 +55,8 @@ class NuScenesDataset:
         self.used_part: str = "sample_data"
         self.keyframe_only: bool = True
 
+        self.use_only_colorized_points: bool = True
+
         # self.used_part: str = "sample"
 
         # Lazy loading
@@ -122,8 +124,6 @@ class NuScenesDataset:
 
         point_ts = self.get_timestamps(points)
 
-        
-
         # use all the imgs
         img_front = self.read_img(self.cam_front_tokens[idx])
         img_front_left = self.read_img(self.cam_front_left_tokens[idx])
@@ -139,6 +139,12 @@ class NuScenesDataset:
         points_rgb = np.ones_like(points)
         for cam_name in list(img_dict.keys()):
             points_rgb = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+
+        if self.use_only_colorized_points:
+            with_rgb_mask = (points_rgb[:, 3] == 0)
+            points = points[with_rgb_mask]
+            points_rgb = points_rgb[with_rgb_mask]
+
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))

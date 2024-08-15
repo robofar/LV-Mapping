@@ -30,6 +30,7 @@ import numpy as np
 
 class KITTIOdometryDataset:
     def __init__(self, data_dir, sequence: str, *_, **__):
+
         self.sequence_id = str(sequence).zfill(2)
         self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
         
@@ -39,7 +40,7 @@ class KITTIOdometryDataset:
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
         scan_count = len(self.scan_files)
 
-        # point cloud semantic labels (from semantic kitti)
+        # point cloud semantic labels (from semantic kitti) # TODO
         self.sem_labels_dir = os.path.join(self.kitti_sequence_dir, "labels/")
         self.sem_files = sorted(glob.glob(self.sem_labels_dir + "*.label"))
         sem_file_count = len(self.sem_files)
@@ -47,6 +48,8 @@ class KITTIOdometryDataset:
             self.sem_available = True
         else:
             self.sem_available = False
+
+        self.use_only_colorized_points = True
 
         # cam 2 (color)
         self.img2_dir = os.path.join(self.kitti_sequence_dir, "image_2/")
@@ -84,13 +87,18 @@ class KITTIOdometryDataset:
             img = self.read_img(self.img2_files[idx]) # just for vis here
             img_dict = {self.left_cam_name: img}
 
-            points_color = np.ones_like(points)
+            points_rgb = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
+            points_rgb = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
+
+            if self.use_only_colorized_points:
+                with_rgb_mask = (points_rgb[:, 3] == 0)
+                points = points[with_rgb_mask]
+                points_rgb = points_rgb[with_rgb_mask]
 
             # we skip the intensity here for now (and also the color mask)
-            points = np.hstack((points[:,:3], points_color[:,:3]))
+            points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         else:

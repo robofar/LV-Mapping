@@ -10,7 +10,7 @@ process:
   max_range_m: 6.0
   min_z_m: -10.0
   vox_down_m: 0.015
-  estimate_normal: True
+  estimate_normal: False
 sampler:
   surface_sample_range_m: 0.03
   surface_sample_n: 3
@@ -33,7 +33,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.2
 continual:
-  batch_size_new_sample: 4000
+  batch_size_new_sample: 2000
   pool_capacity: 2e7
   pool_filter_freq: 10
 # tracker:

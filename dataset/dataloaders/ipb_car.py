@@ -37,6 +37,8 @@ from datetime import datetime
 class IPBCarDataset:
     def __init__(self, data_dir, *_, **__):
         
+        self.use_only_colorized_points = True
+        
         self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "os_h_points" # "lidar_horizontal_points"
@@ -133,6 +135,11 @@ class IPBCarDataset:
         for cam_name in list(img_dict.keys()):
             # calib seems to be somehow wrong, figure it out. TODO
             points_rgb = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+
+        if self.use_only_colorized_points:
+            with_rgb_mask = (points_rgb[:, 3] == 0)
+            points = points[with_rgb_mask]
+            points_rgb = points_rgb[with_rgb_mask]
 
         # # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
@@ -286,3 +293,84 @@ class IPBCarDataset:
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
+
+
+# image distortion
+PX_OFFSET_128 = 32 * [48, 32, 16, 0]  # Check os*.json
+PX_OFFSET_32 = 32 * [16]
+color_only_visible = True
+
+def getLUT(points, px_offset=PX_OFFSET_128):
+    H = points.shape[0]
+    W = points.shape[1]
+    # row, col = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    row, col = np.ogrid[:H, :W]
+    col = col - np.array(px_offset)[:, None]
+    return row, col
+
+def tccApplyLut(coords, lut):
+    # Apply lut
+    coords_distorted = np.asarray(coords, dtype="float32")
+    coords_int = np.asarray(np.round(coords), dtype="int")
+    coords_int[coords_int[:, 0] < 0, 0] = 0
+    coords_int[coords_int[:, 1] < 0, 1] = 0
+    coords_int[coords_int[:, 0] >= lut.shape[0], 0] = lut.shape[0] - 1
+    coords_int[coords_int[:, 1] >= lut.shape[1], 1] = lut.shape[1] - 1
+
+    coords_distorted[:, 0] += lut[coords_int[:, 0], coords_int[:, 1], 1]
+    coords_distorted[:, 1] += lut[coords_int[:, 0], coords_int[:, 1], 0]
+    return coords_distorted
+
+
+def tccReadLut(lutfilename: str):
+    """Read lookup table create by calibration software tcc.
+
+    Args:
+      lutfilename: Complete filename of lookup table, usual ending is .lut
+                   and .ilut
+
+    Returns:
+      the lookup table as a numpy array of size (no_of_image_rows, no_of_image_column, 2)
+      [:,:,0] is the offset in x (or column) direction, [:,:,1] the offset in y (or row) direction
+    """
+    with open(lutfilename, "rt") as fstream:
+        # Read Header with the identifier "distortiontable"
+        line = fstream.readline()
+        while line[0] == "#":
+            line = fstream.readline()
+
+        if line[0:15] != "distortiontable":
+            print(
+                "ERROR: given filename %s seems not to be a tcc lookup table, wrong header !"
+                % lutfilename
+            )
+            # return
+
+        # Line with basex basey dimx dimy
+        line = fstream.readline()
+        while line[0] == "#":
+            line = fstream.readline()
+
+        basex, basey, dimx, dimy = np.asarray(line.split(), dtype="int")
+
+        # Now the actual lut values
+        lut = np.loadtxt(fstream, comments="#", dtype="float32")
+
+        lut = np.reshape(lut, (dimy, dimx, 2))
+
+        return lut
+
+def project_lidar(K, coors3d, lut, T_laser2cam, T_bacs2opencv):
+    T_laser2cam_opencv = T_bacs2opencv @ T_laser2cam
+    P = K @ T_laser2cam_opencv[0:3, :]
+    Xh = np.hstack((coors3d, np.ones_like(coors3d[:, :1]))).T
+    xh = P @ Xh
+    pos_depth_idx = xh[2, :] > 0
+
+    coors_cam = ((T_bacs2opencv @ T_laser2cam @ Xh)[:3, :]).T
+    depth = np.linalg.norm(coors_cam, axis=-1)
+    xh = xh / np.repeat(xh[2:, :], 3, axis=0)
+    lprojected = xh[[1, 0], :].T  # lproject = [row, column] (nx2)
+
+    lprojected = tccApplyLut(lprojected, lut)
+    return lprojected, depth, pos_depth_idx

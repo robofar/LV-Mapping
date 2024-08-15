@@ -35,6 +35,8 @@ from datetime import datetime
 
 class VBRDataset:
     def __init__(self, data_dir, *_, **__):
+        
+        self.use_only_colorized_points = False
 
         self.ouster_dir = os.path.join(data_dir, "ouster_points", "data/")
         self.scan_files = sorted(glob.glob(self.ouster_dir + "*.bin"))
@@ -75,6 +77,11 @@ class VBRDataset:
 
         # project to the image plane to get the corresponding color
         points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
+
+        if self.use_only_colorized_points:
+            with_rgb_mask = (points_rgb[:, 3] == 0)
+            points = points[with_rgb_mask]
+            points_rgb = points_rgb[with_rgb_mask]
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_color[:,:3]))

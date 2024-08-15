@@ -39,6 +39,8 @@ class KITTI360Dataset:
 
         seq_str = f"2013_05_28_drive_{str(sequence).zfill(4)}_sync/"
 
+        self.use_only_colorized_points = True
+
         lidar_folder = "data_3d_raw"
         img_folder = "data_2d_raw"
         pose_folder = "data_poses"
@@ -106,13 +108,18 @@ class KITTI360Dataset:
         cam_name = "cam_left_rect"
         img_dict = {cam_name: img}
         
-        points_color = np.ones_like(points)
+        points_rgb = np.ones_like(points)
 
         # project to the image plane to get the corresponding color
-        points_color = self.project_points_to_cam(points, points_color, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+        points_rgb = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+
+        if self.use_only_colorized_points:
+            with_rgb_mask = (points_rgb[:, 3] == 0)
+            points = points[with_rgb_mask]
+            points_rgb = points_rgb[with_rgb_mask]
 
         # we skip the intensity here for now (and also the color mask)
-        points = np.hstack((points[:,:3], points_color[:,:3]))
+        points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
         frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         # print(frame_data)

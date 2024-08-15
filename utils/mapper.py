@@ -1265,8 +1265,13 @@ class Mapper:
                 # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
             # add the isotropic loss
-            scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
-            scaling = self.neural_points.get_local_scaling
+            
+            use_only_valid_gaussians = True
+            
+            if use_only_valid_gaussians:
+                scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
+            else:
+                scaling = self.neural_points.get_local_scaling
             isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
 
             # isotropic_loss = 0.0
@@ -1274,10 +1279,12 @@ class Mapper:
             # print(isotropic_loss)
 
             # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
-            valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[self.neural_points.local_valid_color_mask]
-            valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[self.neural_points.local_valid_color_mask])
-
-            # print(valid_guassians_normals.shape)
+            if use_only_valid_gaussians:
+                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[self.neural_points.local_valid_color_mask]
+                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[self.neural_points.local_valid_color_mask])
+            else:
+                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz
+                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation)
 
             valid_guassians_xyz.requires_grad_(True)
 
@@ -1286,21 +1293,15 @@ class Mapper:
             grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
             valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
-            # print(valid_guassians_sdf_grad.shape)
-
             self.config.lambda_sdf = 1.0
             sdf_loss = self.config.lambda_sdf * torch.abs(valid_guassians_sdf).mean()
 
-            # gaussian_normal_error = (1 - torch.abs((valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1)))
             gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
-            # print(gaussian_normal_error.shape)
             
             self.config.lambda_sdf_normal = 0.5
             sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
 
-            # print(valid_guassians_sdf_grad.shape)
-
-            print("Isotropic loss:", isotropic_loss.item(), "SDF loss:", sdf_loss.item(), "SDF normal loss:", sdf_normal_loss.item())
+            print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
 
             # sdf_loss = 0.0
 
@@ -1320,7 +1321,7 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        vis_cam_name = self.dataset.cam_names[-1] # TODO # -1
+        vis_cam_name = self.dataset.cam_names[0] # TODO # -1
         cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
@@ -1355,6 +1356,7 @@ class Mapper:
         cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
 
         surf_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
+        # surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
         rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
 

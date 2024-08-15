@@ -128,7 +128,7 @@ class NeuralPoints(nn.Module):
         self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
 
         # Gaussian parameters
-        self.active_sh_degree = 0
+        self.active_sh_degree = self.config.sh_degree # TODO
         self.max_sh_degree = self.config.sh_degree
 
         self.xyz = torch.empty(0, dtype=self.dtype, device=self.device) # N, 3 # here, this represent the displacement from the neural point
