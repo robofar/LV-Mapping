@@ -212,6 +212,8 @@ python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_
 
 + [LargeScale_3DGS](https://github.com/DeepLabc/LargeScale_3DGS)
 
++ [MARS: Nerf-based Simulation](https://github.com/OPEN-AIR-SUN/mars)
+
 + [GS4Robo](https://github.com/dtc111111/awesome-3dgs-for-robotics)
 
 + [Grounded-SAM2](https://github.com/IDEA-Research/Grounded-SAM-2)

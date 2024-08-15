@@ -393,7 +393,7 @@ class Tracker:
 
         grad_norm = sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m
 
-        grad_unit = sdf_grad / grad_norm.unsqueeze(-1)
+        grad_unit = sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
         min_certainty = 5.0
         sdf_pred_abs = torch.abs(sdf_pred)

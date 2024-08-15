@@ -214,7 +214,8 @@ class Config:
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal regularization weight
         self.lambda_dist: float = 100.0 # distance distortion regularization weight
-        self.lambda_sdf: float = 1.0
+        self.lambda_sdf: float = 1.0 # gaussian center's sdf should be close to 0
+        self.lambda_sdf_normal: float = 1.0 # gaussian's normal should align with sdf's gradient direction
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
 

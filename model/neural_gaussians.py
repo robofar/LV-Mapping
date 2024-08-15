@@ -904,7 +904,7 @@ class NeuralPoints(nn.Module):
         color_mode: int = -1,
         random_down_ratio: int = 1,
         cur_sensor_position = None,
-        vis_normals = False
+        vis_normals = True
     ):
 
         ratio_vis = 1.5

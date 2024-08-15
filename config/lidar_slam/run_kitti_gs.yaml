@@ -14,17 +14,18 @@ process:
 sampler:
   surface_sample_range_m: 0.3 
 neuralpoints:
-  voxel_size_m: 0.2 # 0.5
+  voxel_size_m: 0.25 # 0.5
+  search_alpha: 0.5
 gs:
-  gs_iters: 10
+  gs_iters: 20
   gs_bs: 5
-  gs_keyframe_interval: 2
-  img_pool_size: 20
+  gs_keyframe_interval: 1
+  img_pool_size: 30
   gs_down_rate: 1
   gs_vis_down_rate: 1
   sh_degree: 1
-  lambda_dist: 0.0
-  lambda_normal: 0.0
+  # lambda_dist: 0.0
+  # lambda_normal: 0.0
   movable_gs: True
 continual:
   batch_size_new_sample: 1000
@@ -41,9 +42,9 @@ pgo:
   virtual_side_count: 10
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
-  batch_size: 4000
+  batch_size: 8000
   adaptive_iters: True
 eval:
-  mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 9
   sensor_cad_path: ./cad/kitti_car.ply
