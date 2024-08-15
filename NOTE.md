@@ -97,6 +97,9 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 [Dataset download link](https://console.cloud.google.com/storage/browser/waymo_open_dataset_v_1_4_0;tab=objects?pli=1&prefix=&forceOnObjectsSortingFiltering=false)
 
+[Preproceesed download link for 4 sequences used by street-gs](https://github.com/LightwheelAI/street-gaussians-ns)
+
+
 ```
 python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -dvl
 ```

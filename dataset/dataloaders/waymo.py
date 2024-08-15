@@ -8,17 +8,17 @@ import json
 import numpy as np
 import open3d as o3d
 
-# TODO: edit
 class WaymoDataset:
     def __init__(self, data_dir, *_, **__):
         
         self.use_only_lidar_top = True 
-
         self.use_only_colorized_points = True
 
-        self.lidar_top_topic_name = "lidar_TOP" # "lidar_horizontal_points"
-        # self.lidar_v_topic_name = "os_v_points" # "lidar_vertical_points"
-        
+        self.lidar_top_topic_name = "lidar_TOP" 
+        self.lidar_front_topic_name = "lidar_FRONT" 
+        self.lidar_rear_topic_name = "lidar_REAR"
+        self.lidar_side_left_topic_name = "lidar_SIDE_LEFT"
+        self.lidar_side_right_topic_name = "lidar_SIDE_RIGHT"
 
         self.cam_front_topic_name = "FRONT"  
         self.cam_front_left_topic_name = "FRONT_LEFT" 
@@ -30,11 +30,22 @@ class WaymoDataset:
         self.K_mats = {}
         self.T_c_l_mats = {}
 
-
         self.lidar_dir = os.path.join(data_dir, "lidars")
         # top center lidar
         self.lidar_top_dir = os.path.join(self.lidar_dir, self.lidar_top_topic_name)
         self.lidar_top_files = sorted(glob.glob(self.lidar_top_dir + "/*.pcd"))
+        # front blind-area lidar 
+        self.lidar_front_dir = os.path.join(self.lidar_dir, self.lidar_front_topic_name)
+        self.lidar_front_files = sorted(glob.glob(self.lidar_front_dir + "/*.pcd"))
+        # rear blind-area lidar 
+        self.lidar_rear_dir = os.path.join(self.lidar_dir, self.lidar_rear_topic_name)
+        self.lidar_rear_files = sorted(glob.glob(self.lidar_rear_dir + "/*.pcd"))
+        # side left blind-area lidar 
+        self.lidar_side_left_dir = os.path.join(self.lidar_dir, self.lidar_side_left_topic_name)
+        self.lidar_side_left_files = sorted(glob.glob(self.lidar_side_left_dir + "/*.pcd"))
+        # side right blind-area lidar 
+        self.lidar_side_right_dir = os.path.join(self.lidar_dir, self.lidar_side_right_topic_name)
+        self.lidar_side_right_files = sorted(glob.glob(self.lidar_side_right_dir + "/*.pcd"))
 
         self.img_dir = os.path.join(data_dir, "images") 
         # self.img_dir = os.path.join(data_dir, "images_ud") # already undistorted?
@@ -55,56 +66,25 @@ class WaymoDataset:
         self.img_side_right_dir = os.path.join(self.img_dir, self.cam_side_right_topic_name)
         self.img_side_right_files = sorted(glob.glob(self.img_side_right_dir + "/*.jpg"))
 
-        self.transforms = self.read_transform(os.path.join(data_dir, "transform.json"))
-
-        # print(self.lidar_top_extrinsic) # T_b_l
-
-        # # vertical lidar
-        # self.lidar_vertical_dir = os.path.join(data_dir, self.lidar_v_topic_name, "data/")
-        # self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.bin"))
-        # self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, self.lidar_v_topic_name, "timestamps.txt"))
-
-        # # camera left
-        # self.img_left_dir = os.path.join(data_dir, self.cam_left_topic_name, "data/")
-        # self.img_left_files = sorted(glob.glob(self.img_left_dir + "*.png"))
-        # self.img_left_ts = self.read_timestamps(os.path.join(data_dir, self.cam_left_topic_name, "timestamps.txt"))
-
-        # # camera right
-        # self.img_right_dir = os.path.join(data_dir, self.cam_right_topic_name, "data/")
-        # self.img_right_files = sorted(glob.glob(self.img_right_dir + "*.png"))
-        # self.img_right_ts = self.read_timestamps(os.path.join(data_dir, self.cam_right_topic_name, "timestamps.txt"))
-
-
-
-        # # camera rear
-        # self.img_rear_dir = os.path.join(data_dir, self.cam_rear_topic_name, "data/")
-        # self.img_rear_files = sorted(glob.glob(self.img_rear_dir + "*.png"))
-        # self.img_rear_ts = self.read_timestamps(os.path.join(data_dir, self.cam_rear_topic_name, "timestamps.txt"))
-
-        # synchronize lidar and camera (reference: lidar_horizontal_ts)
-        # self.img_left_ts_sync, img_left_idx_sync = self.associate_img_to_lidar(self.lidar_horizontal_ts, self.img_left_ts)
-        # self.img_left_files = [self.img_left_files[i] for i in img_left_idx_sync] # get the synchronized files
-
-        # self.img_right_ts_sync, img_right_idx_sync = self.associate_img_to_lidar(self.lidar_horizontal_ts, self.img_right_ts)
-        # self.img_right_files = [self.img_right_files[i] for i in img_right_idx_sync] # get the synchronized files
-
-        # self.img_front_ts_sync, img_front_idx_sync = self.associate_img_to_lidar(self.lidar_horizontal_ts, self.img_front_ts)
-        # self.img_front_files = [self.img_front_files[i] for i in img_front_idx_sync] # get the synchronized files
-
-        # self.img_rear_ts_sync, img_rear_idx_sync = self.associate_img_to_lidar(self.lidar_horizontal_ts, self.img_rear_ts)
-        # self.img_rear_files = [self.img_rear_files[i] for i in img_rear_idx_sync] # get the synchronized files
-
-        # self.lidar_vertical_ts_sync, lidar_vertical_idx_sync = self.associate_img_to_lidar(self.lidar_horizontal_ts, self.lidar_vertical_ts)
-        # self.lidar_vertical_files = [self.lidar_vertical_files[i] for i in lidar_vertical_idx_sync] # get the synchronized files
-
-        # self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calib.yaml"))
-
-        # no gt pose yet (TODO)
+        # load calib and gt poses
+        self.read_transform(os.path.join(data_dir, "transform.json"))
 
     def __getitem__(self, idx):
         
-        points = self.read_point_cloud(self.lidar_top_files[idx])
+        points = self.read_point_cloud(self.lidar_top_files[idx]) # in body frame
 
+        if not self.use_only_lidar_top: # but all in body frame
+            points_front = self.read_point_cloud(self.lidar_front_files[idx])
+            points_rear = self.read_point_cloud(self.lidar_rear_files[idx])
+            points_left = self.read_point_cloud(self.lidar_side_left_files[idx])
+            points_right = self.read_point_cloud(self.lidar_side_right_files[idx])
+
+            points = np.concatenate((points, points_front), axis=0) 
+            points = np.concatenate((points, points_rear), axis=0) 
+            points = np.concatenate((points, points_left), axis=0) 
+            points = np.concatenate((points, points_right), axis=0) 
+
+        # convert to center top lidar frame
         points_homo = np.hstack((points[:,:3], np.ones((np.shape(points)[0], 1))))
 
         points_homo_lidar_frame = points_homo @ np.linalg.inv(self.lidar_top_extrinsic).T # T_l_b.T
@@ -182,7 +162,8 @@ class WaymoDataset:
         return img
 
     def read_transform(self, json_file_path: str) -> dict:
-        transforms_dict = {}
+        # transforms_dict = {}
+        # self.gt_poses = []
 
         with open(json_file_path, 'r') as infile: # load intrinsic json file
             transforms_dict = json.load(infile)
@@ -197,7 +178,16 @@ class WaymoDataset:
                 cam_extrinsic = np.array(cam_params["extrinsic"]) # T_b_c
                 self.T_c_l_mats[cam_name] = np.linalg.inv(cam_extrinsic) @ self.lidar_top_extrinsic # T_c_l
 
-        return transforms_dict
+        # gt poses still have some problem 
+        #     frame_trans = transforms_dict["frames"]
+        #     for frame_meta in frame_trans:
+        ## you need to select the camera or lidar, and figure out what's the transformation is refered to
+        #         T_w_b = np.array(frame_meta["transform_matrix"])
+        #         T_w_l = T_w_b @ self.lidar_top_extrinsic
+        #         self.gt_poses.append(T_w_l)
+
+        # self.gt_poses = np.array(self.gt_poses)
+
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
