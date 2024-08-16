@@ -136,6 +136,6 @@ class CKADataset:
 
         rgb_image_dict = {"cam_mid": rgb_image}
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": rgb_image_dict}
+        frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
 
         return frame_data 

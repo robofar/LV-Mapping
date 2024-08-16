@@ -5,6 +5,7 @@
 ```
 cd ~/autonomous_exploration_development_environment
 source devel/setup.sh
+conda deactivate
 roslaunch vehicle_simulator system_garage.launch
 ... ...
 roslaunch vehicle_simulator system_[xxx_environment].launch

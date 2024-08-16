@@ -54,9 +54,6 @@ class KITTI360Dataset:
 
         self.T_l_co = self.Tr_lidar_cam0 # tran from original camera to lidar
         self.T_co_l = np.linalg.inv(self.T_l_co) 
-        # print(self.T_co_l)
-
-        # print(self.calib_intrinsic) # shall we use the R_rect or P_rect
 
         self.velodyne_dir = os.path.join(self.lidar_root_dir, "velodyne_points/data/")
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))

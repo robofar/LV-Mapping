@@ -239,11 +239,11 @@ class SLAMDataset(Dataset):
             dict_keys = list(frame_data.keys())
             if not self.silence:
                 print("Available data source:", dict_keys)
-            if "points" in dict_keys: # TODO: support multiple LiDAR
+            if "points" in dict_keys:
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
-            if "img" in dict_keys: # TODO: support multiple cameras
+            if "img" in dict_keys: # support multiple cameras
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}

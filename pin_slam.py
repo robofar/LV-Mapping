@@ -119,7 +119,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     sem_mlp = Decoder(config, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
     color_mlp = Decoder(config, config.color_mlp_hidden_dim, config.color_mlp_level, config.color_channel) if config.color_on else None
 
-    # initialize the feature octree
+    # initialize the neural gaussians
     neural_points = NeuralPoints(config)
 
     # Load the decoder model

@@ -170,6 +170,6 @@ class TUMDataset:
 
         im_color_dict = {"cam": im_color}
 
-        frame_data = {"points": points_xyzrgb, "point_ts": None, "img": im_color_dict}
+        frame_data = {"points": points_xyzrgb, "img": im_color_dict}
 
         return frame_data 
