@@ -95,6 +95,10 @@ class ReplicaDataset:
     def __getitem__(self, idx):
         rgb_image = self.o3d.io.read_image(self.rgb_frames[idx])
         depth_image = self.o3d.io.read_image(self.depth_frames[idx])
+
+        # print(rgb_image)
+        # print(depth_image)
+
         rgbd_image = self.o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                             depth_image, 
                                                                             depth_scale=self.depth_scale, 

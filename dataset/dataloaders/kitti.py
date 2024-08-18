@@ -93,14 +93,19 @@ class KITTIOdometryDataset:
             self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
             self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
 
+            # FIXME: mono_depth rgbd version
+            self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+            self.intrinsic.set_intrinsics(height=1241,
+                                        width=376,
+                                        fx=calib_data["K_cam2"][0,0],
+                                        fy=calib_data["K_cam2"][1,1],
+                                        cx=calib_data["K_cam2"][0,2],
+                                        cy=calib_data["K_cam2"][1,2])
+
+            self.extrinsic = np.linalg.inv(calib_data['T_cam2_velo'])
+            self.extrinsic = calib_data['T_cam2_velo']
+
         # FIXME: mono_depth rgbd version
-        # self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
-        # self.intrinsic.set_intrinsics(height=1241,
-        #                             width=376,
-        #                             fx=calib_data["K_cam2"][0,0],
-        #                             fy=calib_data["K_cam2"][1,1],
-        #                             cx=calib_data["K_cam2"][0,2],
-        #                             cy=calib_data["K_cam2"][1,2])
 
         # self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
         # self.T_l_c = np.eye(4)

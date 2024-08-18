@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import List
 
+import cv2
 import datetime as dt
 import matplotlib.cm as cm
 import numpy as np
@@ -254,19 +255,50 @@ class SLAMDataset(Dataset):
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
                 for cam_name in cam_list:
-                    cur_img = torch.from_numpy(img_dict[cam_name]).float().to(self.device)
+                    cur_img_np = img_dict[cam_name]
+                    cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
                     cur_img = cur_img.permute(2,0,1)/255
 
+                    
                     # TODO
-                    pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
-                    # print(pred_depth)
-                    pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
-                    # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+                    self.monodepth_on = False
+                    if self.monodepth_on:
+                        tic_metric3d = get_time()
+                        pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
+                        toc_metric3d = get_time()
+                        
+                        if not self.config.silence:
+                            print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)
 
+                        pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
+                        # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+
+                        pred_depth_np = pred_depth[0].permute(1,2,0).detach().cpu().numpy()
+
+                        pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1])) # in metric3d, input/output should be 32x pix
+
+                        cur_img_o3d = o3d.geometry.Image(cur_img_np)
+                        pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
+
+                        rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, depth_scale=1.0, depth_trunc=self.config.max_range*1.1, convert_rgb_to_intensity=False)
+                                                                                
+                        pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+                            rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+
+                        points_xyz = np.array(pred_pcd.points, dtype=np.float64)
+                        points_rgb = np.array(pred_pcd.colors, dtype=np.float64)
+                        points_xyzrgb = np.hstack((points_xyz, points_rgb))
+
+                        points = np.concatenate((points, points_xyzrgb), axis=0) # concat 
+                        
+                        # TODO: note
+                        # better to have two point cloud, the lidar and the mono depth metric point cloud
+                        # mono depth ones only used to initialize neural points (gaussians)
+                    
                     # cur_img = cur_img.permute(2,0,1)/255
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
-                                                          self.config.min_range*0.5, self.config.max_range*1.2,
+                                                          self.config.min_range*0.5, self.config.max_range*1.1,
                                                           cam_name, img_down_rate, self.device)
 
         

@@ -191,9 +191,13 @@ python depth_to_pointcloud.py \
 
 ```
 
+Now we switch to metric3D, actually works pretty well
+
 ### Sample more freespace point and then we can build static map
 Then you can actually use this static map to prune those neural points (gaussians) in the freespace
 Prune non-free neural points with too large SDF value 
+
+Or maybe we can use MOS results, how to save the MOS results using Ben's MapMOS?
 
 
 ## GS Visualizer
