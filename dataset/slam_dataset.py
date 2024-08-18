@@ -52,6 +52,8 @@ class SLAMDataset(Dataset):
 
         max_frame_number: int = 100000 # about 3 hours of operation
 
+        self.monodepth_on: bool = True
+
         self.poses_ts = None # timestamp for each reference pose, also as np.array
         self.gt_poses = None
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
@@ -87,7 +89,8 @@ class SLAMDataset(Dataset):
                 self.loader.load_img = True
 
                 # load metric3d model
-                self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True).to(self.device)
+                if self.monodepth_on:
+                    self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True).to(self.device)
                 # TODO: install xformers for faster inference
             
         else: # original pin-slam generic loader
@@ -185,6 +188,8 @@ class SLAMDataset(Dataset):
         self.cur_sem_labels_full = None
         self.cur_point_normals = None
 
+        self.cur_point_cloud_mono_depth = None # point cloud results from image mono (metric) depth estimation
+
         # source data for registration
         self.cur_source_points = None
         self.cur_source_normals = None
@@ -259,9 +264,7 @@ class SLAMDataset(Dataset):
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
                     cur_img = cur_img.permute(2,0,1)/255
 
-                    
                     # TODO
-                    self.monodepth_on = False
                     if self.monodepth_on:
                         tic_metric3d = get_time()
                         pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
@@ -274,8 +277,10 @@ class SLAMDataset(Dataset):
                         # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
 
                         pred_depth_np = pred_depth[0].permute(1,2,0).detach().cpu().numpy()
+                        # pred_normal_np = pred_normal[0].permute(1,2,0).detach().cpu().numpy()
 
                         pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1])) # in metric3d, input/output should be 32x pix
+                        # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
@@ -289,7 +294,8 @@ class SLAMDataset(Dataset):
                         points_rgb = np.array(pred_pcd.colors, dtype=np.float64)
                         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-                        points = np.concatenate((points, points_xyzrgb), axis=0) # concat 
+                        self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
+                        # points = np.concatenate((points, points_xyzrgb), axis=0) # concat 
                         
                         # TODO: note
                         # better to have two point cloud, the lidar and the mono depth metric point cloud

@@ -132,7 +132,20 @@ conda activate pin
 conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.7 -c pytorch -c nvidia 
 ```
 
-The commands depend on your CUDA version. You may check the instructions [here](https://pytorch.org/get-started/previous-versions/).
+The commands depend on your CUDA version (check it by `nvcc --version`). You may check the instructions [here](https://pytorch.org/get-started/previous-versions/).
+
+<details>
+  <summary>[latest version pytorch (click to expand)]</summary>
+Now you can also install the latest version (2.4.0) by:
+```
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+
+Then you can install xformers for faster and more memory-efficient inference.
+```
+conda install xformers -c xformers
+```
+</details>
 
 ### 3. Install other dependency
 

@@ -189,6 +189,7 @@ class Mapper:
                 dtype=torch.float64
             )
 
+    # begin mapping
     def process_frame(
         self,
         point_cloud_torch: torch.tensor,
@@ -310,9 +311,15 @@ class Mapper:
         if self.config.prune_map_on and ((frame_id + 1) % self.config.prune_freq_frame == 0):
             if self.neural_points.prune_map(self.config.max_prune_certainty):
                 self.neural_points.recreate_hash(None, None, True, True, frame_id)
+        # update neural point map
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
+
+        # TODO
+        # update again with the mono_depth predicted point cloud, set another mask for these neural points
+
+
         # local map is also updated here
 
         if not self.silence:
