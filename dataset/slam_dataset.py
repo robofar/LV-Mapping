@@ -87,6 +87,7 @@ class SLAMDataset(Dataset):
 
                 # load metric3d model
                 self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True).to(self.device)
+                # TODO: install xformers for faster inference
             
         else: # original pin-slam generic loader
             # point cloud files

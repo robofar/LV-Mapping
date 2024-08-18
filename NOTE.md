@@ -5,24 +5,14 @@ For development, please create your own branch (for example, `dev/faris`).
 
 For questions and proposals, please raise issues or contact Yue and Starry via WhatsApp.
 
-## Requirements
+## Install
 
-1. follow the installation instruction of PIN-SLAM
+Just Follow the installation instruction of PIN-SLAM in `readme.md`.
 
-2. in PIN-SLAM's conda environment, try to install the other dependencies needed for [2DGS](https://github.com/hbb1/2d-gaussian-splatting), mainly `submodules/diff-surfel-rasterization`. Please follow 2D-GS's installation instruction:
+## TO Use
+Prepare the KITTI dataset, KITTI-360 dataset and Nuscenes dataset. You may directly contact Yue to get the dataset in the required structure.
 
-```
-cd ..
-git clone https://github.com/hbb1/2d-gaussian-splatting.git --recursive
-cd 2d-gaussian-splatting
-pip install submodules/diff-surfel-rasterization
-```
-
-We may change this to [gaussian-surfels](https://github.com/turandai/gaussian_surfels) later.
-
-3. Prepare the KITTI dataset, KITTI-360 dataset and Nuscenes dataset. You may directly contact Yue to get the dataset in the required structure.
-
-4. Add the `-s` flag to saved the resulting GS map in `.ply` format for offline inspection and evaluation 
+Add the `-s` flag to saved the resulting GS map in `.ply` format for offline inspection and evaluation 
 
 ### Visualization
 
