@@ -15,7 +15,7 @@ import torch
 import numpy as np
 from torch import nn
 from plyfile import PlyData, PlyElement
-from simple_knn._C import distCUDA2
+# from simple_knn._C import distCUDA2
 from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from gaussian_splatting.utils.system_utils import mkdir_p
 from gaussian_splatting.utils.sh_utils import RGB2SH

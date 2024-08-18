@@ -48,7 +48,7 @@ class Config:
         # dataset specific
         self.kitti_correction_on: bool = False # intrinsic vertical angle correction # issue 11
         self.correction_deg: float = 0.0
-        self.stop_frame_thre: int = 5 # determine if the robot is stopped when there's almost no motion in a time peroid # 20
+        self.stop_frame_thre: int = 10 # determine if the robot is stopped when there's almost no motion in a time peroid # 20
 
         # motion undistortion
         self.deskew: bool = False
@@ -84,8 +84,9 @@ class Config:
 
         # map-based dynamic filtering (observations in certain freespace are dynamic)
         self.dynamic_filter_on: bool = False
-        self.dynamic_certainty_thre: float = 0.5
-        self.dynamic_sdf_ratio_thre: float = 1.5
+        self.dynamic_certainty_thre: float = 0.5 # 0.5 
+        self.dynamic_sdf_ratio_thre: float = 0.5 # 1.5 # type1 dynamic
+        self.dynamic_min_grad_norm_thre: float = 0.25 # type2 dynamic
 
         # neural points
         self.voxel_size_m: float = 0.3 # we use the voxel hashing structure to maintain the neural points, the voxel size is set as this value      
@@ -218,6 +219,8 @@ class Config:
         self.lambda_sdf_normal: float = 1.0 # gaussian's normal should align with sdf's gradient direction
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
+        self.gs_batch_training_on: bool = False
+        self.gs_batch_frame: int = -1
 
         # tracking (odometry estimation)
         self.track_on: bool = True
@@ -375,6 +378,7 @@ class Config:
             self.dynamic_filter_on = config_args["process"].get("dynamic_filter_on", self.dynamic_filter_on)
             self.dynamic_sdf_ratio_thre = config_args["process"].get("dynamic_sdf_ratio_thre", self.dynamic_sdf_ratio_thre)
             self.dynamic_certainty_thre = config_args["process"].get("dynamic_certainty_thre", self.dynamic_certainty_thre)
+            self.dynamic_min_grad_norm_thre = config_args["process"].get("dynamic_min_grad_norm_thre", self.dynamic_min_grad_norm_thre)
             self.adaptive_range_on = config_args["process"].get("adaptive_range_on", self.adaptive_range_on)
             self.estimate_normal = config_args["process"].get("estimate_normal", self.estimate_normal)
 
@@ -527,6 +531,11 @@ class Config:
             self.movable_gs = config_args["gs"].get("movable_gs", self.movable_gs)
             self.lambda_dist = config_args["gs"].get("lambda_dist", self.lambda_dist) # weight for the distance distortion loss
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
+            
+            self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
+            if self.gs_batch_training_on:
+                self.gs_batch_frame = config_args["gs"].get("gs_batch_frame", self.gs_batch_frame)
+        
         
         # vis and eval
         if "eval" in config_args:

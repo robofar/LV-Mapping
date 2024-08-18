@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE msE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import glob
+import importlib
 import os
 
 import cv2
@@ -30,12 +31,18 @@ import numpy as np
 
 class KITTIOdometryDataset:
     def __init__(self, data_dir, sequence: str, *_, **__):
+        
+        try:
+            self.o3d = importlib.import_module("open3d")
+        except ModuleNotFoundError as err:
+            print(f'open3d is not installed on your system, run "pip install open3d"')
+            exit(1)
 
         self.sequence_id = str(sequence).zfill(2)
         self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
         
-        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
-        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne_static_mos/") # static point cloud
+        self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
+        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne_static_mos/") # static point cloud
 
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
         scan_count = len(self.scan_files)
@@ -49,6 +56,8 @@ class KITTIOdometryDataset:
         else:
             self.sem_available = False
 
+        # img related
+        self.load_img = False # default
         self.use_only_colorized_points = True
 
         # cam 2 (color)
@@ -60,6 +69,15 @@ class KITTIOdometryDataset:
         else:
             self.image_available = False
 
+        # load depth image predicted by depth-anything
+        if self.image_available:
+            self.img2_depth_dir = os.path.join(self.kitti_sequence_dir, "image_2_monodepth/")
+            self.img2_depth_files = sorted(glob.glob(self.img2_depth_dir + "*.npy"))
+
+            # load metric3d models
+            # self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True)
+
+
         # cam 3 (color)
         self.img3_dir = os.path.join(self.kitti_sequence_dir, "image_3/")
         self.img3_files = sorted(glob.glob(self.img3_dir + "*.png"))
@@ -68,10 +86,28 @@ class KITTIOdometryDataset:
 
         calib_data = self._load_calib() # load all calib first
 
+        self.left_cam_name = "cam2"
+
+        # LiDAR version
         if self.image_available: # now we use cam2 (left color)
-            self.left_cam_name = "cam2"
             self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
             self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
+
+        # FIXME: mono_depth rgbd version
+        # self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+        # self.intrinsic.set_intrinsics(height=1241,
+        #                             width=376,
+        #                             fx=calib_data["K_cam2"][0,0],
+        #                             fy=calib_data["K_cam2"][1,1],
+        #                             cx=calib_data["K_cam2"][0,2],
+        #                             cy=calib_data["K_cam2"][1,2])
+
+        # self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
+        # self.T_l_c = np.eye(4)
+        # self.T_c_l = np.linalg.inv(self.T_l_c)
+        # self.T_c_l_mats = {self.left_cam_name: self.T_c_l}
+        
+        ###
 
         # Load GT Poses (if available)
         if int(sequence) < 11:
@@ -83,7 +119,7 @@ class KITTIOdometryDataset:
         points = self.scans(idx)
         point_ts = self.get_timestamps(points)
 
-        if self.image_available:
+        if self.load_img and self.image_available:
             img = self.read_img(self.img2_files[idx]) # just for vis here
             img_dict = {self.left_cam_name: img}
 
@@ -105,6 +141,37 @@ class KITTIOdometryDataset:
             frame_data = {"points": points, "point_ts": point_ts}
 
         return frame_data
+    
+
+    # RGBD version
+    # def __getitem__(self, idx):
+    #     rgb_image = self.o3d.io.read_image(self.img2_files[idx])
+
+    #     depth = np.load(self.img2_depth_files[idx])
+
+    #     rgbd_image = self.o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+    #                                                                         self.o3d.geometry.Image(depth),
+    #                                                                         depth_scale=1.0, 
+    #                                                                         depth_trunc=100.0, 
+    #                                                                         convert_rgb_to_intensity=False)
+
+    #     pcd = self.o3d.geometry.PointCloud.create_from_rgbd_image(
+    #         rgbd_image, self.intrinsic)
+    #     # if self.down_sample_on:
+    #     #     pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)
+        
+    #     points_xyz = np.array(pcd.points, dtype=np.float64)
+    #     points_rgb = np.array(pcd.colors, dtype=np.float64)
+    #     points_xyzrgb = np.hstack((points_xyz, points_rgb))
+
+    #     rgb_image = np.array(rgb_image)
+
+    #     rgb_image_dict = {self.left_cam_name: rgb_image}
+
+    #     frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
+
+    #     return frame_data 
+
 
     def __len__(self):
         return len(self.scan_files)

@@ -10,6 +10,7 @@ import cv2 # TODO
 import matplotlib.cm as cm
 import numpy as np
 import open3d as o3d
+import random
 import torch
 import torch.nn.functional as F
 import wandb
@@ -107,7 +108,7 @@ class Mapper:
         self.cam_img_pool = []
         self.cam_img_pool_id = [] # not really useful
 
-    def dynamic_filter(self, points_torch, type_2_on: bool = False):
+    def dynamic_filter(self, points_torch, type_2_on: bool = True):
 
         if type_2_on:
             points_torch.requires_grad_(True)
@@ -140,10 +141,29 @@ class Mapper:
         # Strategy 2 [not used]
         # dynamic objects's sdf are often underestimated or unstable (already used for source point cloud)
         if type_2_on:
-            min_grad_norm = 0.3
-            certainty_thre = 0.5
+            min_grad_norm = self.config.dynamic_min_grad_norm_thre
+            certainty_thre = self.config.dynamic_certainty_thre
             static_mask_2 = (grad_norm > min_grad_norm) | (certainty < certainty_thre)
             static_mask = static_mask & static_mask_2
+
+        return static_mask
+
+    def dynamic_filter_neural_points(self):
+
+        geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
+            self.neural_points.local_neural_points, training_mode=False
+        )
+
+        sdf_pred = self.geo_mlp.sdf(geo_feature)    
+        # predict the scaled sdf with the feature # [N, K, 1]
+        if not self.config.weighted_first:
+            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
+
+        # print(sdf_pred[sdf_pred>2.0])
+
+        static_mask = (certainty < self.config.dynamic_certainty_thre) | (
+            sdf_pred < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+        )
 
         return static_mask
 
@@ -1321,8 +1341,16 @@ class Mapper:
             
         # rendered the last frame for vis
 
-        vis_cam_name = self.dataset.cam_names[0] # TODO # -1
-        cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
+        vis_cam_name = self.dataset.cam_names[0] # TODO # -1 
+
+        # if self.config.gs_batch_training_on: 
+        #     rand_idx = random.randint(0, len(self.cam_img_pool)-1) # random frame
+        #     cur_viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
+        # else: # lastest frame
+        #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
+
+        # use the oldest one in the pool
+        cur_viewpoint_cam: CamImage = self.cam_img_pool[0]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
 

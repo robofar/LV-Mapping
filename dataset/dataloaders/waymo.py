@@ -12,6 +12,7 @@ class WaymoDataset:
     def __init__(self, data_dir, *_, **__):
         
         self.use_only_lidar_top = True 
+        self.load_img = False # default
         self.use_only_colorized_points = True
 
         self.lidar_top_topic_name = "lidar_TOP" 
@@ -47,8 +48,9 @@ class WaymoDataset:
         self.lidar_side_right_dir = os.path.join(self.lidar_dir, self.lidar_side_right_topic_name)
         self.lidar_side_right_files = sorted(glob.glob(self.lidar_side_right_dir + "/*.pcd"))
 
-        self.img_dir = os.path.join(data_dir, "images") 
-        # self.img_dir = os.path.join(data_dir, "images_ud") # already undistorted?
+        self.img_dir = os.path.join(data_dir, "images_ud") # already undistorted?
+        if not os.path.exists(self.img_dir):
+            self.img_dir = os.path.join(data_dir, "images") 
 
         # camera front
         self.img_front_dir = os.path.join(self.img_dir, self.cam_front_topic_name)
@@ -65,6 +67,23 @@ class WaymoDataset:
         # camera side right
         self.img_side_right_dir = os.path.join(self.img_dir, self.cam_side_right_topic_name)
         self.img_side_right_files = sorted(glob.glob(self.img_side_right_dir + "/*.jpg"))
+
+        # add dynamic masks
+        self.img_mask_dir = os.path.join(data_dir, "masks") 
+        self.img_front_mask_dir = os.path.join(self.img_mask_dir, self.cam_front_topic_name)
+        self.img_front_mask_files = sorted(glob.glob(self.img_front_mask_dir + "/*.png"))
+
+        self.img_front_left_mask_dir = os.path.join(self.img_mask_dir, self.cam_front_left_topic_name)
+        self.img_front_left_mask_files = sorted(glob.glob(self.img_front_left_mask_dir + "/*.png"))
+
+        self.img_front_right_mask_dir = os.path.join(self.img_mask_dir, self.cam_front_right_topic_name)
+        self.img_front_right_mask_files = sorted(glob.glob(self.img_front_right_mask_dir + "/*.png"))
+
+        self.img_side_left_mask_dir = os.path.join(self.img_mask_dir, self.cam_side_left_topic_name)
+        self.img_side_left_mask_files = sorted(glob.glob(self.img_side_left_mask_dir + "/*.png"))
+
+        self.img_side_right_mask_dir = os.path.join(self.img_mask_dir, self.cam_side_right_topic_name)
+        self.img_side_right_mask_files = sorted(glob.glob(self.img_side_right_mask_dir + "/*.png"))
 
         # load calib and gt poses
         self.read_transform(os.path.join(data_dir, "transform.json"))
@@ -93,8 +112,13 @@ class WaymoDataset:
 
         points = points_homo
 
+        if not self.load_img:
+            frame_data = {"points": points}
+            return frame_data
+
         # points_ts = self.get_timestamps()
 
+        # load img
         img_front = self.read_img(self.img_front_files[idx])
         img_front_left = self.read_img(self.img_front_left_files[idx])
         img_front_right = self.read_img(self.img_front_right_files[idx])
@@ -121,7 +145,7 @@ class WaymoDataset:
         # # # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        frame_data = {"points": points, "point_ts": None, "img": img_dict}
+        frame_data = {"points": points, "img": img_dict}
 
         return frame_data
 

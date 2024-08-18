@@ -1,18 +1,26 @@
 setting: 
   name: "test_waymo_gs"
   output_root: "./experiments"
-  color_channel: 3
   deskew: False
-  color_map_on: True # pin slam does not make use of color
+  # color_channel: 3
+  # color_map_on: True # pin slam does not make use of color
 process:
   min_range_m: 1.0
   max_range_m: 80.0 # 80.0
   vox_down_m: 0.08
   estimate_normal: False
+  dynamic_filter_on: True
+  dynamic_sdf_ratio_thre: 0.5
+  dynamic_certainty_thre: 1.0
+  dynamic_min_grad_norm_thre: 0.3
 sampler:
-  surface_sample_range_m: 0.25 
+  surface_sample_range_m: 0.25
+  surface_sample_n: 3
+  free_sample_begin_ratio: 0.3
+  free_sample_end_dist_m: 1.0
+  free_front_sample_n: 4 
 neuralpoints:
-  voxel_size_m: 0.25
+  voxel_size_m: 0.3
   search_alpha: 0.5
 gs: 
   gs_iters: 10
@@ -20,7 +28,7 @@ gs:
   gs_keyframe_interval: 1
   img_pool_size: 50
   gs_down_rate: 2
-  gs_vis_down_rate: 1
+  gs_vis_down_rate: 2
   sh_degree: 1
   movable_gs: True
 continual:
@@ -28,7 +36,7 @@ continual:
   pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
-  source_vox_down_m: 1.2
+  source_vox_down_m: 0.8
   iter_n: 20
   term_deg: 0.1
 pgo:

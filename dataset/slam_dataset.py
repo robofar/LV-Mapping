@@ -82,6 +82,11 @@ class SLAMDataset(Dataset):
             if hasattr(self.loader, "T_c_l_mats"):
                 self.T_c_l_mats = self.loader.T_c_l_mats # as dictionary
                 # print(self.T_c_l_mats)
+            if config.color_channel == 3:
+                self.loader.load_img = True
+
+                # load metric3d model
+                self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True).to(self.device)
             
         else: # original pin-slam generic loader
             # point cloud files
@@ -248,11 +253,22 @@ class SLAMDataset(Dataset):
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
                 for cam_name in cam_list:
-                    cur_img = torch.from_numpy(img_dict[cam_name]).float().permute(2,0,1)/255
+                    cur_img = torch.from_numpy(img_dict[cam_name]).float().to(self.device)
+                    cur_img = cur_img.permute(2,0,1)/255
+
+                    # TODO
+                    pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
+                    # print(pred_depth)
+                    pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
+                    # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+
+                    # cur_img = cur_img.permute(2,0,1)/255
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.2,
                                                           cam_name, img_down_rate, self.device)
+
+        
 
             if "imus" in dict_keys:
                 self.cur_frame_imus = frame_data["imus"]
@@ -621,7 +637,7 @@ class SLAMDataset(Dataset):
 
         # visualize or not
         # uncomment to visualize the dynamic mask
-        if self.config.dynamic_filter_on and self.static_mask is not None:
+        if (self.config.dynamic_filter_on) and (self.static_mask is not None) and (not self.stop_status):
             static_mask = self.static_mask.detach().cpu().numpy()
             frame_colors_np = np.ones_like(frame_points_np) * 0.7
             frame_colors_np[~static_mask, 1:] = 0.0

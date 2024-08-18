@@ -102,6 +102,12 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 ```
 python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -dvl
 ```
 
 **pass**
@@ -162,6 +168,44 @@ python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_
 ... ...
 
 
+## Mono depth prediction by depth anything
+
+```
+git clone https://github.com/DepthAnything/Depth-Anything-V2
+cd Depth-Anything-V2/metric_depth
+
+# download the model checkpoints
+
+# example for kitti dataset
+
+# rgb2depth
+python run.py \
+--encoder vits \
+--load-from ./checkpoints/depth_anything_v2_metric_vkitti_vits.pth \
+--max-depth 80 \
+--img-path ../../PINGS/data/kitti/sequences/04/image_2/ \
+--outdir ../../PINGS/data/kitti/sequences/04/image_2_monodepth/ \
+--save-numpy \
+--pred-only
+
+
+# img2ply
+python depth_to_pointcloud.py \
+--encoder vits \
+--load-from ./checkpoints/depth_anything_v2_metric_vkitti_vits.pth \
+--max-depth 80 \
+--img-path ../../PINGS/data/kitti/sequences/04/image_2/ \
+--outdir ../../PINGS/data/kitti/sequences/04/image_2_ply/ \
+--focal-length-x 718.856 \
+--focal-length-y 718.856 
+
+```
+
+### Sample more freespace point and then we can build static map
+Then you can actually use this static map to prune those neural points (gaussians) in the freespace
+Prune non-free neural points with too large SDF value 
+
+
 ## GS Visualizer
 
 [Three.js Viewer](https://projects.markkellogg.org/threejs/demo_gaussian_splats_3d.php)
@@ -176,7 +220,7 @@ python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_
 
 - [ ] Add pruning
 - [ ] Keyframe strategy
-- [ ] Batch mode
+- [x] Batch mode
 - [ ] Add SDF / SDF gradient consistency loss
 - [ ] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
@@ -184,6 +228,7 @@ python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_
 - [ ] Sky (out-of-lidar-fov) masking
 - [ ] Level of details
 - [ ] Evaluate Chamfer distance and PSNR
+- [ ] Add BoW python for image place recognition (loop detection)
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)

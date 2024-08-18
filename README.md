@@ -122,7 +122,7 @@ PIN-SLAM can run at the sensor frame rate on a moderate GPU.
 ### 1. Set up conda environment
 
 ```
-conda create --name pin python=3.8
+conda create --name pin python=3.10
 conda activate pin
 ```
 

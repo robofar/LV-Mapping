@@ -17,6 +17,8 @@ from utils.config import Config
 from utils.tools import color_to_intensity, get_gradient, get_time, transform_torch
 
 
+# TODO: add splat-based rendering loss for pose tracking
+
 class Tracker:
     def __init__(
         self,

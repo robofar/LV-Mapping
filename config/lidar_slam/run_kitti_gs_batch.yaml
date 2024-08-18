@@ -13,31 +13,27 @@ process:
 sampler:
   surface_sample_range_m: 0.25
 neuralpoints:
-  voxel_size_m: 0.3 # 0.5
+  voxel_size_m: 0.2 # 0.5
   search_alpha: 0.5
-loss:
-  sigma_sigmoid_m: 0.08
-  loss_weight_on: True
-  dist_weight_scale: 0.8
-  ekional_loss_on: True
-  weight_e: 0.5
 gs:
-  gs_iters: 5
+  gs_iters: 2000
   gs_bs: 5
   gs_keyframe_interval: 1
-  img_pool_size: 20
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
+  img_pool_size: 50
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
   sh_degree: 1
   # lambda_dist: 0.0
   # lambda_normal: 0.0
+  gs_batch_training_on: True
+  gs_batch_frame: 50
 continual:
-  batch_size_new_sample: 2000
+  batch_size_new_sample: 1000
   pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
   photo_loss: False
-  source_vox_down_m: 0.6
+  source_vox_down_m: 1.2
   iter_n: 20
   term_deg: 0.1
 pgo:
@@ -51,5 +47,5 @@ optimizer: # mappers
   adaptive_iters: True
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
+  mesh_min_nn: 9
   sensor_cad_path: ./cad/kitti_car.ply
