@@ -182,6 +182,8 @@ class NeuralPoints(nn.Module):
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
+        # restricted by sdf or not
+        self.free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
         # set neighborhood search region
         self.set_search_neighborhood(
@@ -360,6 +362,7 @@ class NeuralPoints(nn.Module):
         sensor_position: torch.Tensor,
         sensor_orientation: torch.Tensor,
         cur_ts,
+        is_reliable: bool = True
     ):
         # update the neural point map using new observations
 
@@ -480,6 +483,11 @@ class NeuralPoints(nn.Module):
         self.point_certainties = torch.cat((self.point_certainties, new_certainty), 0)
 
         # gaussian parameters
+        if is_reliable:
+            new_free_mask = torch.zeros((new_point_count), dtype=bool, device=self.device)
+        else:
+            new_free_mask = torch.ones((new_point_count), dtype=bool, device=self.device)
+        self.free_gs_mask = torch.cat((self.free_gs_mask, new_free_mask), 0)
 
         new_xyz = torch.zeros((new_point_count,3), device=self.device, dtype=self.dtype)
         self.xyz = torch.cat((self.xyz, new_xyz), 0) # displacement

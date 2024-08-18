@@ -198,6 +198,7 @@ class Mapper:
         cur_pose_torch: torch.tensor,
         frame_id: int,
         filter_dynamic: bool = False,
+        mono_depth_point_cloud_torch: torch.tensor = None,
     ):
 
         # points_torch contains both the coordinate and the color (intensity)
@@ -315,6 +316,11 @@ class Mapper:
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
+        if mono_depth_point_cloud_torch is not None:
+            update_points_mono_depth = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
+            self.neural_points.update(
+                update_points_mono_depth, mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, frame_orientation_torch, frame_id
+            )
 
         # TODO
         # update again with the mono_depth predicted point cloud, set another mask for these neural points

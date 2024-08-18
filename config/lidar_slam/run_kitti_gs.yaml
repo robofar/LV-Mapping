@@ -35,11 +35,11 @@ continual:
   batch_size_new_sample: 2000
   pool_capacity: 1e7
   pool_filter_freq: 10
-# tracker:
-#   photo_loss: False
-#   source_vox_down_m: 0.6
-#   iter_n: 20
-#   term_deg: 0.1
+tracker:
+  photo_loss: False
+  source_vox_down_m: 0.6
+  iter_n: 20
+  term_deg: 0.1
 pgo:
   map_context: True
   pgo_freq_frame: 30
