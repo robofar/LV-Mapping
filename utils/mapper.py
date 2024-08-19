@@ -316,13 +316,20 @@ class Mapper:
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
+
         if mono_depth_point_cloud_torch is not None: 
             # use the mono depth estimation results to do the initialization
-            update_points_mono_depth = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
-            self.neural_points.update(
-                update_points_mono_depth, mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, 
-                frame_orientation_torch, frame_id, is_reliable = False
-            )
+            mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
+            
+            # we currently use a easy fix for ground robot to use only the points with large height value
+            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.95)
+            mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
+            mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
+            if mono_depth_point_cloud_torch.shape[0] > 0:
+                self.neural_points.update(
+                    mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, 
+                    frame_orientation_torch, frame_id, is_reliable = False
+                )
 
         # TODO
         # update again with the mono_depth predicted point cloud, set another mask for these neural points

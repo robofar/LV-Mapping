@@ -101,6 +101,10 @@ class MapVisualizer:
         self.vis_pc_color: bool = True
         self.pc_uniform_color: bool = False
 
+        self.vis_gaussian_normal: bool = False
+        self.vis_free_gaussian: bool = False
+        self.vis_mono_depth_frame: bool = False
+
         self.vis_only_cur_samples: bool = False
 
         self.mc_res_change_interval_m: float = 0.2 * self.mc_res_m
@@ -255,6 +259,7 @@ class MapVisualizer:
         self._register_key_callback(["T"], self._toggle_trajectory)
         self._register_key_callback(["Y"], self._toggle_gt_trajectory)
         self._register_key_callback(["U"], self._toggle_odom_trajectory)
+        self._register_key_callback(["N"], self._toggle_gaussian_normals)
         self._register_key_callback(["G"], self._toggle_global)
         self._register_key_callback(["Z"], self._save_cur_vis)
         self._register_key_callback([";"], self._toggle_loop_debug)
@@ -269,6 +274,9 @@ class MapVisualizer:
         self._register_key_callback(["5"], self._toggle_point_color)
         self._register_key_callback(["6"], self._toggle_uniform_color)
         self._register_key_callback(["7"], self._switch_background)
+        self._register_key_callback(["8"], self._toggle_free_gaussian)
+        self._register_key_callback(["0"], self._toggle_mono_depth_frame)
+        
         # self.vis.register_key_callback(262, partial(self._toggle_)) # right arrow # for future
         # self.vis.register_key_callback(263, partial(self._toggle_)) # left arrow
         self.vis.register_key_callback(
@@ -288,10 +296,18 @@ class MapVisualizer:
         self.reset_bounding_box = not self.reset_bounding_box
         vis.reset_view_point(True)
 
-    def _toggle_point_color(
-        self, vis
-    ):  # actually used to show the source point cloud weight for registration
+    # actually used to show the source point cloud weight for registration
+    def _toggle_point_color(self, vis):
         self.vis_pc_color = not self.vis_pc_color
+
+    def _toggle_free_gaussian(self, vis):
+        self.vis_free_gaussian = not self.vis_free_gaussian
+    
+    def _toggle_gaussian_normals(self, vis):
+        self.vis_gaussian_normal = not self.vis_gaussian_normal
+
+    def _toggle_mono_depth_frame(self, vis):
+        self.vis_mono_depth_frame = not self.vis_mono_depth_frame
 
     def _quit(self, vis):
         print("Destroying Visualizer")

@@ -355,13 +355,15 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             neural_pcd = None
             if o3d_vis.render_neural_points or (frame_id == last_frame): # last frame also vis
                 neural_pcd = neural_points.get_neural_points_o3d(query_global=o3d_vis.vis_global, color_mode=o3d_vis.neural_points_vis_mode, 
-                                                                 random_down_ratio=1, cur_sensor_position=dataset.cur_pose_ref[:3,3]) # select from geo_feature, ts and certainty
+                                                                 random_down_ratio=1, cur_sensor_position=dataset.cur_pose_ref[:3,3], 
+                                                                 vis_normals=o3d_vis.vis_gaussian_normal,
+                                                                 vis_free_gaussians=o3d_vis.vis_free_gaussian) # select from geo_feature, ts and certainty
 
             # reconstruction by marching cubes
             if config.mesh_freq_frame > 0:
                 if o3d_vis.render_mesh and (frame_id == 0 or frame_id == last_frame or (frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
                     # update map bbx
-                    global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=23) # prime number
+                    global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=41) # prime number
                     dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
                     
                     mesh_path = None # no need to save the mesh
@@ -398,7 +400,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis()
             loop_edges = pgm.loop_edges_vis if config.pgo_on else None
             o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
-            o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+            
+            frame_point_cloud_for_vis = dataset.cur_frame_o3d
+            if o3d_vis.vis_mono_depth_frame:
+                frame_point_cloud_for_vis.paint_uniform_color(np.array([1.0, 0, 0])) # RED
+                frame_point_cloud_for_vis += dataset.cur_frame_mono_depth_o3d
+                
+            o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
 
             if config.rerun_vis_on:
                 if neural_pcd is not None:

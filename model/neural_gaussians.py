@@ -141,9 +141,9 @@ class NeuralPoints(nn.Module):
         self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning
 
-        self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
-        self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
-        self.denom = torch.empty(0, dtype=self.dtype, device=self.device)
+        # self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
+        # self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
+        # self.denom = torch.empty(0, dtype=self.dtype, device=self.device)
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = self.config.max_range # scene size
@@ -171,6 +171,7 @@ class NeuralPoints(nn.Module):
 
         # Local Gaussian parameters
         self.local_xyz = nn.Parameter()
+        # self.local_xyz_free = nn.Parameter()
         self.local_features_dc = nn.Parameter()
         self.local_features_rest = nn.Parameter()
         self.local_scaling = nn.Parameter()
@@ -310,11 +311,15 @@ class NeuralPoints(nn.Module):
         # TODO: it's also necessary to duplicate, clone, split the gaussians
 
 
-        self.xyz_gradient_accum = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
-        self.denom = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
+        # self.xyz_gradient_accum = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
+        # self.denom = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
+
+        # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
+        # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
 
         l = [
             {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+            # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
             {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
             {'params': [self.local_features_rest], 'lr': self.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self.local_opacity], 'lr': self.opacity_lr, "name": "opacity"},
@@ -540,8 +545,8 @@ class NeuralPoints(nn.Module):
 
         self.opacity = torch.cat((self.opacity, new_opacities), 0)
 
-        new_max_radii2D = torch.zeros((new_point_count), dtype=self.dtype, device=self.device)
-        self.max_radii2D = torch.cat((self.max_radii2D, new_max_radii2D), 0)
+        # new_max_radii2D = torch.zeros((new_point_count), dtype=self.dtype, device=self.device)
+        # self.max_radii2D = torch.cat((self.max_radii2D, new_max_radii2D), 0)
 
         self.reset_local_map(
             sensor_position, sensor_orientation, cur_ts
@@ -683,9 +688,8 @@ class NeuralPoints(nn.Module):
 
         # T10 = get_time()
         
-        # TODO
+        # Only use the reliable neural points for SDF mapping
         invalid_point_mask = self.free_gs_mask[idx] 
-        # print(invalid_point_mask)
         idx[invalid_point_mask] = -1
 
         # print("K=", idx.shape[-1]) # K
@@ -923,7 +927,8 @@ class NeuralPoints(nn.Module):
         color_mode: int = -1,
         random_down_ratio: int = 1,
         cur_sensor_position = None,
-        vis_normals = True
+        vis_normals = False,
+        vis_free_gaussians = False,
     ):
 
         ratio_vis = 1.5
@@ -934,9 +939,14 @@ class NeuralPoints(nn.Module):
 
         if color_mode == 0 or color_mode == 1:  # "gaussian fused color" # here we do not use random_down_ratio            
             if query_global:
+                if vis_free_gaussians:
+                    shown_gaussian_mask = self.valid_color_mask
+                else:
+                    shown_gaussian_mask = self.valid_color_mask & (~self.free_gs_mask)
+                
                 if color_mode == 0:
                     neural_points_np = (
-                        self.get_gaussian_xyz[self.valid_color_mask]
+                        self.get_gaussian_xyz[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()
@@ -944,21 +954,21 @@ class NeuralPoints(nn.Module):
                     )
                 else:
                     neural_points_np = (
-                        self.neural_points[self.valid_color_mask]
+                        self.neural_points[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()
                         .astype(np.float64)
                     )
                 gaussian_rgb_np = (
-                    self.features_dc[self.valid_color_mask, 0]
+                    self.features_dc[shown_gaussian_mask, 0]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
                 )
                 # alpha_np =  (
-                #     self.get_opacity[self.valid_color_mask]
+                #     self.get_opacity[shown_gaussian_mask]
                 #     .cpu()
                 #     .detach()
                 #     .numpy()
@@ -966,16 +976,21 @@ class NeuralPoints(nn.Module):
                 # )
                 if vis_normals:
                     normal_np =  (
-                        rotation2normal(self.get_rotation[self.valid_color_mask])
+                        rotation2normal(self.get_rotation[shown_gaussian_mask])
                         .cpu()
                         .detach()
                         .numpy()
                         .astype(np.float64)
                     )
-            else:
+            else: # only show local map
+                if vis_free_gaussians:
+                    shown_gaussian_mask = self.local_valid_color_mask
+                else:
+                    shown_gaussian_mask = self.local_valid_color_mask & (~self.local_free_gs_mask)
+
                 if color_mode == 0:
                     neural_points_np = (
-                        self.get_local_gaussian_xyz[self.local_valid_color_mask]
+                        self.get_local_gaussian_xyz[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()
@@ -983,21 +998,21 @@ class NeuralPoints(nn.Module):
                     )
                 else:
                     neural_points_np = (
-                        self.local_neural_points[self.local_valid_color_mask]
+                        self.local_neural_points[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()
                         .astype(np.float64)
                     )
                 gaussian_rgb_np = (
-                    self.local_features_dc[self.local_valid_color_mask, 0]
+                    self.local_features_dc[shown_gaussian_mask, 0]
                     .cpu()
                     .detach()
                     .numpy()
                     .astype(np.float64)
                 )
                 # alpha_np =  (
-                #     self.get_local_opacity[self.local_valid_color_mask]
+                #     self.get_local_opacity[shown_gaussian_mask]
                 #     .cpu()
                 #     .detach()
                 #     .numpy()
@@ -1005,7 +1020,7 @@ class NeuralPoints(nn.Module):
                 # )
                 if vis_normals:
                     normal_np =  (
-                        rotation2normal(self.get_local_rotation[self.local_valid_color_mask])
+                        rotation2normal(self.get_local_rotation[shown_gaussian_mask])
                         .cpu()
                         .detach()
                         .numpy()
@@ -1017,7 +1032,7 @@ class NeuralPoints(nn.Module):
             if vis_normals:
                 neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
 
-
+        # temporalily desabled
         else:
             if query_global:
                 neural_points_np = (

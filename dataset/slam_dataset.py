@@ -180,6 +180,8 @@ class SLAMDataset(Dataset):
         self.map_down_o3d = o3d.geometry.PointCloud()
         # map bounding box in the world coordinate system
         self.map_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # current frame mono depth predicted point cloud
+        self.cur_frame_mono_depth_o3d = o3d.geometry.PointCloud()
 
         self.static_mask = None
 
@@ -287,10 +289,14 @@ class SLAMDataset(Dataset):
                         cur_img_o3d = o3d.geometry.Image(cur_img_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
 
-                        rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, depth_scale=1.0, depth_trunc=self.config.max_range*1.1, convert_rgb_to_intensity=False)
+                        # change the depth_scale here
+                        rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, 
+                            depth_scale=1.0, depth_trunc=self.config.max_range*1.1, convert_rgb_to_intensity=False)
                                                                                 
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+                        
+                        self.cur_frame_mono_depth_o3d = pred_pcd
 
                         points_xyz = np.array(pred_pcd.points, dtype=np.float64)
                         points_rgb = np.array(pred_pcd.colors, dtype=np.float64)
@@ -717,6 +723,10 @@ class SLAMDataset(Dataset):
         self.cur_frame_o3d = frame_o3d
         if self.cur_frame_o3d.has_points():
             self.cur_bbx = self.cur_frame_o3d.get_axis_aligned_bounding_box()
+
+        # transform mono depth point cloud
+        if self.monodepth_on and self.cur_frame_mono_depth_o3d.has_points(): 
+            self.cur_frame_mono_depth_o3d = self.cur_frame_mono_depth_o3d.transform(self.cur_pose_ref)
 
         cur_max_z = self.cur_bbx.get_max_bound()[-1]
         cur_min_z = self.cur_bbx.get_min_bound()[-1]
