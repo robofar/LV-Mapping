@@ -28,6 +28,7 @@ from pathlib import Path
 
 # from PIL import Image 
 import cv2
+import open3d as o3d
 
 import numpy as np
 
@@ -79,6 +80,18 @@ class KITTI360Dataset:
 
         self.T_c_l_mats["cam_left_rect"] = self.T_c_l
         self.K_mats["cam_left_rect"] = self.K_mat_left
+
+        self.main_cam_name = "cam_left_rect"
+        
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic.set_intrinsics(
+                                        height=376,
+                                        width=1408,
+                                        fx=self.K_mat_left[0,0],
+                                        fy=self.K_mat_left[1,1],
+                                        cx=self.K_mat_left[0,2],
+                                        cy=self.K_mat_left[1,2])
+        self.extrinsic = self.T_c_l
 
         # right cam
         self.cam1_dir = os.path.join(self.img_root_dir, f"image_00/{img_type}/")

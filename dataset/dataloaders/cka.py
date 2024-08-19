@@ -27,17 +27,13 @@ import json
 from pathlib import Path
 
 import numpy as np
+import open3d as o3d
 
 # CKA RGBD dataset in the greenhouse
 # or general RGBD data collected by realsense
 
 class CKADataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
-        try:
-            self.o3d = importlib.import_module("open3d")
-        except ModuleNotFoundError as err:
-            print(f'open3d is not installed on your system, run "pip install open3d"')
-            exit(1)
 
         self.rgb_dir = os.path.join(data_dir, "color/")
         self.depth_dir = os.path.join(data_dir, "depth/")
@@ -95,7 +91,7 @@ class CKADataset:
 
             self.T_c_l_mats = {"cam_mid": self.T_c_l}
                     
-            self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+            self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(height=height,
                                           width=width,
                                           fx=self.fx,
@@ -113,17 +109,17 @@ class CKADataset:
         return len(self.depth_frames)
 
     def __getitem__(self, idx):
-        rgb_image = self.o3d.io.read_image(self.rgb_frames[idx])
+        rgb_image = o3d.io.read_image(self.rgb_frames[idx])
 
         depth = np.load(self.depth_frames[idx])
 
-        rgbd_image = self.o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
-                                                                            self.o3d.geometry.Image(depth),
+        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                            o3d.geometry.Image(depth),
                                                                             depth_scale=self.depth_scale, 
                                                                             depth_trunc=self.max_depth_m, 
                                                                             convert_rgb_to_intensity=False)
 
-        pcd = self.o3d.geometry.PointCloud.create_from_rgbd_image(
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image, self.intrinsic)
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)

@@ -25,15 +25,11 @@ import os
 from pathlib import Path
 from natsort import natsorted
 import numpy as np
+import open3d as o3d
 
 
 class NeuralRGBDDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
-        try:
-            self.o3d = importlib.import_module("open3d")
-        except ModuleNotFoundError as err:
-            print(f'open3d is not installed on your system, run "pip install open3d"')
-            exit(1)
 
         sequence_dir = os.path.join(data_dir, sequence)
         rgb_folder_path = os.path.join(sequence_dir, 'images')
@@ -66,7 +62,7 @@ class NeuralRGBDDataset:
 
         self.K_mats = {"cam": self.K_mat}
 
-        self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         self.intrinsic.set_intrinsics(height=H,
                                       width=W,
                                       fx=self.fx,
@@ -112,15 +108,15 @@ class NeuralRGBDDataset:
 
     def __getitem__(self, idx):
 
-        rgb_image = self.o3d.io.read_image(self.rgb_frames[idx])
-        depth_image = self.o3d.io.read_image(self.depth_frames[idx])
-        rgbd_image = self.o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+        rgb_image = o3d.io.read_image(self.rgb_frames[idx])
+        depth_image = o3d.io.read_image(self.depth_frames[idx])
+        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                             depth_image, 
                                                                             depth_scale=self.depth_scale, 
                                                                             depth_trunc=self.max_depth_m, 
                                                                             convert_rgb_to_intensity=False)
 
-        pcd = self.o3d.geometry.PointCloud.create_from_rgbd_image(
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image, self.intrinsic, self.extrinsic)
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)

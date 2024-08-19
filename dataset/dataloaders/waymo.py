@@ -202,6 +202,19 @@ class WaymoDataset:
                 cam_extrinsic = np.array(cam_params["extrinsic"]) # T_b_c
                 self.T_c_l_mats[cam_name] = np.linalg.inv(cam_extrinsic) @ self.lidar_top_extrinsic # T_c_l
 
+        self.main_cam_name = "FRONT"
+        main_cam_K_mat = self.K_mats[self.main_cam_name]
+        main_cam_extrinsic = self.T_c_l_mats[self.main_cam_name]
+
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic.set_intrinsics(height=1280,
+                                        width=1920,
+                                        fx=main_cam_K_mat[0,0],
+                                        fy=main_cam_K_mat[1,1],
+                                        cx=main_cam_K_mat[0,2],
+                                        cy=main_cam_K_mat[1,2])
+        self.extrinsic = main_cam_extrinsic
+
         # gt poses still have some problem 
         #     frame_trans = transforms_dict["frames"]
         #     for frame_meta in frame_trans:

@@ -164,4 +164,5 @@ data/
 experiments/
 .vscode/
 
+.json
 # NOTE.md

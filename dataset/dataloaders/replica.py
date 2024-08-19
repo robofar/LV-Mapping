@@ -28,6 +28,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import open3d as o3d
 
 # The Replica dataset is a commonly used synthetic RGB-D dataset
 # It can be downloaded from: https://cvg-data.inf.ethz.ch/nice-slam/data/Replica.zip
@@ -35,11 +36,6 @@ import numpy as np
 
 class ReplicaDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
-        try:
-            self.o3d = importlib.import_module("open3d")
-        except ModuleNotFoundError as err:
-            print(f'open3d is not installed on your system, run "pip install open3d"')
-            exit(1)
 
         sequence_dir = os.path.join(data_dir, sequence)
 
@@ -50,7 +46,7 @@ class ReplicaDataset:
         self.poses_fn = os.path.join(sequence_dir, "traj.txt")
         self.gt_poses = self.load_poses(self.poses_fn)
 
-        self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         # From cam_params.json, shared by all sequences
         
         self.fx = 600.0
@@ -93,19 +89,19 @@ class ReplicaDataset:
         return poses.reshape((n, 4, 4)) 
 
     def __getitem__(self, idx):
-        rgb_image = self.o3d.io.read_image(self.rgb_frames[idx])
-        depth_image = self.o3d.io.read_image(self.depth_frames[idx])
+        rgb_image = o3d.io.read_image(self.rgb_frames[idx])
+        depth_image = o3d.io.read_image(self.depth_frames[idx])
 
         # print(rgb_image)
         # print(depth_image)
 
-        rgbd_image = self.o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                             depth_image, 
                                                                             depth_scale=self.depth_scale, 
                                                                             depth_trunc=self.max_depth_m, 
                                                                             convert_rgb_to_intensity=False)
 
-        pcd = self.o3d.geometry.PointCloud.create_from_rgbd_image(
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image, self.intrinsic)
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)

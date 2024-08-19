@@ -26,20 +26,16 @@ import os
 from pathlib import Path
 
 import numpy as np
+import open3d as o3d
 
 class TUMDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
-        try:
-            self.o3d = importlib.import_module("open3d")
-        except ModuleNotFoundError as err:
-            print(f'open3d is not installed on your system, run "pip install open3d"')
-            exit(1)
-
+ 
         sequence_dir = os.path.join(data_dir, sequence)
 
         self.rgb_frames, self.depth_frames, self.gt_poses = self.loadtum(sequence_dir)
 
-        self.intrinsic = self.o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         H, W = 480, 640
 
         if "freiburg1" in sequence:
@@ -148,14 +144,14 @@ class TUMDataset:
 
     def __getitem__(self, idx): 
         
-        im_color = self.o3d.io.read_image(self.rgb_frames[idx])
+        im_color = o3d.io.read_image(self.rgb_frames[idx])
         # print(im_color)
 
-        im_depth = self.o3d.io.read_image(self.depth_frames[idx]) 
-        rgbd_image = self.o3d.geometry.RGBDImage.create_from_tum_format(im_color,
+        im_depth = o3d.io.read_image(self.depth_frames[idx]) 
+        rgbd_image = o3d.geometry.RGBDImage.create_from_tum_format(im_color,
             im_depth, convert_rgb_to_intensity=False)
 
-        pcd = self.o3d.geometry.PointCloud.create_from_rgbd_image(
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image,
             self.intrinsic
         )

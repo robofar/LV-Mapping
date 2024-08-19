@@ -269,7 +269,7 @@ class SLAMDataset(Dataset):
                     cur_img = cur_img.permute(2,0,1)/255
 
                     # TODO
-                    if self.monodepth_on:
+                    if self.monodepth_on and cam_name == self.loader.main_cam_name:
                         tic_metric3d = get_time()
                         pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
                         toc_metric3d = get_time()
