@@ -90,7 +90,9 @@ class SLAMDataset(Dataset):
 
                 # load metric3d model
                 if self.monodepth_on:
-                    self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True).to(self.device)
+                    model_name = 'metric3d_vit_small' # faster, 80 ms
+                    # model_name = 'metric3d_vit_large' # slower, 450 ms
+                    self.metric3d = torch.hub.load('yvanyin/metric3d', model_name, pretrain=True).to(self.device)
                 # TODO: install xformers for faster inference
             
         else: # original pin-slam generic loader

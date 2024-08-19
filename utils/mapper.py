@@ -316,10 +316,12 @@ class Mapper:
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
-        if mono_depth_point_cloud_torch is not None:
+        if mono_depth_point_cloud_torch is not None: 
+            # use the mono depth estimation results to do the initialization
             update_points_mono_depth = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
             self.neural_points.update(
-                update_points_mono_depth, mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, frame_orientation_torch, frame_id
+                update_points_mono_depth, mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, 
+                frame_orientation_torch, frame_id, is_reliable = False
             )
 
         # TODO
@@ -1301,8 +1303,10 @@ class Mapper:
             
             use_only_valid_gaussians = True
             
+            constraint_mask = self.neural_points.local_valid_color_mask & (~self.neural_points.local_free_gs_mask)
+
             if use_only_valid_gaussians:
-                scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
+                scaling = self.neural_points.get_local_scaling[constraint_mask] # only use those valid ones
             else:
                 scaling = self.neural_points.get_local_scaling
             isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
@@ -1313,8 +1317,8 @@ class Mapper:
 
             # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
             if use_only_valid_gaussians:
-                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[self.neural_points.local_valid_color_mask]
-                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[self.neural_points.local_valid_color_mask])
+                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[constraint_mask]
+                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[constraint_mask])
             else:
                 valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz
                 valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation)

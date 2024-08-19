@@ -181,6 +181,7 @@ class NeuralPoints(nn.Module):
         self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device)
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
+        self.local_free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
         # restricted by sdf or not
         self.free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
@@ -604,6 +605,8 @@ class NeuralPoints(nn.Module):
 
         self.local_valid_color_mask = self.valid_color_mask[local_mask]
 
+        self.local_free_gs_mask = self.free_gs_mask[local_mask]
+
         local_mask = torch.cat(
             (local_mask, torch.tensor([True], device=self.device))
         )  # padding with one element in the end
@@ -646,6 +649,7 @@ class NeuralPoints(nn.Module):
         self.rotation[local_mask[:-1]] = self.local_rotation.data
         self.opacity[local_mask[:-1]] = self.local_opacity.data
 
+    # not use the free gaussians (neural points)
     def query_feature(
         self,
         query_points: torch.Tensor,
@@ -654,8 +658,9 @@ class NeuralPoints(nn.Module):
         query_locally: bool = True,
         query_geo_feature: bool = True,
         query_color_feature: bool = False,
+        use_free_points: bool = False,
     ):
-
+        
         if not query_geo_feature and not query_color_feature:
             sys.exit("you need to at least query one kind of feature")
 
@@ -677,23 +682,27 @@ class NeuralPoints(nn.Module):
         # if query globally, we do not have the time filtering
 
         # T10 = get_time()
+        
+        # TODO
+        invalid_point_mask = self.free_gs_mask[idx] 
+        # print(invalid_point_mask)
+        idx[invalid_point_mask] = -1
 
         # print("K=", idx.shape[-1]) # K
         if query_locally:
-            idx = self.global2local[
-                idx
-            ]  # [N, K] # get the local idx using the global2local mapping
+            idx = self.global2local[idx]
+            # [N, K] # get the local idx using the global2local mapping
 
-        nn_counts = (idx >= 0).sum(
-            dim=-1
-        )  # then it could be larger than nn_k because this is before the sorting
+        nn_counts = (idx >= 0).sum(dim=-1)
+        # then it could be larger than nn_k because this is before the sorting
 
         # T1 = get_time()
 
         dists2[idx == -1] = 9e3  # invalid, set to large distance
-        sorted_dist2, sorted_neigh_idx = torch.sort(
-            dists2, dim=1
-        )  # sort according to distance
+
+        # sort according to distance
+        sorted_dist2, sorted_neigh_idx = torch.sort(dists2, dim=1)
+        
         sorted_idx = idx.gather(1, sorted_neigh_idx)
         dists2 = sorted_dist2[:, :nn_k]  # only take the knn
         idx = sorted_idx[:, :nn_k]  # sorted local idx, only take the knn
@@ -703,6 +712,8 @@ class NeuralPoints(nn.Module):
         # T2 = get_time()
 
         valid_mask = idx >= 0  # [N, K]
+
+        # valid_mask = (idx >= 0) & ()  # [N, K]
 
         if query_geo_feature:
             geo_features = torch.zeros(
@@ -1154,6 +1165,7 @@ class NeuralPoints(nn.Module):
         
             self.valid_color_mask = self.valid_color_mask[~prune_mask]
             # self.valid_gs_mask = self.valid_gs_mask[~prune_mask]
+            self.free_gs_mask = self.free_gs_mask[~prune_mask]
 
             # with padding
             prune_mask = torch.cat(
@@ -1266,6 +1278,7 @@ class NeuralPoints(nn.Module):
 
             self.valid_color_mask = self.valid_color_mask[sample_idx]
             # self.valid_gs_mask = self.valid_gs_mask[sample_idx]
+            self.free_gs_mask = self.free_gs_mask[sample_idx]
 
             new_point_count = self.neural_points.shape[0]
 
