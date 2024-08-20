@@ -30,6 +30,7 @@ from utils.tools import (
     setup_optimizer,
     transform_batch_torch,
     transform_torch,
+    voxel_down_sample_torch
 )
 
 from gaussian_splatting.gaussian_renderer import render
@@ -107,6 +108,8 @@ class Mapper:
         # for GS
         self.cam_img_pool = []
         self.cam_img_pool_id = [] # not really useful
+
+        self.cam_img_test_pool = []
 
     def dynamic_filter(self, points_torch, type_2_on: bool = True):
 
@@ -325,6 +328,11 @@ class Mapper:
             update_points_z_quantile = torch.quantile(update_points[:, 2], 0.98) # TODO
             mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
+
+            # voxel downsampling (make it sparse)
+            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], self.neural_points.resolution*3.0)
+            mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
+
             if mono_depth_point_cloud_torch.shape[0] > 0:
                 self.neural_points.update(
                     mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, 
@@ -514,6 +522,7 @@ class Mapper:
 
         # img related # TODO: use a better keyframe selection strategy
         if self.dataset.cur_cam_img is not None:
+            # training views
             if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
                 if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
                     self.cam_img_pool.pop(0) # pop the oldest cam
@@ -524,6 +533,15 @@ class Mapper:
                     cur_view_cam.train_view = True
                     self.cam_img_pool.append(cur_view_cam)
                     self.cam_img_pool_id.append(cur_view_cam.uid)
+            # also add some testing views
+            else:
+                if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
+                    self.cam_img_test_pool.pop(0) # pop the oldest cam
+                    
+                    cam_name = self.dataset.loader.main_cam_name
+                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    cur_view_cam.train_view = False
+                    self.cam_img_test_pool.append(cur_view_cam)
 
                     # print(self.cam_img_pool_id)
 
@@ -1373,8 +1391,12 @@ class Mapper:
         # else: # lastest frame
         #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
-        # use the oldest one in the pool (for single cam mode)
-        cur_viewpoint_cam: CamImage = self.cam_img_pool[0]
+        # only use testing views
+        if len(self.cam_img_test_pool) > 5:
+            cur_viewpoint_cam: CamImage = self.cam_img_test_pool[0]
+        else:
+            # use the oldest one in the pool (for single cam mode)
+            cur_viewpoint_cam: CamImage = self.cam_img_pool[0] # training view
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
 

@@ -206,7 +206,8 @@ class Config:
         self.gs_iters: int = 0
         self.gs_bs: int = 5
         self.gs_keyframe_interval: int = 5
-        self.img_pool_size: int = 10
+        self.img_pool_size: int = 10 # training views
+        self.img_test_pool_size: int = 10 # testing views
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # TODO

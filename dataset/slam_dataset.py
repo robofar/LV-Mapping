@@ -19,7 +19,7 @@ import torch
 import wandb
 from numpy.linalg import inv
 from rich import print
-from torch.utils.data import Dataset
+import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 from PIL import Image
@@ -41,7 +41,7 @@ from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
-class SLAMDataset(Dataset):
+class SLAMDataset():
     def __init__(self, config: Config) -> None:
 
         super().__init__()
@@ -215,7 +215,7 @@ class SLAMDataset(Dataset):
 
         # for depth erosion:
         erosion_shape = cv2.MORPH_RECT # MORPH_RECT, MORPH_CROSS
-        erosion_size = 15
+        erosion_size = 11
         self.erosion_element = cv2.getStructuringElement(erosion_shape, (2 * erosion_size + 1, 2 * erosion_size + 1),
                                                 (erosion_size, erosion_size))
 
@@ -290,17 +290,22 @@ class SLAMDataset(Dataset):
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
                     cur_img = cur_img.permute(2,0,1)/255 # only the rgb channel # 3, H, W
 
+                    # print(cur_img.shape) # for kitti: 376, 1241
+
                     # TODO
                     if self.monodepth_on and cam_name == self.loader.main_cam_name:
                         
                         # cur_K = self.K_mats[cam_name]
                         # rgb, pad_info = self.preprocess_img(cur_img_np, cur_K) # why getting slower here
 
+                        # mono_depth_input_rgb = F.interpolate(cur_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                        mono_depth_input_rgb = cur_img
+                        
                         tic_metric3d = get_time()
 
                         with torch.no_grad():
                             # pred_depth, confidence, output_dict = self.metric3d.inference({'input': rgb})
-                            pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)}) #B,C,H,W 
+                            pred_depth, confidence, output_dict = self.metric3d.inference({'input': mono_depth_input_rgb.unsqueeze(0)}) #B,C,H,W 
                         
                         pred_depth = pred_depth[0] # 1, H, W
                         confidence = confidence[0] # 1, H, W
@@ -313,7 +318,7 @@ class SLAMDataset(Dataset):
                         # print(confidence)
                         # print(torch.min(confidence), torch.max(confidence))
 
-                        # pred_depth[confidence < 0.5] = 0
+                        pred_depth[confidence < 0.8] = 0
 
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
                         normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
@@ -321,7 +326,9 @@ class SLAMDataset(Dataset):
                         # print(normal_confidence)
                         # print(torch.min(normal_confidence), torch.max(normal_confidence))
 
-                        # pred_depth[normal_confidence < 1.0] = 0
+                        # print(pred_depth.shape)
+
+                        pred_depth[normal_confidence < 2.0] = 0
 
                         # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
                         # pred_depth_np = pred_depth.detach().cpu().numpy()
@@ -329,11 +336,14 @@ class SLAMDataset(Dataset):
                         pred_depth_np = pred_depth.permute(1,2,0).detach().cpu().numpy()
                         # pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy()
 
-                        pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1])) # in metric3d, input/output should be 32x pix
+                        # in metric3d, input/output should be 32x pix ? really # 196, 628
+                        pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1]), interpolation=cv2.INTER_LINEAR) 
                         # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
 
+                        # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
+
                         if cur_img_depth_np is not None:
-                            valid_depth_mask = cur_img_depth_np > self.config.min_range
+                            valid_depth_mask = (cur_img_depth_np > self.config.min_range) & (pred_depth_np > self.config.min_range)
                             valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             
@@ -362,7 +372,7 @@ class SLAMDataset(Dataset):
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
                     
                         # erosion for depth image
-                        pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
+                        # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
                         # cur_gray_img_np = cv2.cvtColor(cur_img_np, cv2.COLOR_RGB2GRAY)
                         # edges = cv2.Canny(cur_gray_img_np, threshold1=100, threshold2=200) # H, W
@@ -381,15 +391,13 @@ class SLAMDataset(Dataset):
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
 
-                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
+                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m * 2)
 
                         # print(len(pred_pcd.points))
 
-                        # pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.0)
+                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=10, std_ratio=2.0)
 
                         # print(len(pred_pcd.points))
-
-                        # print("WHY")
                                                    
                         self.cur_frame_mono_depth_o3d = pred_pcd
 
