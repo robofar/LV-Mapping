@@ -538,12 +538,12 @@ class Mapper:
                 if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
                     self.cam_img_test_pool.pop(0) # pop the oldest cam
                     
-                    cam_name = self.dataset.loader.main_cam_name
-                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                    cur_view_cam.train_view = False
-                    self.cam_img_test_pool.append(cur_view_cam)
+                cam_name = self.dataset.loader.main_cam_name
+                cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                cur_view_cam.train_view = False
+                self.cam_img_test_pool.append(cur_view_cam)
 
-                    # print(self.cam_img_pool_id)
+                # print(self.cam_img_pool_id)
 
         # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
         # print("time for sampling              (ms):", (T2-T1)*1e3)
