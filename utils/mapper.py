@@ -322,7 +322,7 @@ class Mapper:
             mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
             
             # we currently use a easy fix for ground robot to use only the points with large height value
-            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.95)
+            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.98) # TODO
             mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
             if mono_depth_point_cloud_torch.shape[0] > 0:

@@ -122,12 +122,11 @@ class KITTI360Dataset:
         # now we use only the left cam
         img = self.read_img(self.img0_files[idx])
         cam_name = "cam_left_rect"
-        img_dict = {cam_name: img}
         
         points_rgb = np.ones_like(points)
 
         # project to the image plane to get the corresponding color
-        points_rgb = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+        points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -136,6 +135,9 @@ class KITTI360Dataset:
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+        img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+        img_dict = {cam_name: img}
 
         frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         # print(frame_data)
@@ -189,7 +191,7 @@ class KITTI360Dataset:
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
         points_rgb[mask, 3] = 0 # has color
 
-        return points_rgb
+        return points_rgb, depth_map
     
     def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim

@@ -92,8 +92,8 @@ class SLAMDataset(Dataset):
 
                 # load metric3d model
                 if self.monodepth_on:
-                    # model_name = 'metric3d_vit_small' # faster, 80 ms
-                    model_name = 'metric3d_vit_large' # slower, 450 ms
+                    model_name = 'metric3d_vit_small' # faster, 80 ms
+                    # model_name = 'metric3d_vit_large' # slower, 450 ms
                     # model_name = "metric3d_vit_giant2" # slowest, 1600 ms
 
                     self.metric3d = torch.hub.load('yvanyin/metric3d', model_name, pretrain=True).to(self.device).eval()
@@ -215,7 +215,7 @@ class SLAMDataset(Dataset):
 
         # for depth erosion:
         erosion_shape = cv2.MORPH_RECT # MORPH_RECT, MORPH_CROSS
-        erosion_size = 7
+        erosion_size = 15
         self.erosion_element = cv2.getStructuringElement(erosion_shape, (2 * erosion_size + 1, 2 * erosion_size + 1),
                                                 (erosion_size, erosion_size))
 
@@ -280,9 +280,15 @@ class SLAMDataset(Dataset):
                 self.cur_cam_img = {}
                 for cam_name in cam_list:
                     
-                    cur_img_np = img_dict[cam_name]
+                    cur_img_np = img_dict[cam_name] # 3 channel or 4 channel (with depth)
+
+                    cur_img_depth_np = None
+                    if np.shape(cur_img_np)[-1] == 4:
+                        cur_img_depth_np = cur_img_np[:,:,3]
+                        cur_img_np = cur_img_np[:,:,:3].astype(np.uint8)
+                    
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
-                    cur_img = cur_img.permute(2,0,1)/255
+                    cur_img = cur_img.permute(2,0,1)/255 # only the rgb channel # 3, H, W
 
                     # TODO
                     if self.monodepth_on and cam_name == self.loader.main_cam_name:
@@ -294,24 +300,49 @@ class SLAMDataset(Dataset):
 
                         with torch.no_grad():
                             # pred_depth, confidence, output_dict = self.metric3d.inference({'input': rgb})
-                            pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
+                            pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)}) #B,C,H,W 
                         
+                        pred_depth = pred_depth[0] # 1, H, W
+                        confidence = confidence[0] # 1, H, W
+
                         # TODO: make use of this confidence here
                         toc_metric3d = get_time()
                         if not self.config.silence:
                             print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)
 
-                        # pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
-                        # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+                        # print(confidence)
+                        # print(torch.min(confidence), torch.max(confidence))
+
+                        # pred_depth[confidence < 0.5] = 0
+
+                        pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
+                        normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+
+                        # print(normal_confidence)
+                        # print(torch.min(normal_confidence), torch.max(normal_confidence))
+
+                        # pred_depth[normal_confidence < 1.0] = 0
 
                         # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
                         # pred_depth_np = pred_depth.detach().cpu().numpy()
 
-                        pred_depth_np = pred_depth[0].permute(1,2,0).detach().cpu().numpy()
-                        # pred_normal_np = pred_normal[0].permute(1,2,0).detach().cpu().numpy()
+                        pred_depth_np = pred_depth.permute(1,2,0).detach().cpu().numpy()
+                        # pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy()
 
                         pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1])) # in metric3d, input/output should be 32x pix
                         # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
+
+                        if cur_img_depth_np is not None:
+                            valid_depth_mask = cur_img_depth_np > self.config.min_range
+                            valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
+                            pred_depth_with_gt = pred_depth_np[valid_depth_mask]
+                            
+                            # print(np.shape(valid_depth_measurement), np.shape(pred_depth_with_gt))
+                            # least square fitting
+                            coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
+                            k, b = coefficients
+                            print("depth fitting residual (m): ", (residuals[0]/np.shape(valid_depth_measurement)[0])**(0.5))
+                            pred_depth_np = k * pred_depth_np + b
 
                         # why depthanything is so slow
                         # tic_depthanything = get_time()
@@ -331,7 +362,14 @@ class SLAMDataset(Dataset):
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
                     
                         # erosion for depth image
-                        pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element)
+                        pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
+
+                        # cur_gray_img_np = cv2.cvtColor(cur_img_np, cv2.COLOR_RGB2GRAY)
+                        # edges = cv2.Canny(cur_gray_img_np, threshold1=100, threshold2=200) # H, W
+                        # pred_depth_np[edges>0] = 0.0
+
+                        # print(np.shape(edges))
+                        # print(edges)
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
@@ -342,7 +380,17 @@ class SLAMDataset(Dataset):
                                                                                 
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
-                        
+
+                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
+
+                        # print(len(pred_pcd.points))
+
+                        # pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.0)
+
+                        # print(len(pred_pcd.points))
+
+                        # print("WHY")
+                                                   
                         self.cur_frame_mono_depth_o3d = pred_pcd
 
                         points_xyz = np.array(pred_pcd.points, dtype=np.float64)
@@ -412,6 +460,7 @@ class SLAMDataset(Dataset):
 
         # print(self.cur_point_ts_torch)
 
+    # For Metric3D
     def preprocess_img(self, rgb_origin, K_mat):
         # fit the image size for VIT
 
@@ -443,7 +492,8 @@ class SLAMDataset(Dataset):
         rgb = rgb[None, :, :, :].to(self.device)
 
         return rgb, pad_info
-
+    
+    # For Metric3D
     def postprocess_depth(self, pred_depth, pad_info, fx, original_shape):
         # un pad
         pred_depth = pred_depth.squeeze()

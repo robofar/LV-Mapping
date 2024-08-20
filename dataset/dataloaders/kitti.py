@@ -124,12 +124,11 @@ class KITTIOdometryDataset:
 
         if self.load_img and self.image_available:
             img = self.read_img(self.img2_files[idx]) # just for vis here
-            img_dict = {self.left_cam_name: img}
-
+        
             points_rgb = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_rgb = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
+            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
 
             if self.use_only_colorized_points:
                 with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -138,6 +137,9 @@ class KITTIOdometryDataset:
 
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+            img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+            img_dict = {self.left_cam_name: img}
 
             frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         else:
@@ -254,7 +256,7 @@ class KITTIOdometryDataset:
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
         points_rgb[mask, 3] = 0 # has color
 
-        return points_rgb
+        return points_rgb, depth_map
     
     def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim
