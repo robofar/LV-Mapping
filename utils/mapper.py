@@ -1373,7 +1373,7 @@ class Mapper:
         # else: # lastest frame
         #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
-        # use the oldest one in the pool
+        # use the oldest one in the pool (for single cam mode)
         cur_viewpoint_cam: CamImage = self.cam_img_pool[0]
 
         # print("Used cam id:", cur_viewpoint_cam.uid)

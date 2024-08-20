@@ -109,6 +109,7 @@ class KITTIOdometryDataset:
         # self.T_c_l = np.linalg.inv(self.T_l_c)
         # self.T_c_l_mats = {self.left_cam_name: self.T_c_l}
         
+        # print(calib_data["K_cam2"])
         ###
 
         # Load GT Poses (if available)

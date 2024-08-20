@@ -21,6 +21,8 @@ from numpy.linalg import inv
 from rich import print
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+from PIL import Image
 
 from dataset.dataloaders import dataset_factory
 from eval.eval_traj_utils import absolute_error, plot_trajectories, relative_error
@@ -90,10 +92,16 @@ class SLAMDataset(Dataset):
 
                 # load metric3d model
                 if self.monodepth_on:
-                    model_name = 'metric3d_vit_small' # faster, 80 ms
-                    # model_name = 'metric3d_vit_large' # slower, 450 ms
-                    self.metric3d = torch.hub.load('yvanyin/metric3d', model_name, pretrain=True).to(self.device)
-                # TODO: install xformers for faster inference
+                    # model_name = 'metric3d_vit_small' # faster, 80 ms
+                    model_name = 'metric3d_vit_large' # slower, 450 ms
+                    # model_name = "metric3d_vit_giant2" # slowest, 1600 ms
+
+                    self.metric3d = torch.hub.load('yvanyin/metric3d', model_name, pretrain=True).to(self.device).eval()
+                    # install xformers for faster inference
+
+                    # self.depth_anything_processor = AutoImageProcessor.from_pretrained("LiheYoung/depth-anything-small-hf")
+                    # self.depth_anything = AutoModelForDepthEstimation.from_pretrained("LiheYoung/depth-anything-small-hf")
+    
             
         else: # original pin-slam generic loader
             # point cloud files
@@ -205,6 +213,13 @@ class SLAMDataset(Dataset):
         # imu data
         self.cur_frame_imus = None
 
+        # for depth erosion:
+        erosion_shape = cv2.MORPH_RECT # MORPH_RECT, MORPH_CROSS
+        erosion_size = 7
+        self.erosion_element = cv2.getStructuringElement(erosion_shape, (2 * erosion_size + 1, 2 * erosion_size + 1),
+                                                (erosion_size, erosion_size))
+
+
     def read_frame_ros(self, msg):
 
         from utils import point_cloud2
@@ -264,27 +279,59 @@ class SLAMDataset(Dataset):
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
                 for cam_name in cam_list:
+                    
                     cur_img_np = img_dict[cam_name]
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
                     cur_img = cur_img.permute(2,0,1)/255
 
                     # TODO
                     if self.monodepth_on and cam_name == self.loader.main_cam_name:
-                        tic_metric3d = get_time()
-                        pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
-                        toc_metric3d = get_time()
                         
+                        # cur_K = self.K_mats[cam_name]
+                        # rgb, pad_info = self.preprocess_img(cur_img_np, cur_K) # why getting slower here
+
+                        tic_metric3d = get_time()
+
+                        with torch.no_grad():
+                            # pred_depth, confidence, output_dict = self.metric3d.inference({'input': rgb})
+                            pred_depth, confidence, output_dict = self.metric3d.inference({'input': cur_img.unsqueeze(0)})
+                        
+                        # TODO: make use of this confidence here
+                        toc_metric3d = get_time()
                         if not self.config.silence:
                             print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)
 
-                        pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
+                        # pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
                         # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+
+                        # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
+                        # pred_depth_np = pred_depth.detach().cpu().numpy()
 
                         pred_depth_np = pred_depth[0].permute(1,2,0).detach().cpu().numpy()
                         # pred_normal_np = pred_normal[0].permute(1,2,0).detach().cpu().numpy()
 
                         pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1])) # in metric3d, input/output should be 32x pix
                         # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
+
+                        # why depthanything is so slow
+                        # tic_depthanything = get_time()
+                        # inputs = self.depth_anything_processor(images=cur_img, return_tensors="pt", do_rescale=False)
+                        # with torch.no_grad():
+                        #     outputs = self.depth_anything(**inputs)
+                        #     predicted_depth = outputs.predicted_depth
+                        # toc_depthanything = get_time()
+                        
+                        # if not self.config.silence:
+                        #     print("DepthAnything prediction time     (ms):", (toc_depthanything-tic_depthanything)*1e3)
+                        
+                        # print(pred_depth_np)
+
+                        # filter, clean depth
+                        # filter the depth image, 1.5cm sigma, in 3 neighborhood 
+                        # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
+                    
+                        # erosion for depth image
+                        pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element)
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
@@ -309,7 +356,6 @@ class SLAMDataset(Dataset):
                         # better to have two point cloud, the lidar and the mono depth metric point cloud
                         # mono depth ones only used to initialize neural points (gaussians)
                     
-                    # cur_img = cur_img.permute(2,0,1)/255
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.1,
@@ -365,6 +411,54 @@ class SLAMDataset(Dataset):
             self.get_point_ts(point_ts)
 
         # print(self.cur_point_ts_torch)
+
+    def preprocess_img(self, rgb_origin, K_mat):
+        # fit the image size for VIT
+
+        #### ajust input size to fit pretrained model
+        # keep ratio resize
+        input_size = (616, 1064) # for vit model
+        # input_size = (544, 1216) # for convnext model
+        h, w = rgb_origin.shape[:2]
+        scale = min(input_size[0] / h, input_size[1] / w)
+        rgb = cv2.resize(rgb_origin, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR)
+        # remember to scale intrinsic, hold depth
+        intrinsic = [K_mat[0,0] * scale, K_mat[1,1] * scale, K_mat[0,2] * scale, K_mat[1,2] * scale]
+        # padding to input_size
+        padding = [123.675, 116.28, 103.53]
+        h, w = rgb.shape[:2]
+        pad_h = input_size[0] - h
+        pad_w = input_size[1] - w
+        pad_h_half = pad_h // 2
+        pad_w_half = pad_w // 2
+        rgb = cv2.copyMakeBorder(rgb, pad_h_half, pad_h - pad_h_half, pad_w_half, pad_w - pad_w_half, cv2.BORDER_CONSTANT, value=padding)
+        pad_info = [pad_h_half, pad_h - pad_h_half, pad_w_half, pad_w - pad_w_half]
+
+        #### normalize
+        # what does these parameter mean?
+        mean = torch.tensor([123.675, 116.28, 103.53]).float()[:, None, None]
+        std = torch.tensor([58.395, 57.12, 57.375]).float()[:, None, None]
+        rgb = torch.from_numpy(rgb.transpose((2, 0, 1))).float()
+        rgb = torch.div((rgb - mean), std)
+        rgb = rgb[None, :, :, :].to(self.device)
+
+        return rgb, pad_info
+
+    def postprocess_depth(self, pred_depth, pad_info, fx, original_shape):
+        # un pad
+        pred_depth = pred_depth.squeeze()
+        pred_depth = pred_depth[pad_info[0] : pred_depth.shape[0] - pad_info[1], pad_info[2] : pred_depth.shape[1] - pad_info[3]]
+        
+        # upsample to original size
+        pred_depth = torch.nn.functional.interpolate(pred_depth[None, None, :, :], original_shape, mode='bilinear').squeeze()
+        ###################### canonical camera space ######################
+
+        #### de-canonical transform
+        canonical_to_real_scale = fx / 1000.0 # 1000.0 is the focal length of canonical camera
+        pred_depth = pred_depth * canonical_to_real_scale # now the depth is metric
+        pred_depth = torch.clamp(pred_depth, 0, 300)
+        return pred_depth
+
 
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts=None): 

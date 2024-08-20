@@ -83,7 +83,7 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 </details>
 
-## Run on Waymo dataset (under development)
+## Run on Waymo dataset
 
 [Dataset download link](https://console.cloud.google.com/storage/browser/waymo_open_dataset_v_1_4_0;tab=objects?pli=1&prefix=&forceOnObjectsSortingFiltering=false)
 
@@ -102,7 +102,7 @@ python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/w
 
 **pass**
 
-## Run on IPB car dataset (under development)
+## Run on IPB car dataset
 
 ```
 python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl
