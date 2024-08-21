@@ -214,12 +214,15 @@ class Config:
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
+        # losses weights
         self.lambda_dssim: float = 0.2 # weight for ssim
+        self.lambda_depth: float = 0.1 # weight for depth rendering
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal regularization weight
         self.lambda_dist: float = 100.0 # distance distortion regularization weight
         self.lambda_sdf: float = 1.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal: float = 0.5 # gaussian's normal should align with sdf's gradient direction
+
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
         self.gs_batch_training_on: bool = False
@@ -538,6 +541,7 @@ class Config:
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
             self.lambda_sdf = config_args["gs"].get("lambda_sdf", self.lambda_sdf)
             self.lambda_sdf_normal = config_args["gs"].get("lambda_sdf_normal", self.lambda_sdf_normal)
+            self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:

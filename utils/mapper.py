@@ -329,8 +329,8 @@ class Mapper:
             mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
-            # voxel downsampling (make it sparse)
-            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], self.neural_points.resolution*3.0)
+            # voxel downsampling (make it sparse) # TODO: but how sparse
+            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], self.neural_points.resolution*4.0)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
             if mono_depth_point_cloud_torch.shape[0] > 0:
@@ -1041,188 +1041,6 @@ class Mapper:
 
         self.ba_done_flag = True
 
-    # fit the gaussians
-    # TODO: use keyframes pool
-    def gs_mapping(self, iter_count):
-
-        if iter_count < 1:
-            return
-
-        print("GS fitting on")
-        
-        # TODO
-        self.neural_points.training_setup_gs()
-
-        bg_color = [1, 1, 1] # white # currently TODO, we need to check sky background
-        # bg_color = [0, 0, 0] # black
-        background = torch.tensor(bg_color, dtype=self.dtype, device=self.device)
-
-        renderd_image = None
-
-        # still too slow, figure it out how to make the process faster
-
-        down_rate = self.config.gs_down_rate # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
-
-        for iter in tqdm(range(iter_count), disable=self.silence):       
-        # for iter in range(iter_count):
-
-            # gaussians.update_learning_rate(iteration) # FIXME
-
-            # Every 1000 its we increase the levels of SH up to a maximum degree
-            # if iteration % 1000 == 0:
-            #     gaussians.oneupSHdegree()
-
-            cur_img_pool_size = len(self.cam_img_pool)
-
-            rgb_loss_batch = 0
-
-            # regularization losses
-            normal_loss_batch = 0
-            dist_loss_batch = 0
-            
-            gs_bs = min(self.config.gs_bs, cur_img_pool_size)
-
-            for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
-
-                T1 = get_time()
-
-                viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
-
-                # print("Used cam id:", viewpoint_cam.uid)
-                
-                T_w_l = self.used_poses[viewpoint_cam.frame_id] # already in torch tensor, lidar pose
-                T_c_l = torch.tensor(self.dataset.T_c_l_mats[viewpoint_cam.cam_id], device=self.device) 
-                T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame # Here there could be different cameras, support this
-
-                # gt_image = viewpoint_cam.original_image
-                gt_image = viewpoint_cam.original_image_list[down_rate]
-
-                # print(viewpoint_cam.original_image_list[0])
-
-                if gt_image.device != self.device: # this is one very time consuming part
-                    gt_image.to(self.device)
-
-                # print(gt_image.shape)
-
-                render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
-                
-                # rendered results
-                renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
-                loss_rgb_l1 = l1_loss(renderd_image, gt_image)
-
-                rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
-
-                # print(rgb_loss)
-
-                rgb_loss_batch += rgb_loss
-                
-                # # # regularization # this can be ignored currently
-                # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
-                # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
-
-                # Turn on or off
-                lambda_normal = self.config.lambda_normal
-                lambda_dist = self.config.lambda_dist
-
-                rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
-                rend_normal  = render_pkg['rend_normal'] # 3, H, W
-
-                surf_depth = render_pkg["surf_depth"] # 1, H, W
-                surf_normal = render_pkg['surf_normal'] # 3, H, W
-
-                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-                normal_loss = lambda_normal * (normal_error).mean()
-                dist_loss = lambda_dist * (rend_dist).mean()
-
-                normal_loss_batch += normal_loss
-                dist_loss_batch += dist_loss
-
-                T2 = get_time()
-
-                # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
-
-            # add the isotropic loss
-            # scaling = self.neural_points.get_local_scaling[self.neural_points.local_valid_color_mask] # only use those valid ones
-            scaling = self.neural_points.get_local_scaling
-            isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
-
-            # print(isotropic_loss)
-
-            # total loss
-            total_loss = (rgb_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss 
-
-            print(total_loss)
-            
-            total_loss.backward() 
-
-            # update
-            self.neural_points.optimizer.step()
-            self.neural_points.optimizer.zero_grad(set_to_none=True) 
-
-            T3 = get_time()
-
-            # print("Optimization iter time (ms):", (T3-T2)*1e3) # still, this backpropagation is slow, but better to do this in batch
-            
-        # rendered the last frame for vis
-
-        vis_cam_name = self.dataset.cam_names[-1] # TODO # -1
-        cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
-
-        # print("Used cam id:", cur_viewpoint_cam.uid)
-
-        vis_down_rate = self.config.gs_vis_down_rate # TODO: add to config
-
-        original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
-        original_img_np = (original_img.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
-        original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
-        cam_name = cur_viewpoint_cam.cam_id
-
-        cv2.imshow(cam_name + ": Observed RGB", original_img_np)
-
-        T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
-        T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
-        T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
-
-        render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
-        renderd_image, rend_dist, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
-
-        renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
-        renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
-        
-        cv2.imshow(cam_name + ": Rendered RGB", renderd_image_np)
-        #cv2.waitKey(1) # 1ms
-
-        rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
-        rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
-        rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
-
-        cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
-
-        surf_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
-        rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
-
-        cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
-
-        # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-        # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
-
-        # cv2.imshow("Rendered Alpha", rendered_alpha_np)
-
-        cv2.waitKey(1)
-
-        # cur psnr
-        cur_pnsr = psnr(renderd_image, original_img).mean().item()
-        if cur_viewpoint_cam.train_view:
-            print("Current PSNR (train view):", cur_pnsr)
-        else:
-            print("Current PSNR (test view):", cur_pnsr)
-
-        self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
-        
-        return 
     
     # jointly optimize the neural point features and gaussian parameters
     def joint_gsdf_mapping(self, iter_count):
@@ -1230,7 +1048,7 @@ class Mapper:
         if iter_count < 1:
             return
 
-        print("GS fitting on")
+        print("GS fitting on ")
         
         # TODO
         self.neural_points.training_setup_gs()
@@ -1258,6 +1076,8 @@ class Mapper:
 
             rgb_loss_batch = 0
 
+            depth_loss_batch = 0
+
             # regularization losses
             normal_loss_batch = 0
             dist_loss_batch = 0
@@ -1278,28 +1098,30 @@ class Mapper:
 
                 # gt_image = viewpoint_cam.original_image
                 gt_image = viewpoint_cam.original_image_list[down_rate]
-
-                # print(viewpoint_cam.original_image_list[0])
-
+                
                 if gt_image.device != self.device: # this is one very time consuming part
                     gt_image.to(self.device)
-
-                # print(gt_image.shape)
+                
+                if viewpoint_cam.depth_on:
+                    gt_rgb_image = gt_image[:3]
+                    gt_depth_image = gt_image[3]
+                else:
+                    gt_rgb_image = gt_image
+                    gt_depth_image = None
 
                 render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
                 
                 # rendered results
-                renderd_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+                renderd_rgb_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
-                loss_rgb_l1 = l1_loss(renderd_image, gt_image)
+                loss_rgb_l1 = l1_loss(renderd_rgb_image, gt_rgb_image)
 
-                rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_image, gt_image))
+                rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(renderd_rgb_image, gt_rgb_image))
 
                 # print(rgb_loss)
 
                 rgb_loss_batch += rgb_loss
-                
-                # # # regularization # this can be ignored currently
+
                 # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
                 # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
 
@@ -1307,18 +1129,28 @@ class Mapper:
                 lambda_normal = self.config.lambda_normal
                 lambda_dist = self.config.lambda_dist
 
-                rend_dist = render_pkg["rend_dist"] # depth distortion # 1, H, W
+                # TODO Figure out their meaning
+                dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
                 rend_normal  = render_pkg['rend_normal'] # 3, H, W
 
-                surf_depth = render_pkg["surf_depth"] # 1, H, W
-                surf_normal = render_pkg['surf_normal'] # 3, H, W
+                surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
+                surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map
 
+                # depth rendering loss
+                if gt_depth_image is None and self.config.lambda_depth > 0:
+                    valid_depth_mask = (gt_depth_image>0.0)  
+                    gt_depth_image = gt_depth_image * valid_depth_mask
+                    rend_dist_valid = surf_depth * valid_depth_mask
+                    depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
+                    depth_loss_batch += self.config.lambda_depth * depth_loss
+
+                # regularization losses
                 normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
                 normal_loss = lambda_normal * (normal_error).mean()
-                dist_loss = lambda_dist * (rend_dist).mean()
+                dist_loss = lambda_dist * (dist_distortion).mean()
 
                 normal_loss_batch += normal_loss
-                dist_loss_batch += dist_loss
+                dist_loss_batch += lambda_normal * dist_loss
 
                 T2 = get_time()
 
@@ -1330,45 +1162,46 @@ class Mapper:
             
             constraint_mask = self.neural_points.local_valid_color_mask & (~self.neural_points.local_free_gs_mask)
 
-            if use_only_valid_gaussians:
-                scaling = self.neural_points.get_local_scaling[constraint_mask] # only use those valid ones
-            else:
-                scaling = self.neural_points.get_local_scaling
-            isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
-
-            # isotropic_loss = 0.0
+            isotropic_loss = 0.0
+            if self.config.lambda_isotropic > 0:
+                if use_only_valid_gaussians:
+                    scaling = self.neural_points.get_local_scaling[constraint_mask] # only use those valid ones
+                else:
+                    scaling = self.neural_points.get_local_scaling
+                isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
 
             # print(isotropic_loss)
 
-            # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
-            if use_only_valid_gaussians:
-                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[constraint_mask]
-                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[constraint_mask])
-            else:
-                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz
-                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation)
+            sdf_loss = 0.0
+            sdf_normal_loss = 0.0
+            if self.config.lambda_sdf_normal > 0 or self.config.lambda_sdf > 0:
+                # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
+                if use_only_valid_gaussians:
+                    valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[constraint_mask]
+                    valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[constraint_mask])
+                else:
+                    valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz
+                    valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation)
 
-            valid_guassians_xyz.requires_grad_(True)
+                valid_guassians_xyz.requires_grad_(True)
 
-            valid_guassians_sdf = self.sdf(valid_guassians_xyz)[0] # sdf, sdf_std
-            valid_guassians_sdf_grad = get_gradient(valid_guassians_xyz, valid_guassians_sdf) # N, 3
-            grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
-            valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
+                valid_guassians_sdf = self.sdf(valid_guassians_xyz)[0] # sdf, sdf_std
+                valid_guassians_sdf_grad = get_gradient(valid_guassians_xyz, valid_guassians_sdf) # N, 3
+                grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
+                valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
-            # self.config.lambda_sdf = 1.0
-            sdf_loss = self.config.lambda_sdf * torch.abs(valid_guassians_sdf).mean()
+                # self.config.lambda_sdf = 1.0
+                sdf_loss = self.config.lambda_sdf * torch.abs(valid_guassians_sdf).mean()
 
-            gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
-            
-            # self.config.lambda_sdf_normal = 0.5
-            sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
+                gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
+                
+                # self.config.lambda_sdf_normal = 0.5
+                sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
 
-            print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
-
-            # sdf_loss = 0.0
+                print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
 
             # total loss
-            total_loss = (rgb_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_loss + sdf_normal_loss
+            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_loss + sdf_normal_loss
             total_loss.backward() 
 
             # print("Total loss:", total_loss.item())
@@ -1400,21 +1233,23 @@ class Mapper:
 
         # print("Used cam id:", cur_viewpoint_cam.uid)
 
-        vis_down_rate = self.config.gs_vis_down_rate # TODO: add to config
+        cam_name = cur_viewpoint_cam.cam_id
+        vis_down_rate = self.config.gs_vis_down_rate
 
         original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
-        original_img_np = (original_img.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
-        original_img_np = cv2.cvtColor(original_img_np, cv2.COLOR_RGB2BGR)
-        cam_name = cur_viewpoint_cam.cam_id
+        original_img_np = original_img.permute(1,2,0).detach().cpu().numpy()
+        original_img_rgb = (original_img_np[:,:,:3] * 255.0).astype(np.uint8)
+        original_img_rgb = cv2.cvtColor(original_img_rgb, cv2.COLOR_RGB2BGR)
+        original_img_depth = original_img_np[:,:,3] # how to convert a depth map # TODO
 
-        cv2.imshow(cam_name + ": Observed RGB", original_img_np)
+        cv2.imshow(cam_name + ": Observed RGB", original_img_rgb)
 
         T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
         T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
         T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
         render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
-        renderd_image, rend_dist, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+        renderd_image, dist_distortion, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
 
         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1444,7 +1279,7 @@ class Mapper:
         cv2.waitKey(1)
 
         # cur psnr
-        cur_pnsr = psnr(renderd_image, original_img).mean().item()
+        cur_pnsr = psnr(renderd_image, original_img[:3]).mean().item()
         if cur_viewpoint_cam.train_view:
             print("Current PSNR (train view):", cur_pnsr)
         else:

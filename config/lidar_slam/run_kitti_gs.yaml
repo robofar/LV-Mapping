@@ -23,7 +23,7 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True
-  gs_iters: 20
+  gs_iters: 10
   gs_bs: 5
   gs_keyframe_interval: 2
   img_pool_size: 15
@@ -34,6 +34,7 @@ gs:
   # lambda_normal: 0.0
   lambda_sdf: 1.0
   lambda_sdf_normal: 0.5
+  lambda_depth: 0.1
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 1e7

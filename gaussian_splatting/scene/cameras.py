@@ -96,11 +96,21 @@ class CamImage:
         self.original_image_list = []
 
         original_image = image.to(device)
-        # Downsample to 3x(H/2)x(W/2)
+
+        self.channel_count = original_image.shape[0]
+        if self.channel_count == 4:
+            self.depth_on = True
+        else:
+            self.depth_on = False
+
+        # TODO: may add normal
+        
+        # C can be either 3 or 4
+        # Downsample to Cx(H/2)x(W/2)
         down_level1_image = F.interpolate(original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        # Downsample to 3x(H/4)x(W/4)
+        # Downsample to Cx(H/4)x(W/4)
         down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        # Downsample to 3x(H/8)x(W/8)
+        # Downsample to Cx(H/8)x(W/8)
         down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
 
         if img_down_rate > 0:

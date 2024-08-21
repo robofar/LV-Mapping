@@ -183,7 +183,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     render_depth_expected = (render_depth_expected / render_alpha)
     render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
     
-    # get depth distortion map (this is depth distortion instead of depth)
+    # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)
     render_dist = allmap[6:7]
 
     # print(render_dist)
@@ -195,7 +195,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
 
     # what's the depth_ratio? TODO
 
-    depth_ratio = 0 # unbounded scene
+    depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected
     surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
     
     # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.

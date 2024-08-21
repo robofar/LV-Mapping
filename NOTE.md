@@ -230,13 +230,18 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Keyframe strategy
 - [x] Batch mode
 - [ ] Add SDF / SDF gradient consistency loss
-- [ ] Depth rendering loss (optional)
+- [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
+- [x] Add mono depth estimation
+- [ ] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
+- [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
+- [ ] KITTI-360 NVS benchmark
 - [ ] Deal with dynamic objects (tracking, filtering or 4DGS)
 - [ ] Sky (out-of-lidar-fov) masking
 - [ ] Level of details
 - [ ] Evaluate Chamfer distance and PSNR
 - [ ] Add BoW python for image place recognition (loop detection)
+- [ ] The goal is RAL or CVPR
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)
@@ -284,6 +289,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 + [Grounded-SAM2](https://github.com/IDEA-Research/Grounded-SAM-2)
 
 + [R3Live](https://github.com/hku-mars/r3live)
+
++ [BotanicGardenDataset](https://github.com/robot-pesg/BotanicGarden/tree/main/leaderboard)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
 

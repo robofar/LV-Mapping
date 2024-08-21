@@ -286,10 +286,12 @@ class SLAMDataset():
                     cur_img_depth_np = None
                     if np.shape(cur_img_np)[-1] == 4:
                         cur_img_depth_np = cur_img_np[:,:,3]
-                        cur_img_np = cur_img_np[:,:,:3].astype(np.uint8)
+                        cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8)
                     
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
-                    cur_img = cur_img.permute(2,0,1)/255 # only the rgb channel # 3, H, W
+                    cur_img = cur_img.permute(2,0,1)/255 # RGB or RGBD # C, H, W
+
+                    H, W = cur_img.shape[1], cur_img.shape[2]
 
                     # print(cur_img.shape) # for kitti: 376, 1241
 
@@ -300,7 +302,7 @@ class SLAMDataset():
                         # rgb, pad_info = self.preprocess_img(cur_img_np, cur_K) # why getting slower here
 
                         # mono_depth_input_rgb = F.interpolate(cur_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-                        mono_depth_input_rgb = cur_img
+                        mono_depth_input_rgb = cur_img[:3]
                         
                         tic_metric3d = get_time()
 
@@ -319,10 +321,12 @@ class SLAMDataset():
                         # print(confidence)
                         # print(torch.min(confidence), torch.max(confidence))
 
-                        pred_depth[confidence < 0.8] = 0
+                        pred_depth[confidence < 0.8] = 0 # How to set these threshold
 
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
                         normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
+
+                        # TODO: aslo record and use this normal prediction here
 
                         # print(normal_confidence)
                         # print(torch.min(normal_confidence), torch.max(normal_confidence))
@@ -338,7 +342,7 @@ class SLAMDataset():
                         # pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy()
 
                         # in metric3d, input/output should be 32x pix ? really # 196, 628
-                        pred_depth_np = cv2.resize(pred_depth_np, (cur_img.shape[2], cur_img.shape[1]), interpolation=cv2.INTER_LINEAR) 
+                        pred_depth_np = cv2.resize(pred_depth_np, (W, H), interpolation=cv2.INTER_LINEAR) 
                         # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
 
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
@@ -348,8 +352,7 @@ class SLAMDataset():
                             valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             
-                            # print(np.shape(valid_depth_measurement), np.shape(pred_depth_with_gt))
-                            # least square fitting
+                            # depth least square fitting with regards to the lidar measurement
                             coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
                             k, b = coefficients
                             print("depth fitting residual (m): ", (residuals[0]/np.shape(valid_depth_measurement)[0])**(0.5))
@@ -362,7 +365,6 @@ class SLAMDataset():
                         #     outputs = self.depth_anything(**inputs)
                         #     predicted_depth = outputs.predicted_depth
                         # toc_depthanything = get_time()
-                        
                         # if not self.config.silence:
                         #     print("DepthAnything prediction time     (ms):", (toc_depthanything-tic_depthanything)*1e3)
                         
@@ -382,7 +384,7 @@ class SLAMDataset():
                         # print(np.shape(edges))
                         # print(edges)
 
-                        cur_img_o3d = o3d.geometry.Image(cur_img_np)
+                        cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
 
                         # change the depth_scale here
@@ -395,8 +397,9 @@ class SLAMDataset():
                         pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m * 2)
 
                         # print(len(pred_pcd.points))
-
-                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=10, std_ratio=2.0)
+                        
+                        # how to set these threshold
+                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5)
 
                         # print(len(pred_pcd.points))
                                                    
