@@ -90,6 +90,8 @@ class CKADataset:
             self.T_c_l = np.linalg.inv(self.T_l_c)
 
             self.T_c_l_mats = {"cam_mid": self.T_c_l}
+
+            self.main_cam_name = "cam_mid"
                     
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(height=height,

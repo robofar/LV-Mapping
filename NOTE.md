@@ -147,6 +147,14 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 
 **pass**
 
+## Run on Azure dataset 
+
+provided by RTG-SLAM
+
+```
+python pin_slam.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel -dvl
+```
+
 ## Run on CKA greenhouse dataset
 ```
 python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -dvl
@@ -240,6 +248,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 + [2.5D-GS](https://github.com/hugoycj/2.5d-gaussian-splatting)
 
 + [MonoGS](https://github.com/muskie82/MonoGS)
+
++ [RTG-SLAM](https://github.com/MisEty/RTG-SLAM)
 
 + [GS-ICP-SLAM](https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM)
 

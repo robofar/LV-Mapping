@@ -66,6 +66,8 @@ class TUMDataset:
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
         self.T_c_l_mats = {"cam": self.T_c_l}
+
+        self.main_cam_name = "cam"
         
         self.down_sample_on = False
         self.rand_down_rate = 0.1

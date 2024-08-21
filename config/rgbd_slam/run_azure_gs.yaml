@@ -1,31 +1,30 @@
 setting:
-  name: "test_tum_gs"
+  name: "test_azure_gs"
   output_root: "./experiments"
-  # select from freiburg1_desk, freiburg2_xyz, freiburg3_office
   color_channel: 3
 process:
   min_range_m: 0.05
-  max_range_m: 2.5  # distance filter for each frame
+  max_range_m: 4.0  # distance filter for each frame
   min_z_m: -10.0 
-  vox_down_m: 0.005 # TODO
-  estimate_normal: True
+  vox_down_m: 0.01
+  # estimate_normal: True
 sampler:
   surface_sample_range_m: 0.03
   surface_sample_n: 4 # 4
-  free_sample_begin_ratio: 0.5
-  free_sample_end_dist_m: 0.1 # 1.0
-  free_front_sample_n: 1
-  free_behind_sample_n: 0
+  free_sample_begin_ratio: 0.6
+  free_sample_end_dist_m: 0.1
+  free_front_sample_n: 2
+  free_behind_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.03
-gs:
-  gs_iters: 10
-  gs_bs: 5
-  gs_keyframe_interval: 10
-  img_pool_size: 20
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
-  sh_degree: 1
+# gs:
+#   gs_iters: 10
+#   gs_bs: 5
+#   gs_keyframe_interval: 10
+#   img_pool_size: 20
+#   gs_down_rate: 1
+#   gs_vis_down_rate: 1
+#   sh_degree: 1
 decoder:
   mlp_level: 1
   mlp_hidden_dim: 64
@@ -56,7 +55,7 @@ optimizer:
   iters: 15  # iterations per frame
   batch_size: 16384 # 16384 # 16384 # 8192
   # ba_freq_frame: 20
-  lr_pose_ba: 1e-3
+  # lr_pose_ba: 1e-3
   # you need to train more iterations, lots of the samples are not even learned --> this cause the roughness of the reconstruction
 eval:
   mesh_freq_frame: 50 # reconstruct the mesh every x frames

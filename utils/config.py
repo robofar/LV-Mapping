@@ -97,7 +97,7 @@ class Config:
         self.use_mid_ts: bool = False # use the middle of the created and last updated timestamp for adjusting or just use the created timestamp
         self.search_alpha: float = 0.2 # the larger this value is, the larger neighborhood region would be, the more robust to the highly dynamic motion and also the more time-consuming
         self.idw_index: int = 2 # the index for IDW (inverse distance weighting), 2 means square inverse
-        self.buffer_size: int = int(2e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
+        self.buffer_size: int = int(1e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
 
         # shared by both kinds of feature 
         self.feature_dim: int = 8  # length of the feature for each grid feature
@@ -203,6 +203,8 @@ class Config:
         self.ba_bs: int = 16384 # batch size for ba optimization
 
         # gaussian splatting fitting 
+        self.monodepth_on: bool = False
+
         self.gs_iters: int = 0
         self.gs_bs: int = 5
         self.gs_keyframe_interval: int = 5
@@ -522,6 +524,8 @@ class Config:
 
         # gaussian splatting
         if "gs" in config_args:
+            self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
+
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)

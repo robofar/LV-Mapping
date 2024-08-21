@@ -22,6 +22,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 gs:
+  monodepth_on: True
   gs_iters: 20
   gs_bs: 5
   gs_keyframe_interval: 2
@@ -40,8 +41,7 @@ continual:
 tracker:
   photo_loss: False
   source_vox_down_m: 0.6
-  iter_n: 20
-  term_deg: 0.1
+  iter_n: 50
 pgo:
   map_context: True
   pgo_freq_frame: 30

@@ -67,6 +67,8 @@ class ReplicaDataset:
 
         self.T_c_l_mats = {"cam": self.T_c_l}
         
+        self.main_cam_name = "cam"
+
         self.intrinsic.set_intrinsics(height=680,
                                       width=1200,
                                       fx=self.fx,

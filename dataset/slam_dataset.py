@@ -54,7 +54,7 @@ class SLAMDataset():
 
         max_frame_number: int = 100000 # about 3 hours of operation
 
-        self.monodepth_on: bool = True
+        self.monodepth_on: bool = config.monodepth_on
 
         self.poses_ts = None # timestamp for each reference pose, also as np.array
         self.gt_poses = None
