@@ -199,6 +199,12 @@ Prune non-free neural points with too large SDF value
 
 Or maybe we can use MOS results, how to save the MOS results using Ben's MapMOS?
 
+### Place recognition
+
+Now we can use the visual (image) data for place recognition. We can even use those rendered views.
+
+We may consider some visual place recognition methods such as NetVLAD or pyBoW. Try these later.
+
 
 ## GS Visualizer
 
@@ -266,6 +272,8 @@ Or maybe we can use MOS results, how to save the MOS results using Ben's MapMOS?
 + [GS4Robo](https://github.com/dtc111111/awesome-3dgs-for-robotics)
 
 + [Grounded-SAM2](https://github.com/IDEA-Research/Grounded-SAM-2)
+
++ [R3Live](https://github.com/hku-mars/r3live)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
 

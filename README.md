@@ -145,6 +145,14 @@ Then you can install xformers for faster and more memory-efficient inference.
 ```
 conda install xformers -c xformers
 ```
+
+You may encounter errors regarding the incompatibility of the opencv-python pacakge, you can then try to use the following codes to install mmcv:
+```
+pip install -U openmim
+mim install mmcv
+```
+
+
 </details>
 
 ### 3. Install other dependency
