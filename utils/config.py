@@ -217,7 +217,7 @@ class Config:
         self.lambda_normal: float = 0.05 # normal regularization weight
         self.lambda_dist: float = 100.0 # distance distortion regularization weight
         self.lambda_sdf: float = 1.0 # gaussian center's sdf should be close to 0
-        self.lambda_sdf_normal: float = 1.0 # gaussian's normal should align with sdf's gradient direction
+        self.lambda_sdf_normal: float = 0.5 # gaussian's normal should align with sdf's gradient direction
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
         self.gs_batch_training_on: bool = False
@@ -532,7 +532,9 @@ class Config:
             self.movable_gs = config_args["gs"].get("movable_gs", self.movable_gs)
             self.lambda_dist = config_args["gs"].get("lambda_dist", self.lambda_dist) # weight for the distance distortion loss
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
-            
+            self.lambda_sdf = config_args["gs"].get("lambda_sdf", self.lambda_sdf)
+            self.lambda_sdf_normal = config_args["gs"].get("lambda_sdf_normal", self.lambda_sdf_normal)
+
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:
                 self.gs_batch_frame = config_args["gs"].get("gs_batch_frame", self.gs_batch_frame)

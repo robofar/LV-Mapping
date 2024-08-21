@@ -1355,12 +1355,12 @@ class Mapper:
             grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
             valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
-            self.config.lambda_sdf = 1.0
+            # self.config.lambda_sdf = 1.0
             sdf_loss = self.config.lambda_sdf * torch.abs(valid_guassians_sdf).mean()
 
             gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
             
-            self.config.lambda_sdf_normal = 0.5
+            # self.config.lambda_sdf_normal = 0.5
             sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
 
             print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
@@ -1371,7 +1371,7 @@ class Mapper:
             total_loss = (rgb_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_loss + sdf_normal_loss
             total_loss.backward() 
 
-            print("Total loss:", total_loss.item())
+            # print("Total loss:", total_loss.item())
 
             # update
             self.neural_points.optimizer.step()

@@ -259,7 +259,6 @@ class MapVisualizer:
         self._register_key_callback(["T"], self._toggle_trajectory)
         self._register_key_callback(["Y"], self._toggle_gt_trajectory)
         self._register_key_callback(["U"], self._toggle_odom_trajectory)
-        self._register_key_callback(["N"], self._toggle_gaussian_normals)
         self._register_key_callback(["G"], self._toggle_global)
         self._register_key_callback(["Z"], self._save_cur_vis)
         self._register_key_callback([";"], self._toggle_loop_debug)
@@ -272,11 +271,11 @@ class MapVisualizer:
         self._register_key_callback(["."], self._toggle_increase_mesh_nn)  # '>'
         self._register_key_callback([","], self._toggle_decrease_mesh_nn)  # '<'
         self._register_key_callback(["5"], self._toggle_point_color)
-        self._register_key_callback(["6"], self._toggle_uniform_color)
+        self._register_key_callback(["6"], self._toggle_gaussian_normals)
         self._register_key_callback(["7"], self._switch_background)
         self._register_key_callback(["8"], self._toggle_free_gaussian)
         self._register_key_callback(["0"], self._toggle_mono_depth_frame)
-        
+
         # self.vis.register_key_callback(262, partial(self._toggle_)) # right arrow # for future
         # self.vis.register_key_callback(263, partial(self._toggle_)) # left arrow
         self.vis.register_key_callback(

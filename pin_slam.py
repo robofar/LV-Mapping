@@ -38,7 +38,6 @@ from utils.tools import (
 )
 from utils.tracker import Tracker
 from utils.visualizer import MapVisualizer
-from utils.video_visualizer import VideoWindow
 
 '''
     📍PIN-SLAM: LiDAR SLAM Using a Point-Based Implicit Neural Representation for Achieving Global Map Consistency
@@ -104,12 +103,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # non-blocking visualizer
     if config.o3d_vis_on:
         o3d_vis = MapVisualizer(config) 
-        
-        # app = o3d.visualization.gui.Application.instance
-        # app.initialize()
-        # # win = VideoWindow() # TODO: add the non-blocking image visualizer
-        # app.run()
-
 
     if config.rerun_vis_on:
         rr.init("pin_slam_rerun_viewer", spawn=True)
@@ -441,8 +434,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if config.o3d_vis_on:
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
 
-    neural_points.recreate_hash(None, None, False, False) # merge the final neural point map
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
+    neural_points.recreate_hash(None, None, False, False) # merge the final neural point map
+    
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0)
     if config.save_map:
         o3d.io.write_point_cloud(os.path.join(run_path, "map", "neural_points.ply"), neural_pcd) # write the neural point cloud
