@@ -323,8 +323,6 @@ class SLAMDataset():
                         # print(confidence)
                         # print(torch.min(confidence), torch.max(confidence))
 
-                        pred_depth[confidence < 0.8] = 0 # How to set these threshold
-
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
                         normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
 
@@ -335,7 +333,9 @@ class SLAMDataset():
 
                         # print(pred_depth.shape)
 
-                        pred_depth[normal_confidence < 2.0] = 0
+                        # How to set these threshold to filter unreliable depth
+                        pred_depth[confidence < 0.5] = 0 
+                        pred_depth[normal_confidence < 1.0] = 0
 
                         # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
                         # pred_depth_np = pred_depth.detach().cpu().numpy()
@@ -401,7 +401,7 @@ class SLAMDataset():
                         # print(len(pred_pcd.points))
                         
                         # how to set these threshold
-                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5)
+                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.2)
 
                         # print(len(pred_pcd.points))
                                                    

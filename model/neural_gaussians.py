@@ -549,7 +549,10 @@ class NeuralPoints(nn.Module):
         new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
         
         if added_colors is not None:
-            new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white
+            # FIXME
+            # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
+            new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
+
             self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
         else:
             self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)

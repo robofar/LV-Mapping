@@ -333,7 +333,8 @@ class Mapper:
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], self.neural_points.resolution*4.0)
+            down_voxel_size = self.config.max_range*0.025 # add to config # TODO
+            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
             if mono_depth_point_cloud_torch.shape[0] > 0:
@@ -1163,32 +1164,27 @@ class Mapper:
 
             # add the isotropic loss
             
-            use_only_valid_gaussians = True
-            
             # actually we only need to use the points in the field of view
-            constraint_mask = self.neural_points.local_valid_color_mask & (~self.neural_points.local_free_gs_mask)
+            constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
+            true_count = torch.sum(constraint_mask)
+            true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
+            sample_bs = min(true_count, self.config.bs*4)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
+            # print("Sampled neural point count: " , sample_bs)
+            # don't use all the points here (random sample some of them as a batch)
+            sampled_indices = true_indices[torch.randperm(true_count)[:sample_bs]]
 
             isotropic_loss = 0.0
             if self.config.lambda_isotropic > 0:
-                if use_only_valid_gaussians:
-                    scaling = self.neural_points.get_local_scaling[constraint_mask] # only use those valid ones
-                else:
-                    scaling = self.neural_points.get_local_scaling
+                scaling = self.neural_points.get_local_scaling[sampled_indices] # only use those ones for this iter
                 isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
-
-            # print(isotropic_loss)
+                # print(isotropic_loss)
 
             sdf_loss = 0.0
             sdf_normal_loss = 0.0
             if self.config.lambda_sdf_normal > 0 or self.config.lambda_sdf > 0:
                 # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
-                if use_only_valid_gaussians:
-                    valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[constraint_mask]
-                    valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[constraint_mask])
-                else:
-                    valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz
-                    valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation)
-
+                valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
+                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices])
                 valid_guassians_xyz.requires_grad_(True)
 
                 valid_guassians_sdf = self.sdf(valid_guassians_xyz)[0] # sdf, sdf_std
