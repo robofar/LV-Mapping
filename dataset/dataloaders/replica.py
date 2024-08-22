@@ -98,10 +98,10 @@ class ReplicaDataset:
         # print(depth_image)
 
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
-                                                                            depth_image, 
-                                                                            depth_scale=self.depth_scale, 
-                                                                            depth_trunc=self.max_depth_m, 
-                                                                            convert_rgb_to_intensity=False)
+                                                                        depth_image, 
+                                                                        depth_scale=self.depth_scale, 
+                                                                        depth_trunc=self.max_depth_m, 
+                                                                        convert_rgb_to_intensity=False)
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image, self.intrinsic)
@@ -113,9 +113,13 @@ class ReplicaDataset:
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
         rgb_image = np.array(rgb_image)
+        # image_dict = {"cam": rgb_image}
 
-        rgb_image_dict = {"cam": rgb_image}
+        depth_image = np.array(depth_image)/self.depth_scale
+        rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
+        image_dict = {"cam": rgbd_image}
+
+        frame_data = {"points": points_xyzrgb, "img": image_dict}
 
         return frame_data 

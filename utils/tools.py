@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -40,6 +41,8 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     os.environ["NUMEXPR_MAX_THREADS"] = str(multiprocessing.cpu_count())
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
+
+    warnings.filterwarnings("ignore", category=FutureWarning) 
 
     run_name = config.name + "_" + ts  # modified to a name that is easier to index
 
@@ -726,7 +729,7 @@ def tranmat_close_to_identity(mats: np.ndarray, rot_thre: float, tran_thre: floa
 
 # borrow from marigold
 def colorize_depth_maps(
-    depth_map, min_depth, max_depth, cmap="Spectral", valid_mask=None
+    depth_map, min_depth, max_depth, cmap="Spectral", valid_mask=None, use_valid_depth_mask = True
 ):
     """
     Colorize depth maps. computed in numpy
@@ -740,6 +743,9 @@ def colorize_depth_maps(
     # reshape to [ (B,) H, W ]
     if depth.ndim < 3:
         depth = depth[np.newaxis, :, :]
+
+    if valid_mask is None and use_valid_depth_mask:
+        valid_mask = (depth > 0)
 
     # colorize
     cm = matplotlib.colormaps[cmap]
@@ -757,7 +763,7 @@ def colorize_depth_maps(
             valid_mask = valid_mask[:, np.newaxis, :, :]
         valid_mask = np.repeat(valid_mask, 3, axis=1)
         img_colored_np[~valid_mask] = 0
-
+    
     if isinstance(depth_map, torch.Tensor):
         img_colored = torch.from_numpy(img_colored_np).float()
     elif isinstance(depth_map, np.ndarray):

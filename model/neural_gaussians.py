@@ -39,7 +39,7 @@ from utils.tools import (
 )
 
 from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_scaling_rotation, normal2rotation, rotation2normal
-from gaussian_splatting.utils.sh_utils import RGB2SH
+from gaussian_splatting.utils.sh_utils import RGB2SH, SH2RGB
 from gaussian_splatting.utils.system_utils import mkdir_p
 
 class NeuralPoints(nn.Module):
@@ -966,7 +966,7 @@ class NeuralPoints(nn.Module):
                         .astype(np.float64)
                     )
                 gaussian_rgb_np = (
-                    self.features_dc[shown_gaussian_mask, 0]
+                    SH2RGB(self.features_dc[shown_gaussian_mask, 0])
                     .cpu()
                     .detach()
                     .numpy()
@@ -1010,7 +1010,7 @@ class NeuralPoints(nn.Module):
                         .astype(np.float64)
                     )
                 gaussian_rgb_np = (
-                    self.local_features_dc[shown_gaussian_mask, 0]
+                    SH2RGB(self.local_features_dc[shown_gaussian_mask, 0])
                     .cpu()
                     .detach()
                     .numpy()

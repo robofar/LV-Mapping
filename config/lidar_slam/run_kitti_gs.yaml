@@ -34,9 +34,9 @@ gs:
   # lambda_normal: 0.0
   lambda_sdf: 1.0
   lambda_sdf_normal: 0.5
-  lambda_depth: 0.1
+  lambda_depth: 0.01 # why this does not work properly
 continual:
-  batch_size_new_sample: 2000
+  batch_size_new_sample: 3000
   pool_capacity: 1e7
   pool_filter_freq: 10
 tracker:
@@ -50,7 +50,7 @@ pgo:
   virtual_side_count: 10
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
-  batch_size: 8000
+  batch_size: 16384
   adaptive_iters: True
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames

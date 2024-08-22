@@ -286,10 +286,12 @@ class SLAMDataset():
                     cur_img_depth_np = None
                     if np.shape(cur_img_np)[-1] == 4:
                         cur_img_depth_np = cur_img_np[:,:,3]
-                        cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8)
+                        cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8) # [0,255]
                     
                     cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
-                    cur_img = cur_img.permute(2,0,1)/255 # RGB or RGBD # C, H, W
+                    cur_img = cur_img.permute(2,0,1) # RGB or RGBD # C, H, W
+                    cur_img[:3] /= 255 # convert RGB channel to [0,1]
+                    # print(cur_img[3])
 
                     H, W = cur_img.shape[1], cur_img.shape[2]
 

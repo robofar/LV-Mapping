@@ -82,7 +82,7 @@ class CamImage:
 
         self.train_view = False # is used as train view or test view
 
-        image = image.clamp(0.0, 1.0)
+        image[:3] = image[:3].clamp(0.0, 1.0) # only for the RGB part
         self.image_width = image.shape[2]
         self.image_height = image.shape[1]
 
