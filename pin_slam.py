@@ -330,7 +330,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
             print("time for mapping preparation    (ms):", (T5-T4)*1e3)
             print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
-            print("time for mapping (Gaussian)     (ms):", (T6-T5_1)*1e3)
+            print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)
 
         # V: Mesh reconstruction and visualization
         cur_mesh = None

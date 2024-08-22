@@ -709,7 +709,6 @@ class Mapper:
 
         iter_count = max(1, iter_count + self.adaptive_iter_offset)
 
-        # neural_point_feat = list(self.neural_points.parameters())
         neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         geo_mlp_param = list(self.geo_mlp.parameters())
@@ -793,11 +792,6 @@ class Mapper:
                     sdf_pred[:: self.config.gradient_decimation],
                     self.config.voxel_size_m * self.config.num_grad_step_ratio,
                 )  #
-                # g = self.get_numerical_gradient_multieps(coord[::self.config.gradient_decimation],
-                #                                 sdf_pred[::self.config.gradient_decimation],
-                #                                 certainty[::self.config.gradient_decimation],
-                #                                 self.config.voxel_size_m*self.config.num_grad_step_ratio*2)
-                # different eps for different sample points (smaller for those more stable ones)
 
             T03 = get_time()
 
@@ -954,103 +948,11 @@ class Mapper:
         # update the global map
         self.neural_points.assign_local_to_global()
 
-    # joint optimization of PIN map and the poses in the sliding window
-    # neural points are static in this case, we only fine-tune the neural point features for the map updating
-    def bundle_adjustment(
-        self, iter_count, window_size: int = 50, use_lie_group: bool = False
-    ):
-
-        import pypose as pp
-
-        current_poses_mat = self.used_poses
-
-        opt_window_size = min(current_poses_mat.shape[0], window_size)
-
-        if use_lie_group:  # SE3
-            current_poses_se3_opt = torch.nn.Parameter(
-                pp.from_matrix(
-                    current_poses_mat[-opt_window_size:], ltype=pp.SE3_type, check=False
-                )
-            )  # optimizable part
-            poses_se3_fix = pp.from_matrix(
-                current_poses_mat[:-opt_window_size], ltype=pp.SE3_type, check=False
-            )  # fixed part
-        else:  # se3
-            current_poses_se3_opt = torch.nn.Parameter(pp.from_matrix(current_poses_mat[-opt_window_size:], ltype=pp.SE3_type, check=False).Log())    
-            # optimizable part
-            poses_se3_fix = pp.from_matrix(current_poses_mat[:-opt_window_size], ltype=pp.SE3_type, check=False).Log()    
-            # fixed part
-
-        # neural_point_feat = list(self.neural_points.parameters())
-        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
-
-        # also add the poses as param here, for pose refinement (bundle ajustment)
-        opt = setup_optimizer(
-            self.config, neural_point_feat, 
-            poses=current_poses_se3_opt, lr_ratio=self.config.lr_ba_map/self.config.lr
-        )
-
-        for iter in tqdm(range(iter_count), disable=self.silence):
-
-            coord_ba, weight, ts = self.get_ba_samples(self.config.ba_bs)
-            weight = weight.detach()
-
-            current_poses_se3 = torch.cat([poses_se3_fix, current_poses_se3_opt], dim=0)
-
-            if use_lie_group:
-                poses = current_poses_se3[ts]  # SE3
-            else:
-                poses = (current_poses_se3[ts]).Exp()  # se3 -> SE3
-
-            coord = poses.to(coord_ba) @ coord_ba
-
-            sdf_pred = self.sdf(coord)[0]
-
-            # if not self.config.loss_weight_on:
-            weight = 1.0
-
-            # calculate the weighted l2 loss
-            # cur_loss = (weight * (sdf_pred**2)).mean()
-
-            cur_loss = ((sdf_pred) ** 2).mean()  # don't weight
-
-            # print(torch.sqrt(cur_loss))
-
-            opt.zero_grad(set_to_none=True)
-            cur_loss.backward(retain_graph=False)
-            opt.step()
-
-        # update the global map
-        self.neural_points.assign_local_to_global()
-
-        # update the poses after ba
-        current_poses_se3 = torch.cat([poses_se3_fix, current_poses_se3_opt], dim=0)
-
-        updated_poses_mat = current_poses_se3.detach().matrix()
-
-        self.used_poses = updated_poses_mat
-
-        # diff_pose = torch.matmul(torch.inverse(current_poses_mat), updated_poses_mat)
-        # print(diff_pose[-opt_window_size:])
-
-        updated_poses_np = updated_poses_mat.cpu().numpy()
-
-        if self.config.pgo_on:
-            self.dataset.pgo_poses[:self.dataset.processed_frame+1] = updated_poses_np
-            # odom pose would not be changed in this case (odom pose is without ba)
-            # update pgo odom edge
-        elif self.config.track_on:
-            self.dataset.odom_poses[:self.dataset.processed_frame+1] = updated_poses_np
-
-        # FIXME
-        self.dataset.cur_pose_ref = updated_poses_np[-1]
-        self.dataset.last_pose_ref = updated_poses_np[-1]
-
-        self.ba_done_flag = True
+   
 
     
     # jointly optimize the neural point features and gaussian parameters
-    def joint_gsdf_mapping(self, iter_count):
+    def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True):
 
         if iter_count < 1:
             return
@@ -1182,9 +1084,9 @@ class Mapper:
                 isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
                 # print(isotropic_loss)
 
-            sdf_loss = 0.0
-            sdf_normal_loss = 0.0
-            if self.config.lambda_sdf_normal > 0 or self.config.lambda_sdf > 0:
+            sdf_consistency_loss = 0.0
+            sdf_normal_consistency_loss = 0.0
+            if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                 # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
                 valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
                 valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices])
@@ -1196,17 +1098,61 @@ class Mapper:
                 valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
                 # self.config.lambda_sdf = 1.0
-                sdf_loss = self.config.lambda_sdf * torch.abs(valid_guassians_sdf).mean()
+                sdf_consistency_loss = self.config.lambda_sdf_cons * torch.abs(valid_guassians_sdf).mean()
 
                 gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
                 
                 # self.config.lambda_sdf_normal = 0.5
-                sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
+                sdf_normal_consistency_loss = self.config.lambda_sdf_normal_cons * gaussian_normal_error.mean()
 
-                # print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
+                # print(" SDF loss:", sdf_consistency_loss.item(), " SDF normal loss:", sdf_normal_consistency_loss.item())
 
+
+            # SDF training part
+            sdf_loss = 0.0
+            eikonal_loss = 0.0
+            if sdf_loss_on and self.config.lambda_sdf > 0.0:
+                coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag)
+                    
+                poses = self.used_poses[ts]
+                origins = poses[:, :3, 3]
+
+                # transformed to global frame if ba is done
+                if self.ba_done_flag:
+                    coord = transform_batch_torch(coord, poses)
+                    
+                if self.require_gradient:
+                    coord.requires_grad_(True)
+                    
+                geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts)
+                
+                # predict the scaled sdf with the feature
+                sdf_pred = self.geo_mlp.sdf(geo_feature) # [N, K, 1]  
+
+                if not self.config.weighted_first:
+                    sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
+
+                
+                # weight's sign indicate the sample is around the surface or in the free space
+                weight = torch.abs(weight).detach() 
+                # calculate the sdf bce loss
+                sdf_loss = sdf_bce_loss(sdf_pred,sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
+
+                sdf_loss *= self.config.lambda_sdf
+
+                if self.config.weight_e > 0:
+                    if self.require_gradient:
+                        g = get_gradient(coord, sdf_pred)  # to unit m
+                    elif self.config.numerical_grad:
+                        g = self.get_numerical_gradient(
+                            coord[:: self.config.gradient_decimation],
+                            sdf_pred[:: self.config.gradient_decimation],
+                            self.config.voxel_size_m * self.config.num_grad_step_ratio)
+                    eikonal_loss = self.config.weight_e * ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
+                    eikonal_loss *= self.config.lambda_sdf
+                    
             # total loss
-            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_loss + sdf_normal_loss
+            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss + sdf_loss + eikonal_loss
             total_loss.backward() 
 
             # log losses by wandb
@@ -1307,6 +1253,99 @@ class Mapper:
         
         return 
     
+     # joint optimization of PIN map and the poses in the sliding window
+    # neural points are static in this case, we only fine-tune the neural point features for the map updating
+    def bundle_adjustment(
+        self, iter_count, window_size: int = 50, use_lie_group: bool = False
+    ):
+
+        import pypose as pp
+
+        current_poses_mat = self.used_poses
+
+        opt_window_size = min(current_poses_mat.shape[0], window_size)
+
+        if use_lie_group:  # SE3
+            current_poses_se3_opt = torch.nn.Parameter(
+                pp.from_matrix(
+                    current_poses_mat[-opt_window_size:], ltype=pp.SE3_type, check=False
+                )
+            )  # optimizable part
+            poses_se3_fix = pp.from_matrix(
+                current_poses_mat[:-opt_window_size], ltype=pp.SE3_type, check=False
+            )  # fixed part
+        else:  # se3
+            current_poses_se3_opt = torch.nn.Parameter(pp.from_matrix(current_poses_mat[-opt_window_size:], ltype=pp.SE3_type, check=False).Log())    
+            # optimizable part
+            poses_se3_fix = pp.from_matrix(current_poses_mat[:-opt_window_size], ltype=pp.SE3_type, check=False).Log()    
+            # fixed part
+
+        # neural_point_feat = list(self.neural_points.parameters())
+        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
+
+        # also add the poses as param here, for pose refinement (bundle ajustment)
+        opt = setup_optimizer(
+            self.config, neural_point_feat, 
+            poses=current_poses_se3_opt, lr_ratio=self.config.lr_ba_map/self.config.lr
+        )
+
+        for iter in tqdm(range(iter_count), disable=self.silence):
+
+            coord_ba, weight, ts = self.get_ba_samples(self.config.ba_bs)
+            weight = weight.detach()
+
+            current_poses_se3 = torch.cat([poses_se3_fix, current_poses_se3_opt], dim=0)
+
+            if use_lie_group:
+                poses = current_poses_se3[ts]  # SE3
+            else:
+                poses = (current_poses_se3[ts]).Exp()  # se3 -> SE3
+
+            coord = poses.to(coord_ba) @ coord_ba
+
+            sdf_pred = self.sdf(coord)[0]
+
+            # if not self.config.loss_weight_on:
+            weight = 1.0
+
+            # calculate the weighted l2 loss
+            # cur_loss = (weight * (sdf_pred**2)).mean()
+
+            cur_loss = ((sdf_pred) ** 2).mean()  # don't weight
+
+            # print(torch.sqrt(cur_loss))
+
+            opt.zero_grad(set_to_none=True)
+            cur_loss.backward(retain_graph=False)
+            opt.step()
+
+        # update the global map
+        self.neural_points.assign_local_to_global()
+
+        # update the poses after ba
+        current_poses_se3 = torch.cat([poses_se3_fix, current_poses_se3_opt], dim=0)
+
+        updated_poses_mat = current_poses_se3.detach().matrix()
+
+        self.used_poses = updated_poses_mat
+
+        # diff_pose = torch.matmul(torch.inverse(current_poses_mat), updated_poses_mat)
+        # print(diff_pose[-opt_window_size:])
+
+        updated_poses_np = updated_poses_mat.cpu().numpy()
+
+        if self.config.pgo_on:
+            self.dataset.pgo_poses[:self.dataset.processed_frame+1] = updated_poses_np
+            # odom pose would not be changed in this case (odom pose is without ba)
+            # update pgo odom edge
+        elif self.config.track_on:
+            self.dataset.odom_poses[:self.dataset.processed_frame+1] = updated_poses_np
+
+        # FIXME
+        self.dataset.cur_pose_ref = updated_poses_np[-1]
+        self.dataset.last_pose_ref = updated_poses_np[-1]
+
+        self.ba_done_flag = True
 
     # short-hand function
     def sdf(self, x, get_std=False):

@@ -221,8 +221,9 @@ class Config:
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal consistency regularization weight
         self.lambda_dist: float = 100.0 # distance distortion regularization weight
-        self.lambda_sdf: float = 1.0 # gaussian center's sdf should be close to 0
-        self.lambda_sdf_normal: float = 0.5 # gaussian's normal should align with sdf's gradient direction
+        self.lambda_sdf_cons: float = 1.0 # gaussian center's sdf should be close to 0
+        self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
+        self.lambda_sdf: float = 1.0 # pin map sdf fitting loss
 
         self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
 
@@ -539,13 +540,13 @@ class Config:
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
+            self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
             self.lambda_dist = config_args["gs"].get("lambda_dist", self.lambda_dist) # weight for the distance distortion loss
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
             self.lambda_isotropic = config_args["gs"].get("lambda_isotropic", self.lambda_isotropic)
+            self.lambda_sdf_cons = config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons)
+            self.lambda_sdf_normal_cons = config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons)
             self.lambda_sdf = config_args["gs"].get("lambda_sdf", self.lambda_sdf)
-            self.lambda_sdf_normal = config_args["gs"].get("lambda_sdf_normal", self.lambda_sdf_normal)
-            self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
-
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:

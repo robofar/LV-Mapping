@@ -33,8 +33,8 @@ gs:
   # lambda_dist: 0.0
   # lambda_normal: 0.0
   # lambda_isotropic: 0.0
-  # lambda_sdf: 0.0
-  # lambda_sdf_normal: 0.0
+  # lambda_sdf_cons: 0.0
+  # lambda_sdf_normal_cons: 0.0
   lambda_depth: 0.01 # why this does not work properly
 continual:
   batch_size_new_sample: 3000
@@ -52,6 +52,7 @@ pgo:
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
   batch_size: 16384
+  iters: 10
   adaptive_iters: True
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames

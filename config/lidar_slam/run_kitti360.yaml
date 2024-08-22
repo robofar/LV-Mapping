@@ -24,8 +24,8 @@ gs:
   gs_down_rate: 0
   gs_vis_down_rate: 0
   sh_degree: 1
-  lambda_sdf: 1.0
-  lambda_sdf_normal: 0.5
+  lambda_sdf_cons: 1.0
+  lambda_sdf_normal_cons: 0.5
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 1e7
