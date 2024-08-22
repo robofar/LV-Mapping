@@ -13,7 +13,7 @@ process:
 sampler:
   surface_sample_range_m: 0.25
 neuralpoints:
-  voxel_size_m: 0.2
+  voxel_size_m: 0.25
   search_alpha: 0.8
 loss:
   sigma_sigmoid_m: 0.08

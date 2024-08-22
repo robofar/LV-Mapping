@@ -709,7 +709,9 @@ class Mapper:
 
         iter_count = max(1, iter_count + self.adaptive_iter_offset)
 
-        neural_point_feat = list(self.neural_points.parameters())
+        # neural_point_feat = list(self.neural_points.parameters())
+        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
+
         geo_mlp_param = list(self.geo_mlp.parameters())
         if self.config.semantic_on:
             sem_mlp_param = list(self.sem_mlp.parameters())
@@ -979,7 +981,8 @@ class Mapper:
             poses_se3_fix = pp.from_matrix(current_poses_mat[:-opt_window_size], ltype=pp.SE3_type, check=False).Log()    
             # fixed part
 
-        neural_point_feat = list(self.neural_points.parameters())
+        # neural_point_feat = list(self.neural_points.parameters())
+        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         # also add the poses as param here, for pose refinement (bundle ajustment)
         opt = setup_optimizer(
@@ -1200,7 +1203,7 @@ class Mapper:
                 # self.config.lambda_sdf_normal = 0.5
                 sdf_normal_loss = self.config.lambda_sdf_normal * gaussian_normal_error.mean()
 
-                print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
+                # print(" SDF loss:", sdf_loss.item(), " SDF normal loss:", sdf_normal_loss.item())
 
             # total loss
             total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_loss + sdf_normal_loss
@@ -1213,6 +1216,8 @@ class Mapper:
             # update
             self.neural_points.optimizer.step()
             self.neural_points.optimizer.zero_grad(set_to_none=True) 
+
+            # print(torch.mean(self.neural_points.local_geo_features))
 
             T3 = get_time()
 

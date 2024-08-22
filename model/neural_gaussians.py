@@ -324,6 +324,7 @@ class NeuralPoints(nn.Module):
         # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
 
         l = [
+            {'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"},
             {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
             {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
