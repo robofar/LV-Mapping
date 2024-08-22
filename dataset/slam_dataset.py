@@ -687,7 +687,7 @@ class SLAMDataset():
         if self.cur_point_cloud_mono_depth is not None:
             self.cur_point_cloud_mono_depth, _ = crop_frame(
                 self.cur_point_cloud_mono_depth,
-                min_range=self.config.min_range
+                min_range=self.config.min_range*5.0 # we don't use the nearby part (FIXME)
             )
 
         if self.config.kitti_correction_on:

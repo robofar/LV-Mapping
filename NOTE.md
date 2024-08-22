@@ -229,7 +229,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add pruning
 - [ ] Keyframe strategy
 - [x] Batch mode
-- [ ] Add SDF / SDF gradient consistency loss
+- [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation

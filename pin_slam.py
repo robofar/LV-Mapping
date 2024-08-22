@@ -303,6 +303,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if frame_id % config.mapping_freq_frame == 0:
             mapper.mapping(cur_iter_num)
 
+        T5_1 = get_time()
+
         # gaussian splatting mapping (fitting)
         if config.color_channel == 3: # only when color available
             if config.gs_batch_training_on:
@@ -327,7 +329,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             if config.pgo_on:
                 print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
             print("time for mapping preparation    (ms):", (T5-T4)*1e3)
-            print("time for training               (ms):", (T6-T5)*1e3)
+            print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
+            print("time for mapping (Gaussian)     (ms):", (T6-T5_1)*1e3)
 
         # V: Mesh reconstruction and visualization
         cur_mesh = None
