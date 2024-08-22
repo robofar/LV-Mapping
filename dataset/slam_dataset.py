@@ -683,6 +683,12 @@ class SLAMDataset():
                 self.config.min_range,
                 crop_max_range,
             )
+        
+        if self.cur_point_cloud_mono_depth is not None:
+            self.cur_point_cloud_mono_depth, _ = crop_frame(
+                self.cur_point_cloud_mono_depth,
+                min_range=self.config.min_range
+            )
 
         if self.config.kitti_correction_on:
             self.cur_point_cloud_torch = intrinsic_correct(
@@ -1487,7 +1493,7 @@ def apply_kitti_format_calib(poses_np: np.ndarray, calib_T_cl: np.ndarray):
 # torch version
 def crop_frame(
     points: torch.tensor,
-    ts: torch.tensor,
+    ts: torch.tensor = None,
     min_z_th=-3.0,
     max_z_th=100.0,
     min_range=2.75,

@@ -32,8 +32,9 @@ gs:
   sh_degree: 1
   # lambda_dist: 0.0
   # lambda_normal: 0.0
-  lambda_sdf: 1.0
-  lambda_sdf_normal: 0.5
+  # lambda_isotropic: 0.0
+  # lambda_sdf: 0.0
+  # lambda_sdf_normal: 0.0
   lambda_depth: 0.01 # why this does not work properly
 continual:
   batch_size_new_sample: 3000

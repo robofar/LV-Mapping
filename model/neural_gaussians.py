@@ -204,6 +204,12 @@ class NeuralPoints(nn.Module):
 
     def local_count(self):
         return self.local_neural_points.shape[0]
+
+    def free_count(self):
+        return torch.sum(self.free_gs_mask).int()
+
+    def free_local_count(self):
+        return torch.sum(self.local_free_gs_mask).int()
     
     @staticmethod
     def build_covariance_from_scaling_rotation(center, scaling, scaling_modifier, rotation):
@@ -347,15 +353,15 @@ class NeuralPoints(nn.Module):
 
     def print_memory(self):
         if not self.silence:
-            print("# Global neural point: %d" % (self.count()))
-            print("# Local  neural point: %d" % (self.local_count()))
+            print("# Global neural point: %d (%d free)" % (self.count(), self.free_count()))
+            print("# Local  neural point: %d (%d free)" % (self.local_count(), self.free_local_count()))
         neural_point_count = self.count()
         point_dim = (
             self.config.feature_dim + 3 + 4
         )  # feature plus neural point position and orientation
         if self.color_features is not None:
             point_dim += self.config.feature_dim  # also include the color feature
-        cur_memory = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32
+        cur_memory = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
         if not self.silence:
             print("Memory consumption: %f (MB)" % cur_memory)
         self.memory_footprint.append(cur_memory)

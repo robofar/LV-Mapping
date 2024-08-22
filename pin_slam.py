@@ -399,7 +399,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 frame_point_cloud_for_vis.paint_uniform_color(np.array([1.0, 0, 0])) # RED
                 frame_point_cloud_for_vis += dataset.cur_frame_mono_depth_o3d
                 
-            o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+            o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view)
 
             if config.rerun_vis_on:
                 if neural_pcd is not None:

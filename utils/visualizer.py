@@ -36,12 +36,18 @@ class MapVisualizer:
         self.reset_bounding_box = True
         self.config = config
 
+        self.gs_on: bool = False
+        if config is not None:
+            self.gs_on = config.gs_on
+
         self.cur_frame_id: int = 0
 
         # Create data
         self.scan = o3d.geometry.PointCloud()
         self.frame_axis = o3d.geometry.TriangleMesh()
         self.sensor_cad = o3d.geometry.TriangleMesh()
+        self.rend_cam_frame_axis = o3d.geometry.TriangleMesh()
+        self.cam_cad = o3d.geometry.TriangleMesh() # render view camera
         self.mesh = o3d.geometry.TriangleMesh()
         self.sdf = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
@@ -70,6 +76,11 @@ class MapVisualizer:
             if self.config.sensor_cad_path is not None:
                 self.sensor_cad = o3d.io.read_triangle_mesh(config.sensor_cad_path)
                 self.sensor_cad.compute_vertex_normals()
+            if self.gs_on and self.config.cam_cad_path is not None:
+                self.cam_cad = o3d.io.read_triangle_mesh(config.cam_cad_path)
+                self.cam_cad.compute_vertex_normals()
+                self.cam_cad.paint_uniform_color(GOLDEN)
+                self.cam_cad = self.cam_cad.scale(config.max_range/20.0, np.zeros([3,1]))
             self.mc_res_m = config.mc_res_m
             self.mesh_min_nn = config.mesh_min_nn
             self.keep_local_mesh = config.keep_local_mesh
@@ -140,9 +151,10 @@ class MapVisualizer:
         mesh=None,
         neural_points=None,
         data_pool=None,
+        cur_cam_pose=None,
         pause_now=False,
     ):
-        self._update_geometries(scan, pose, sdf, mesh, neural_points, data_pool)
+        self._update_geometries(scan, pose, sdf, mesh, neural_points, data_pool, cur_cam_pose)
         self.update_view()
         self.pause_view()
         if pause_now:
@@ -191,6 +203,7 @@ class MapVisualizer:
         self.vis.add_geometry(self.scan)
         self.vis.add_geometry(self.sdf)
         self.vis.add_geometry(self.frame_axis)
+        self.vis.add_geometry(self.rend_cam_frame_axis)
         self.vis.add_geometry(self.mesh)
         self.vis.add_geometry(self.neural_points)
         self.vis.add_geometry(self.data_pool)
@@ -347,6 +360,11 @@ class MapVisualizer:
             ego_path = os.path.join(self.log_path, ego_name)
             o3d.io.write_triangle_mesh(ego_path, self.frame_axis)
             print("Output current sensor model to: ", ego_path)
+        if self.rend_cam_frame_axis.has_triangles():
+            rend_cam_name = str(self.cur_frame_id) + "_rend_cam_vis.ply"
+            rend_cam_path = os.path.join(self.log_path, rend_cam_name)
+            o3d.io.write_triangle_mesh(rend_cam_path, self.rend_cam_frame_axis)
+            print("Output current render camera frame to: ", rend_cam_path)
 
     def _next_frame(self, vis):  # FIXME
         self.block_vis = not self.block_vis
@@ -490,6 +508,7 @@ class MapVisualizer:
         mesh=None,
         neural_points=None,
         data_pool=None,
+        cur_cam_pose=None,
     ):
 
         # Scan (toggled by "F")
@@ -608,6 +627,19 @@ class MapVisualizer:
                 self.vis.add_geometry(self.frame_axis, self.reset_bounding_box)
         else:
             self.vis.remove_geometry(self.frame_axis, self.reset_bounding_box)
+
+        if self.gs_on:
+            if cur_cam_pose is not None:
+                self.vis.remove_geometry(self.rend_cam_frame_axis, self.reset_bounding_box)
+                self.rend_cam_frame_axis = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                    size=self.frame_axis_len/2, origin=np.zeros(3)
+                )
+                self.rend_cam_frame_axis += self.cam_cad
+                self.rend_cam_frame_axis = self.rend_cam_frame_axis.transform(cur_cam_pose)
+                if self.ego_view:
+                    self.rend_cam_frame_axis.transform(np.linalg.inv(pose))
+
+                self.vis.add_geometry(self.rend_cam_frame_axis, self.reset_bounding_box)
 
         if pose is not None:
             self.last_pose = pose

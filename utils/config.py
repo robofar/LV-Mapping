@@ -203,6 +203,7 @@ class Config:
         self.ba_bs: int = 16384 # batch size for ba optimization
 
         # gaussian splatting fitting 
+        self.gs_on: bool = False
         self.monodepth_on: bool = False
 
         self.gs_iters: int = 0
@@ -218,7 +219,7 @@ class Config:
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_depth: float = 0.1 # weight for depth rendering
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
-        self.lambda_normal: float = 0.05 # normal regularization weight
+        self.lambda_normal: float = 0.05 # normal consistency regularization weight
         self.lambda_dist: float = 100.0 # distance distortion regularization weight
         self.lambda_sdf: float = 1.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal: float = 0.5 # gaussian's normal should align with sdf's gradient direction
@@ -308,6 +309,7 @@ class Config:
         self.vis_frame_axis_len: float = 0.8 # sensor frame axis length, for visualization, unit: m
         self.vis_point_size: int = 2 # point size for visualization in o3d
         self.sensor_cad_path = None # the path to the sensor cad file, "./cad/ipb_car.ply" for visualization
+        self.cam_cad_path = "./cad/camera.ply"
 
         # result saving settings
         self.save_map: bool = False # save the neural point map model and decoders or not
@@ -527,6 +529,7 @@ class Config:
 
         # gaussian splatting
         if "gs" in config_args:
+            self.gs_on = True
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
@@ -536,12 +539,13 @@ class Config:
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
-            self.movable_gs = config_args["gs"].get("movable_gs", self.movable_gs)
             self.lambda_dist = config_args["gs"].get("lambda_dist", self.lambda_dist) # weight for the distance distortion loss
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
+            self.lambda_isotropic = config_args["gs"].get("lambda_isotropic", self.lambda_isotropic)
             self.lambda_sdf = config_args["gs"].get("lambda_sdf", self.lambda_sdf)
             self.lambda_sdf_normal = config_args["gs"].get("lambda_sdf_normal", self.lambda_sdf_normal)
             self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
+
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:

@@ -111,6 +111,9 @@ class Mapper:
 
         self.cam_img_test_pool = []
 
+        self.T_w_c_cur_view = None
+
+
     def dynamic_filter(self, points_torch, type_2_on: bool = True):
 
         if type_2_on:
@@ -1262,6 +1265,8 @@ class Mapper:
         T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
         T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
         T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+
+        self.T_w_c_cur_view = T_w_c.detach().cpu().numpy()
 
         render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
         renderd_image, dist_distortion, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
