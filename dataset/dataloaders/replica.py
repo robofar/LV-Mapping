@@ -78,7 +78,7 @@ class ReplicaDataset:
         
 
         self.depth_scale = 6553.5
-        self.max_depth_m = 10.0
+        self.max_depth_m = 15.0
         self.down_sample_on = False
         self.rand_down_rate = 0.1
 

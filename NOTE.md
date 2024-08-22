@@ -228,11 +228,14 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 
 - [ ] Add pruning
 - [ ] Keyframe strategy
+- [ ] Figure out the issue of the normal loss, does not work properly
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation
+- [ ] Check RTG-SLAM and add the opacity loss
+- [ ] Allow the freee gaussians to move freely
 - [ ] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
 - [ ] KITTI-360 NVS benchmark

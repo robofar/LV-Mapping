@@ -291,7 +291,7 @@ class Config:
         self.log_freq_frame: int = 0 # save the result log per x frames
         self.mesh_freq_frame: int = 20  # do the reconstruction per x frames
         self.sdfslice_freq_frame: int = 1 # visualize the SDF slice per x frames
-        self.vis_sdf_slice_v: bool = False # also visualize the vertical SDF slice or not (default only horizontal slice)
+        self.vis_sdf_slice_v: bool = True # also visualize the vertical SDF slice or not (default only horizontal slice)
         self.sdf_slice_height: float = -1.0 # initial height of the horizontal SDF slice (m) in sensor frame
         self.eval_traj_align: bool = True # do the SE3 alignment of the trajectory when evaluating the absolute error
         

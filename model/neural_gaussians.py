@@ -530,7 +530,7 @@ class NeuralPoints(nn.Module):
         # added_pt_dist2 = torch.sum((added_pt - sensor_position)**2, dim=-1)
 
         # the same scaling initialization for all Gaussians
-        mean_dist = torch.tensor([self.resolution], dtype=self.dtype, device=self.device)
+        mean_dist = torch.tensor([self.resolution*1.5], dtype=self.dtype, device=self.device) # set a bit larger
 
         new_scales = self.scaling_inverse_activation(mean_dist)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
         
@@ -923,6 +923,8 @@ class NeuralPoints(nn.Module):
             scale = self.local_scaling.detach().cpu().numpy()
             rotation = self.local_rotation.detach().cpu().numpy()
 
+        # xyz_gl = xyz @ np.array([[1, 0, 0], [0, 0, -1], [0, -1, 0]])  # open gl conversion
+
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
@@ -932,10 +934,17 @@ class NeuralPoints(nn.Module):
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(save_path)
-
         print(f"save the gaussian map to {save_path}")
         
-    
+        # # opengl coordinate
+        # elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        # attributes = np.concatenate((xyz_gl, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        # elements[:] = list(map(tuple, attributes))
+        # elgl = PlyElement.describe(elements, 'vertex')
+        # save_path_gl = save_path[:-4] + "_opengl_vis.ply"
+        # PlyData([elgl]).write(save_path_gl)
+        # print(f"save the gaussian map (opengl coordinate) to {save_path_gl}")
+
     def get_neural_points_o3d(
         self,
         query_global: bool = True,

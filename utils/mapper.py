@@ -950,7 +950,6 @@ class Mapper:
 
    
 
-    
     # jointly optimize the neural point features and gaussian parameters
     def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True):
 
@@ -1040,7 +1039,7 @@ class Mapper:
 
                 # TODO Figure out their meaning
                 dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
-                rend_normal  = render_pkg['rend_normal'] # 3, H, W
+                rend_normal  = render_pkg['rend_normal'] # 3, H, W # what is this actually?
 
                 surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
                 surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map
@@ -1056,6 +1055,7 @@ class Mapper:
                     depth_loss_batch += self.config.lambda_depth * depth_loss
 
                 # regularization losses
+                # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
                 normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
                 normal_loss = lambda_normal * (normal_error).mean()
                 dist_loss = lambda_dist * (dist_distortion).mean()
@@ -1081,13 +1081,13 @@ class Mapper:
             isotropic_loss = 0.0
             if self.config.lambda_isotropic > 0:
                 scaling = self.neural_points.get_local_scaling[sampled_indices] # only use those ones for this iter
+                # print(scaling)
                 isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
                 # print(isotropic_loss)
 
             sdf_consistency_loss = 0.0
             sdf_normal_consistency_loss = 0.0
             if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
-                # add the neural points sdf loss, also add neural point parameters to the optimizer here (TODO)
                 valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
                 valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices])
                 valid_guassians_xyz.requires_grad_(True)
@@ -1105,7 +1105,7 @@ class Mapper:
                 # self.config.lambda_sdf_normal = 0.5
                 sdf_normal_consistency_loss = self.config.lambda_sdf_normal_cons * gaussian_normal_error.mean()
 
-                # print(" SDF loss:", sdf_consistency_loss.item(), " SDF normal loss:", sdf_normal_consistency_loss.item())
+                print(" SDF loss:", sdf_consistency_loss.item(), " SDF normal loss:", sdf_normal_consistency_loss.item())
 
 
             # SDF training part
@@ -1152,10 +1152,12 @@ class Mapper:
                     eikonal_loss *= self.config.lambda_sdf
                     
             # total loss
-            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss + sdf_loss + eikonal_loss
-            total_loss.backward() 
+            # TODO: monitor losses by wandb
+            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs \
+                + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss \
+                + sdf_loss + eikonal_loss
 
-            # log losses by wandb
+            total_loss.backward() 
 
             # print("Total loss:", total_loss.item())
 
@@ -1203,7 +1205,7 @@ class Mapper:
             # print(original_img_np[3]) # why all 1?
             original_img_depth = original_img_np[3]
             depth_valid_mask = original_img_depth > 0
-            original_img_depth = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.7)*255.0).astype(np.uint8) # 1, 3, H, W 
+            original_img_depth = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
             # print(np.shape(original_img_depth))
             original_img_depth = np.transpose(original_img_depth[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
             original_img_depth = cv2.cvtColor(original_img_depth, cv2.COLOR_RGB2BGR)
@@ -1224,7 +1226,7 @@ class Mapper:
         cv2.imshow(cam_name + ": Rendered RGB", renderd_image_np)
         #cv2.waitKey(1) # 1ms
 
-        rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.7)*255.0).astype(np.uint8) # 1, 3, H, W 
+        rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
         rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
         cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
@@ -1250,7 +1252,8 @@ class Mapper:
             print("Current PSNR (test view):", cur_pnsr)
 
         self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
-        
+        self.neural_points.assign_local_to_global() # set back pin feature
+
         return 
     
      # joint optimization of PIN map and the poses in the sliding window

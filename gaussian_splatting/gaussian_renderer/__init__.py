@@ -194,6 +194,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
 
     # what's the depth_ratio? TODO
+    # TODO: read the paper again
 
     depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected
     surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median

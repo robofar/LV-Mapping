@@ -18,12 +18,12 @@ sampler:
   free_sample_end_dist_m: 0.1
   free_front_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.03
+  voxel_size_m: 0.04
   from_sample_points: False
 gs:
-  gs_iters: 5
-  gs_bs: 2
-  gs_keyframe_interval: 5
+  gs_iters: 10
+  gs_bs: 5
+  gs_keyframe_interval: 2
   img_pool_size: 20
   gs_down_rate: 1
   gs_vis_down_rate: 1
@@ -31,7 +31,7 @@ gs:
 loss:
   sigma_sigmoid_m: 0.01
   ekional_loss_on: True
-  weight_e: 0.2
+  weight_e: 0.5
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 2e7
