@@ -104,6 +104,7 @@ class CamImage:
             self.depth_on = False
 
         # TODO: may add normal
+        # TODO: the issue of the depth rendering loss lie in the depth image downsampling, bilinear may not be a good idea, update it 
         
         # C can be either 3 or 4
         # Downsample to Cx(H/2)x(W/2)

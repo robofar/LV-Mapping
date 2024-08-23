@@ -111,10 +111,10 @@ class Trainer:
 
             # regularization
             # lambda_normal = self.config.lambda_normal if iteration > 7000 else 0.0
-            # lambda_dist = self.config.lambda_dist if iteration > 3000 else 0.0
+            # lambda_distort = self.config.lambda_distort if iteration > 3000 else 0.0
 
             lambda_normal = self.config.lambda_normal
-            lambda_dist = self.config.lambda_dist
+            lambda_distort = self.config.lambda_distort
 
             rend_dist = render_pkg["rend_dist"]
             rend_normal  = render_pkg['rend_normal']
@@ -123,7 +123,7 @@ class Trainer:
             # 2D GS's original normal-depth consistency loss 
             normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
             normal_loss = lambda_normal * (normal_error).mean()
-            dist_loss = lambda_dist * (rend_dist).mean()
+            dist_loss = lambda_distort * (rend_dist).mean()
 
             # loss
             total_loss = loss + dist_loss + normal_loss

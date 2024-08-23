@@ -961,8 +961,10 @@ class Mapper:
         # TODO
         self.neural_points.training_setup_gs()
 
-        bg_color = [1, 1, 1] # white # currently TODO, we need to check sky background
+        # bg_color = [1, 1, 1] # white # currently TODO, we need to check sky background
         # bg_color = [0, 0, 0] # black
+        bg_color = [0.5, 0.5, 0.5] # gray
+
         background = torch.tensor(bg_color, dtype=self.dtype, device=self.device)
 
         renderd_image = None
@@ -982,13 +984,13 @@ class Mapper:
 
             cur_img_pool_size = len(self.cam_img_pool)
 
+            # rendering losses
             rgb_loss_batch = 0
-
             depth_loss_batch = 0
 
             # regularization losses
             normal_loss_batch = 0
-            dist_loss_batch = 0
+            distort_loss_batch = 0
             
             gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
@@ -1031,18 +1033,14 @@ class Mapper:
                 rgb_loss_batch += rgb_loss
 
                 # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
-                # lambda_dist = self.config.lambda_dist if iter > 3000 else 0.0
-
-                # Turn on or off
-                lambda_normal = self.config.lambda_normal
-                lambda_dist = self.config.lambda_dist
+                # lambda_distort = self.config.lambda_distort if iter > 3000 else 0.0
 
                 # TODO Figure out their meaning
                 dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
                 rend_normal  = render_pkg['rend_normal'] # 3, H, W # what is this actually?
 
                 surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
-                surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map
+                surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
 
                 # depth rendering loss
                 if gt_depth_image is not None and self.config.lambda_depth > 0:
@@ -1052,23 +1050,29 @@ class Mapper:
                     depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
                     # print(" Depth loss:", depth_loss.item()) 
 
-                    depth_loss_batch += self.config.lambda_depth * depth_loss
+                    depth_loss_batch += depth_loss
 
                 # regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
                 normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-                normal_loss = lambda_normal * (normal_error).mean()
-                dist_loss = lambda_dist * (dist_distortion).mean()
+                normal_loss =  normal_error.mean()
+                distort_loss = dist_distortion.mean()
 
                 normal_loss_batch += normal_loss
-                dist_loss_batch += lambda_normal * dist_loss
+                distort_loss_batch += distort_loss
 
                 T2 = get_time()
 
                 # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
-            # add the isotropic loss
-            
+            print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
+            print(" Normal reg loss:", normal_loss_batch.item() / gs_bs)
+            print(" Distortion reg loss:", distort_loss_batch.item() / gs_bs)
+
+            depth_loss_batch *= self.config.lambda_depth
+            normal_loss_batch *= self.config.lambda_normal # should increase from 0 to 0.1
+            distort_loss_batch *=  self.config.lambda_distort
+
             # actually we only need to use the points in the field of view
             constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
             true_count = torch.sum(constraint_mask)
@@ -1082,8 +1086,9 @@ class Mapper:
             if self.config.lambda_isotropic > 0:
                 scaling = self.neural_points.get_local_scaling[sampled_indices] # only use those ones for this iter
                 # print(scaling)
-                isotropic_loss = self.config.lambda_isotropic * torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
-                # print(isotropic_loss)
+                isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
+                print(" Gaussian isotropic loss:", isotropic_loss.item())
+                isotropic_loss *= self.config.lambda_isotropic
 
             sdf_consistency_loss = 0.0
             sdf_normal_consistency_loss = 0.0
@@ -1097,16 +1102,15 @@ class Mapper:
                 grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
                 valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
 
-                # self.config.lambda_sdf = 1.0
-                sdf_consistency_loss = self.config.lambda_sdf_cons * torch.abs(valid_guassians_sdf).mean()
+                sdf_consistency_loss = torch.abs(valid_guassians_sdf).mean()
 
-                gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))
-                
-                # self.config.lambda_sdf_normal = 0.5
-                sdf_normal_consistency_loss = self.config.lambda_sdf_normal_cons * gaussian_normal_error.mean()
+                gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))                
+                sdf_normal_consistency_loss = gaussian_normal_error.mean()
 
-                print(" SDF loss:", sdf_consistency_loss.item(), " SDF normal loss:", sdf_normal_consistency_loss.item())
+                print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
 
+                sdf_consistency_loss *= self.config.lambda_sdf_cons
+                sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
 
             # SDF training part
             sdf_loss = 0.0
@@ -1132,13 +1136,10 @@ class Mapper:
                 if not self.config.weighted_first:
                     sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
 
-                
                 # weight's sign indicate the sample is around the surface or in the free space
                 weight = torch.abs(weight).detach() 
                 # calculate the sdf bce loss
                 sdf_loss = sdf_bce_loss(sdf_pred,sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
-
-                sdf_loss *= self.config.lambda_sdf
 
                 if self.config.weight_e > 0:
                     if self.require_gradient:
@@ -1149,11 +1150,14 @@ class Mapper:
                             sdf_pred[:: self.config.gradient_decimation],
                             self.config.voxel_size_m * self.config.num_grad_step_ratio)
                     eikonal_loss = self.config.weight_e * ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
+                    print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
                     eikonal_loss *= self.config.lambda_sdf
-                    
+
+                sdf_loss *= self.config.lambda_sdf
+
             # total loss
             # TODO: monitor losses by wandb
-            total_loss = (rgb_loss_batch + depth_loss_batch + dist_loss_batch + normal_loss_batch) / gs_bs \
+            total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch) / gs_bs \
                 + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss \
                 + sdf_loss + eikonal_loss
 

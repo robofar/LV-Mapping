@@ -229,11 +229,13 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add pruning
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
+- [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation
+- [ ] Use depth map to do TSDF fusion to generate the refined mesh?
 - [ ] Check RTG-SLAM and add the opacity loss
 - [ ] Allow the freee gaussians to move freely
 - [ ] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader

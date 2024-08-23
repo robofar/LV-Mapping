@@ -313,7 +313,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 gs_iter_num = config.gs_iters
             
             # mapper.gs_mapping(gs_iter_num) 
-            mapper.joint_gsdf_mapping(gs_iter_num, sdf_loss_on=frame_id>10) # only when sdf field is learned well 
+            # sdf_train_loss_on=frame_id>10
+            mapper.joint_gsdf_mapping(gs_iter_num) # only when sdf field is learned well 
         
         T6 = get_time()
 

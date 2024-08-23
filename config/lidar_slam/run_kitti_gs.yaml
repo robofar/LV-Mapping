@@ -8,13 +8,19 @@ setting:
   color_map_on: True 
 process:
   max_range_m: 80.0 # 80.0
-  vox_down_m: 0.08
-  estimate_normal: True
+  vox_down_m: 0.05
+  estimate_normal: False
 sampler:
-  surface_sample_range_m: 0.25
+  surface_sample_range_m: 0.2 
+  surface_sample_n: 4
+  free_sample_begin_ratio: 0.5
+  free_sample_end_dist_m: 1.0
+  free_front_sample_n: 2
+  free_sample_end_dist_m: 0.5
 neuralpoints:
   voxel_size_m: 0.2
   search_alpha: 0.8
+  query_nn_k: 8
 loss:
   sigma_sigmoid_m: 0.08
   loss_weight_on: True
@@ -23,15 +29,15 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True
-  gs_iters: 20
+  gs_iters: 10
   gs_bs: 5
   gs_keyframe_interval: 2
   img_pool_size: 20
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
   sh_degree: 1
-  # lambda_dist: 0.0
-  lambda_normal: 0.01 # not too big 
+  lambda_distort: 10000.0
+  lambda_normal: 0.1 # not too big 0.05 
   lambda_isotropic: 1.0
   # lambda_sdf_cons: 0.0
   lambda_sdf_normal_cons: 1.0
