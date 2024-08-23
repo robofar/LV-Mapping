@@ -36,12 +36,12 @@ gs:
   gs_down_rate: 0
   gs_vis_down_rate: 0
   sh_degree: 1
-  lambda_distort: 10000.0
-  lambda_normal: 0.1 # not too big 0.05 
+  lambda_distort: 100.0
+  lambda_normal: 0.05 # not too big 0.05 
   lambda_isotropic: 1.0
   # lambda_sdf_cons: 0.0
   lambda_sdf_normal_cons: 1.0
-  lambda_depth: 0.01 # why this does not work properly
+  lambda_depth: 0.1
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7
