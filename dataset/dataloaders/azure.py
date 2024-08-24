@@ -118,8 +118,11 @@ class AzureDataset:
 
         rgb_image = np.array(rgb_image)
 
-        rgb_image_dict = {"cam": rgb_image}
+        depth_image = np.array(depth_image)/self.depth_scale
+        rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
+        rgbd_image_dict = {"cam": rgbd_image}
+
+        frame_data = {"points": points_xyzrgb, "img": rgbd_image_dict}
 
         return frame_data 

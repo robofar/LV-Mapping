@@ -254,7 +254,7 @@ class SLAMDataset():
             self.get_point_ts(point_ts)
 
     # read frame with specific data loader (partially borrow from kiss-icp: https://github.com/PRBonn/kiss-icp)
-    def read_frame_with_loader(self, frame_id, init_pose: bool = True):
+    def read_frame_with_loader(self, frame_id, init_pose: bool = True, use_image: bool = True):
         
         if init_pose:
             self.set_ref_pose(frame_id)
@@ -275,7 +275,7 @@ class SLAMDataset():
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
-            if "img" in dict_keys: # support multiple cameras
+            if "img" in dict_keys and use_image: # support multiple cameras
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
@@ -1124,6 +1124,48 @@ class SLAMDataset():
 
         return pose_eval
 
+    # TODO
+    def o3d_tsdf_fusion(self, frame_step = 1, output_path = None, vox_size = 0.02, trunc_dist = 0.06):
+
+        scale = 1.0
+        volume = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length=vox_size, # unit: m
+            sdf_trunc=trunc_dist, # unit: m
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+
+        cam_intrinsic = self.loader.intrinsic
+        T_c_l = self.loader.T_c_l   
+
+        for frame_id in tqdm(range(0, self.total_pc_count, frame_step), desc="TSDF fusion"): 
+            
+            frame_id_in_folder = self.config.begin_frame + frame_id * self.config.step_frame
+            frame_data = self.loader[frame_id_in_folder]
+
+            cur_imgs = frame_data["img"]
+            used_img = cur_imgs[self.loader.main_cam_name]
+
+            rgb_image = o3d.geometry.Image(used_img[:,:,:3].astype(np.uint8))
+            depth_image = o3d.geometry.Image(used_img[:,:,3].astype(np.float32))
+
+            cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                        depth_image, 
+                                                                        depth_scale=1.0, 
+                                                                        depth_trunc=self.config.max_range, 
+                                                                        convert_rgb_to_intensity=False)
+
+            cur_T_l_w = np.linalg.inv(self.gt_poses[frame_id])
+            cur_T_c_w = T_c_l @ cur_T_l_w
+
+            volume.integrate(cur_rgbd, self.loader.intrinsic, cur_T_c_w)
+
+        tsdf_fusion_mesh = volume.extract_triangle_mesh()
+
+        if output_path is not None:
+            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
+            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+
+        return tsdf_fusion_mesh
+
     def write_merged_point_cloud(self, down_vox_m=None, 
                                 use_gt_pose=False, 
                                 out_file_name="merged_point_cloud",
@@ -1143,7 +1185,7 @@ class SLAMDataset():
             range(0, self.total_pc_count, frame_step)
         ):  # frame id as the idx of the frame in the data folder without skipping
             if self.config.use_dataloader:
-                self.read_frame_with_loader(frame_id, False)
+                self.read_frame_with_loader(frame_id, False, False)
             else:
                 self.read_frame(frame_id, False)
 

@@ -146,7 +146,12 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # save merged point cloud map from gt pose as a reference map
     if config.save_merged_pc and dataset.gt_pose_provided:
         dataset.write_merged_point_cloud(use_gt_pose=True, out_file_name='merged_gt_pc', 
-        frame_step=5, merged_downsample=True)
+            frame_step=5, merged_downsample=True)
+
+    # TODO: test TSDF fusion (pass)
+    # tsdf_mesh_path = os.path.join(run_path, "mesh", "tsdf_fusion_mesh.ply")
+    # tsdf_mesh = dataset.o3d_tsdf_fusion(frame_step=20, output_path=tsdf_mesh_path)
+    # return 
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader

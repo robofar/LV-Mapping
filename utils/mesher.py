@@ -630,3 +630,25 @@ class Mesher:
                 print("save the mesh to %s\n" % (mesh_path))
 
         return mesh
+
+    def o3d_tsdf_fusion(self, rgbd_frames, extrinsics, intrinsic, output_path = None):
+
+        scale = 1.0
+        volume = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length=5.0 * scale / 512.0,
+            sdf_trunc=0.04 * scale,
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+
+        frame_count = len(rgbd_frames)
+
+        for i in tqdm(range(frame_count), desc="TSDF fusion"):  # one cycle
+            volume.integrate(
+                rgbd[i], o3d_intrinsic, extrinsics[i].astype(np.float64))
+
+        tsdf_fusion_mesh = volume.extract_triangle_mesh()
+
+        if output_path is not None:
+            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
+            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+
+        return tsdf_fusion_mesh

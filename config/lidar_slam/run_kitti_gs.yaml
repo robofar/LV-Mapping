@@ -11,7 +11,7 @@ process:
   vox_down_m: 0.05
   estimate_normal: False
 sampler:
-  surface_sample_range_m: 0.2 
+  surface_sample_range_m: 0.15 
   surface_sample_n: 4
   free_sample_begin_ratio: 0.5
   free_sample_end_dist_m: 1.0
@@ -22,7 +22,7 @@ neuralpoints:
   search_alpha: 0.8
   query_nn_k: 8
 loss:
-  sigma_sigmoid_m: 0.08
+  sigma_sigmoid_m: 0.06
   loss_weight_on: True
   dist_weight_scale: 0.8
   ekional_loss_on: True
@@ -36,15 +36,16 @@ gs:
   gs_down_rate: 0
   gs_vis_down_rate: 0
   sh_degree: 1
-  lambda_distort: 100.0
-  lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0
-  # lambda_sdf_cons: 0.0
-  lambda_sdf_normal_cons: 1.0
   lambda_depth: 0.1
+  lambda_distort: 100.0
+  lambda_normal: 0.1 # not too big 0.05 
+  lambda_isotropic: 1.0
+  lambda_sdf_cons: 1.0
+  lambda_sdf_normal_cons: 1.0
+  lambda_sdf: 1.0
 continual:
   batch_size_new_sample: 3000
-  pool_capacity: 1e7
+  pool_capacity: 2e7
   pool_filter_freq: 10
 tracker:
   photo_loss: False
@@ -58,8 +59,7 @@ pgo:
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
   batch_size: 16384
-  iters: 10
-  adaptive_iters: True
+  iters: 20 # i don't know how
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 12

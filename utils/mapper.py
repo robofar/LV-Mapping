@@ -110,6 +110,8 @@ class Mapper:
         self.cam_img_pool_id = [] # not really useful
 
         self.cam_img_test_pool = []
+        self.gs_total_iter = 0
+        self.gs_iter_window = config.gs_bs * config.gs_iters * config.img_pool_size
 
         self.T_w_c_cur_view = None
 
@@ -1043,18 +1045,25 @@ class Mapper:
                 surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
 
                 # depth rendering loss
-                if gt_depth_image is not None and self.config.lambda_depth > 0:
+                valid_depth_mask = None
+                if gt_depth_image is not None:
                     valid_depth_mask = (gt_depth_image>0.0)  
                     gt_depth_image = gt_depth_image * valid_depth_mask
                     rend_dist_valid = surf_depth * valid_depth_mask
                     depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
                     # print(" Depth loss:", depth_loss.item()) 
-
                     depth_loss_batch += depth_loss
 
                 # regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
-                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+                # if valid_depth_mask is not None:
+                #     rend_normal = rend_normal[:, valid_depth_mask]
+                #     surf_normal = surf_normal[:, valid_depth_mask]
+                #     dist_distortion = dist_distortion[:, valid_depth_mask]
+                
+                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product
+                # print(normal_error)
+
                 normal_loss =  normal_error.mean()
                 distort_loss = dist_distortion.mean()
 
@@ -1066,12 +1075,15 @@ class Mapper:
                 # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
             print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
-            print(" Normal reg loss:", normal_loss_batch.item() / gs_bs)
-            print(" Distortion reg loss:", distort_loss_batch.item() / gs_bs)
+            print(" Normal reg loss:", normal_loss_batch.item() / gs_bs, " Distortion reg loss:", distort_loss_batch.item() / gs_bs)
 
             depth_loss_batch *= self.config.lambda_depth
-            normal_loss_batch *= self.config.lambda_normal # should increase from 0 to 0.1
-            distort_loss_batch *=  self.config.lambda_distort
+            
+            lambda_normal_linear_ratio = min(self.gs_total_iter / self.gs_iter_window, 1.0)
+            lambda_normal = self.config.lambda_normal * lambda_normal_linear_ratio
+            normal_loss_batch *= lambda_normal # should increase from 0 to config.lambda_normal (ref: gaussian surfel)
+            
+            distort_loss_batch *= self.config.lambda_distort
 
             # actually we only need to use the points in the field of view
             constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
@@ -1235,11 +1247,15 @@ class Mapper:
         rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
         cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
 
-        surf_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
-        # surf_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
-        rendered_normal_np = (surf_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        rend_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
+        rendered_normal_np = (rend_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
         cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
+
+        depth_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color # depth_normal
+        depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
+        cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
 
         # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
         # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
@@ -1257,6 +1273,8 @@ class Mapper:
 
         self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
         self.neural_points.assign_local_to_global() # set back pin feature
+
+        self.gs_total_iter += (self.config.gs_bs * iter_count)
 
         return 
     
