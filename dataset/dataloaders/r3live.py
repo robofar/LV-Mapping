@@ -27,6 +27,8 @@ import os
 import cv2
 import numpy as np
 
+import open3d as o3d
+
 import yaml
 
 from datetime import datetime
@@ -51,11 +53,10 @@ from datetime import datetime
 #    # camera_ext_t: [0.050166, 0.0474116, -0.0312415] 
 #    camera_ext_t: [0,0,0] 
 
-
 class R3LiveDataset:
     def __init__(self, data_dir, *_, **__):
         
-        self.use_only_colorized_points = False
+        self.use_only_colorized_points = True
 
         self.livox_dir = os.path.join(data_dir, "livox_points", "data/")
         self.scan_files = sorted(glob.glob(self.livox_dir + "*.bin"))
@@ -75,7 +76,6 @@ class R3LiveDataset:
         self.main_cam_name = "cam"
 
         H, W = 1024, 1280
-
 
         self.K_mats = {}
         self.T_c_l_mats = {}
@@ -98,13 +98,16 @@ class R3LiveDataset:
                                       cx=self.cx,
                                       cy=self.cy)
 
-
         self.K_mats[self.main_cam_name] = K_mat
 
-        T_c_l = np.eye(4)
-        T_c_l[:3,:3] = np.array([[-0.00113207, -0.0158688, 0.999873],
+        T_l_c = np.eye(4)
+        T_l_c[:3,:3] = np.array([[-0.00113207, -0.0158688, 0.999873],
                                 [-0.9999999,  -0.000486594, -0.00113994],
                                 [0.000504622,  -0.999874,  -0.0158682]])
+
+        T_l_c[:3,3] = np.array([0.050166, 0.0474116, -0.0312415]) 
+
+        T_c_l = np.linalg.inv(T_l_c)
 
         self.T_c_l_mats[self.main_cam_name] = T_c_l
 
@@ -118,6 +121,8 @@ class R3LiveDataset:
         
         points = self.scans(idx)
 
+        point_ts = np.arange(np.shape(points)[0])*1.0
+
         img = self.read_img(self.img_files[idx]) # just for vis here
 
         points_color = np.ones_like(points)
@@ -127,9 +132,10 @@ class R3LiveDataset:
             self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
 
         if self.use_only_colorized_points:
-            with_rgb_mask = (points_rgb[:, 3] == 0)
+            with_rgb_mask = (points_color[:, 3] == 0)
             points = points[with_rgb_mask]
-            points_rgb = points_rgb[with_rgb_mask]
+            points_color = points_color[with_rgb_mask]
+            # point_ts = point_ts[with_rgb_mask]
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_color[:,:3]))
@@ -137,7 +143,7 @@ class R3LiveDataset:
         img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
         img_dict = {self.main_cam_name: img}
 
-        frame_data = {"points": points, "point_ts": None, "img": img_dict}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
 
         return frame_data
 
@@ -175,91 +181,20 @@ class R3LiveDataset:
         return img_ts_associated, img_associated_idx        
 
     def scans(self, idx):
-        return self.read_point_cloud(self.scan_files[idx])
+        points = self.read_point_cloud(self.scan_files[idx])
+        return points
 
+    # TODO: figure out why it the point with t does not work with the vbr converter
     def read_point_cloud(self, scan_file: str):
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
         return points # N, 4
     
     def read_img(self, img_file: str):
         img = cv2.imread(img_file)
-        # print(img.shape)
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # img = np.array(img) # as np array
-        
+
         return img
 
-    def load_tum_format_gt_poses(self, filename: str):
-        """
-        read pose file (with the tum format), support txt file
-        # timestamp tx ty tz qx qy qz qw
-        returns -> list, transformation before calibration transformation
-        """
-        from pyquaternion import Quaternion
-
-        poses = []
-        timestamps = []
-        with open(filename, 'r') as file:
-            first_line = file.readline().strip()
-            
-            # check if the first line contains any numeric characters
-            # if contain, then skip the first line # timestamp tx ty tz qx qy qz qw
-            if any(char.isdigit() for char in first_line):
-                file.seek(0)
-            
-            for line in file: # read each line in the file 
-                values = line.strip().split()
-                if len(values) != 8 and len(values) != 9: 
-                    print('Not a tum format pose file')
-                    return None, None
-                # some tum format pose file also contain the idx before timestamp
-                idx_col =  len(values) - 8 # 0 or 1
-                values = [float(value) for value in values]
-                timestamps.append(values[idx_col])
-                trans = np.array(values[1+idx_col:4+idx_col])
-                quat = Quaternion(np.array([values[7+idx_col], values[4+idx_col], values[5+idx_col], values[6+idx_col]])) # w, i, j, k
-                rot = quat.rotation_matrix
-                # Build numpy transform matrix
-                odom_tf = np.eye(4)
-                odom_tf[0:3, 3] = trans
-                odom_tf[0:3, 0:3] = rot
-                poses.append(odom_tf)
-        
-        return poses, timestamps
-
-    def read_calib_file(self, yaml_file_path: str) -> dict:
-
-        # TODO: add for other sensors
-        calib_dict = {}
-        with open(yaml_file_path, 'r') as file:
-            calib_dict = yaml.safe_load(file)
-
-            # for the left camera
-            cam_left_calib_dict = calib_dict["cam_l"]
-            cam_left_intrinsic = cam_left_calib_dict["intrinsics"]
-
-            # intrinsic
-            self.fx = cam_left_intrinsic[0]
-            self.fy = cam_left_intrinsic[1]
-            self.cx = cam_left_intrinsic[2]
-            self.cy = cam_left_intrinsic[3]
-
-            self.K_mat = np.eye(3)
-            self.K_mat[0,0]=self.fx
-            self.K_mat[1,1]=self.fy
-            self.K_mat[0,2]=self.cx
-            self.K_mat[1,2]=self.cy
-
-            # extrinsic
-            self.T_l_c = np.array(cam_left_calib_dict['T_b'], dtype=np.float64) # T_l_c
-            self.T_c_l = np.linalg.inv(self.T_l_c)
-
-            self.T_c_l_mats[self.left_cam_name] = self.T_c_l
-            self.K_mats[self.left_cam_name] = self.K_mat
-
-        return calib_dict
-    
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)

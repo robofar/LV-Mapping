@@ -16,7 +16,7 @@ rospkg==1.5.1
 scikit-image==0.21.0
 wandb==0.17.0
 # for gs
-opencv-python==4.10.0.84
+opencv-python
 -e submodules/diff-surfel-rasterization # editable install
 # for metric3d
 mmcv

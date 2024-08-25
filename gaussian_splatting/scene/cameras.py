@@ -107,12 +107,23 @@ class CamImage:
         # TODO: the issue of the depth rendering loss lie in the depth image downsampling, bilinear may not be a good idea, update it 
         
         # C can be either 3 or 4
+        # NOTE: F.interpolate require 4D input
         # Downsample to Cx(H/2)x(W/2)
-        down_level1_image = F.interpolate(original_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        down_level1_image = F.interpolate(original_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
         # Downsample to Cx(H/4)x(W/4)
-        down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        down_level2_image = F.interpolate(down_level1_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
         # Downsample to Cx(H/8)x(W/8)
-        down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+        down_level3_image = F.interpolate(down_level2_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+
+        if self.depth_on:
+            down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level1_image = torch.cat((down_level1_image, down_level1_depth), dim=0)
+
+            down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level2_image = torch.cat((down_level2_image, down_level2_depth), dim=0)
+
+            down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
 
         if img_down_rate > 0:
             original_image = None

@@ -185,7 +185,7 @@ def normal2rotation(n):
     R0 = w0 - torch.sum(w0 * n, -1, True) * n
     R0 *= torch.sign(R0[:, :1])
     R0 = torch.nn.functional.normalize(R0)
-    R1 = torch.cross(n, R0)
+    R1 = torch.linalg.cross(n, R0)
     
     # i = 7859
     # print(R1[i])

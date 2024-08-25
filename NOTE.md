@@ -295,6 +295,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 
 + [R3Live](https://github.com/hku-mars/r3live)
 
++ [ImMesh](https://github.com/hku-mars/ImMesh)
+
 + [BotanicGardenDataset](https://github.com/robot-pesg/BotanicGarden/tree/main/leaderboard)
 
 + [PIN-SLAM](https://github.com/PRBonn/PIN_SLAM)
