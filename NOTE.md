@@ -114,6 +114,14 @@ The light across different cameras seem to be not identical, figure out a way to
 
 **pass**
 
+## Run on R3Live dataset
+
+```
+python pin_slam.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -dvls
+```
+
+**pass**
+
 ## Run on VBR dataset
 
 ```
@@ -230,23 +238,26 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
+- [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?)
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation
 - [ ] Use depth map to do TSDF fusion to generate the refined mesh?
-- [ ] Check RTG-SLAM and add the opacity loss
-- [ ] Allow the freee gaussians to move freely
-- [ ] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
+- [ ] Check RTG-SLAM (opacity in RTG-SLAM are fixed as either 0.99 or 0.1)
+- [ ] Allow the freee gaussians to move freely with a larger learning rate
+- [ ] Add online gaussian visualizer
+- [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
 - [ ] KITTI-360 NVS benchmark
 - [ ] Deal with dynamic objects (tracking, filtering or 4DGS)
 - [ ] Sky (out-of-lidar-fov) masking
-- [ ] Level of details
+- [ ] Level of details, especially for the closer range
 - [ ] Evaluate Chamfer distance and PSNR
+- [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
 - [ ] Add BoW python for image place recognition (loop detection)
-- [ ] The goal is RAL or CVPR
+- [ ] The goal is RAL
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)

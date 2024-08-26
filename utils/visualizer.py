@@ -112,7 +112,7 @@ class MapVisualizer:
         self.vis_pc_color: bool = True
         self.pc_uniform_color: bool = False
 
-        self.vis_gaussian_normal: bool = False
+        self.vis_gaussian_normal: bool = True
         self.vis_free_gaussian: bool = False
         self.vis_mono_depth_frame: bool = False
 

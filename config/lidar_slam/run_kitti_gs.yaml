@@ -32,16 +32,16 @@ gs:
   gs_iters: 10
   gs_bs: 5
   gs_keyframe_interval: 2
-  img_pool_size: 20
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  img_pool_size: 15
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   sh_degree: 1
-  lambda_depth: 0.1
+  lambda_depth: 0.5
   lambda_distort: 100.0
-  lambda_normal: 0.1 # not too big 0.05 
-  lambda_isotropic: 1.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_isotropic: 1.0 # todo  
   lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 1.0
+  lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0
 continual:
   batch_size_new_sample: 3000

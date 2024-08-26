@@ -527,6 +527,7 @@ class Mapper:
         T4 = get_time()
 
         # img related # TODO: use a better keyframe selection strategy
+        # TODO: add keyframe selection here
         if self.dataset.cur_cam_img is not None:
             # training views
             if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
@@ -980,6 +981,10 @@ class Mapper:
 
             # gaussians.update_learning_rate(iteration) # FIXME
 
+            # TODO: optimize only the stable gaussians
+            # TSDF fusion like moving averaging like for Gaussian parameter incremental updating
+            # Refeence: RTG-SLAM
+
             # Every 1000 its we increase the levels of SH up to a maximum degree
             # if iteration % 1000 == 0:
             #     gaussians.oneupSHdegree()
@@ -1061,7 +1066,7 @@ class Mapper:
                 #     surf_normal = surf_normal[:, valid_depth_mask]
                 #     dist_distortion = dist_distortion[:, valid_depth_mask]
                 
-                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product
+                normal_error = (1.0 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product # direction does not matters
                 # print(normal_error)
 
                 normal_loss =  normal_error.mean()
@@ -1106,18 +1111,21 @@ class Mapper:
             sdf_normal_consistency_loss = 0.0
             if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                 valid_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
-                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices])
+                # this might have some problem or maybe this is not in the world frame (TODO, figure it out)
+                valid_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3
                 valid_guassians_xyz.requires_grad_(True)
 
                 valid_guassians_sdf = self.sdf(valid_guassians_xyz)[0] # sdf, sdf_std
                 valid_guassians_sdf_grad = get_gradient(valid_guassians_xyz, valid_guassians_sdf) # N, 3
-                grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize
-                valid_guassians_sdf_grad = valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7)
+                grad_norm = valid_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
+                valid_guassians_sdf_grad = -valid_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame
 
                 sdf_consistency_loss = torch.abs(valid_guassians_sdf).mean()
 
-                gaussian_normal_error = (1 - (valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))                
+                # this loss may have some issue here, sdf gradient is not good enough ...
+                gaussian_normal_error = (1.0 - torch.abs((valid_guassians_sdf_grad * valid_guassians_normals).sum(dim=1))) # direction does not matters               
                 sdf_normal_consistency_loss = gaussian_normal_error.mean()
+                # this definately have issue (it has value larger than 1)
 
                 print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
 

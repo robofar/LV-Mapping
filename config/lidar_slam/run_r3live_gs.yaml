@@ -5,19 +5,18 @@ setting:
   deskew: True
   color_map_on: True # pin slam does not make use of color
 process:
-  min_range_m: 1.0
+  min_range_m: 0.5
   max_range_m: 40.0
-  min_z_m: -10.0
+  min_z_m: -3.0
   vox_down_m: 0.06
   estimate_normal: True
 sampler:
-  surface_sample_range_m: 0.25
+  surface_sample_range_m: 0.15
   surface_sample_n: 4
   free_sample_begin_ratio: 0.5
-  free_sample_end_dist_m: 1.2
   free_front_sample_n: 2 
 neuralpoints:
-  voxel_size_m: 0.25
+  voxel_size_m: 0.2
   search_alpha: 0.8
 gs:
   gs_iters: 5
@@ -29,23 +28,23 @@ gs:
   sh_degree: 1
   lambda_depth: 0.1
   lambda_distort: 100.0
-  lambda_normal: 0.1 # not too big 0.05 
+  lambda_normal: 0.05 # not too big 0.05 
   lambda_isotropic: 1.0
   lambda_sdf_cons: 1.0
   lambda_sdf_normal_cons: 1.0
   lambda_sdf: 1.0
 loss:
-  sigma_sigmoid_m: 0.08
-  # loss_weight_on: True
-  # dist_weight_scale: 0.8
+  sigma_sigmoid_m: 0.06
+  loss_weight_on: True
+  dist_weight_scale: 0.8
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 2e7
   pool_filter_freq: 10
 tracker:
-  source_vox_down_m: 0.5
+  photo_loss: True
+  source_vox_down_m: 0.4
   iter_n: 50
-  valid_nn_k: 5
 pgo:
   map_context: True
   context_cosdist: 0.3

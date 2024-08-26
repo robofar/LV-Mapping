@@ -130,9 +130,11 @@ class CKADataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
+        depth /= self.depth_scale
         rgb_image = np.array(rgb_image)
+        rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth, axis=-1)), axis=-1) # 4 channels
 
-        rgb_image_dict = {"cam_mid": rgb_image}
+        rgbd_image_dict = {"cam_mid": rgbd_image}
 
         frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
 

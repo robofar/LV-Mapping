@@ -225,7 +225,7 @@ class Config:
         self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
         self.lambda_sdf: float = 1.0 # pin map sdf fitting loss
 
-        self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian
+        self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian # 0.99 (according to RTG-SLAM)
 
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1

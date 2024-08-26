@@ -166,8 +166,12 @@ class TUMDataset:
 
         im_color = np.array(im_color)
 
-        im_color_dict = {"cam": im_color}
+        # depth_image = np.array(im_depth)/self.depth_scale
+        depth_image = np.array(im_depth)
+        rgbd_image = np.concatenate((im_color, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        frame_data = {"points": points_xyzrgb, "img": im_color_dict}
+        im_rgbd_dict = {"cam": rgbd_image}
+
+        frame_data = {"points": points_xyzrgb, "img": im_rgbd_dict}
 
         return frame_data 

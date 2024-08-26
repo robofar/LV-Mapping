@@ -530,9 +530,9 @@ class NeuralPoints(nn.Module):
         # added_pt_dist2 = torch.sum((added_pt - sensor_position)**2, dim=-1)
 
         # the same scaling initialization for all Gaussians
-        mean_dist = torch.tensor([self.resolution], dtype=self.dtype, device=self.device) # set a bit larger
-
-        new_scales = self.scaling_inverse_activation(mean_dist)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
+        mean_dist = torch.tensor([1.5 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO)
+        init_scale = mean_dist
+        new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
         
         self.scaling = torch.cat((self.scaling, new_scales), 0) 
 
@@ -894,7 +894,7 @@ class NeuralPoints(nn.Module):
         for i in range(self.features_rest.shape[1]*self.features_rest.shape[2]):
             l.append('f_rest_{}'.format(i))
         l.append('opacity')
-        for i in range(self.scaling.shape[1]):
+        for i in range(self.scaling.shape[1]+1): # 2D GS --> 3D GS
             l.append('scale_{}'.format(i))
         for i in range(self.rotation.shape[1]):
             l.append('rot_{}'.format(i))
@@ -928,9 +928,10 @@ class NeuralPoints(nn.Module):
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        # scale_z = np.ones((xyz.shape[0], 1))*1e-3
+        # should be a small value before the exp activation, because we want to have a scale close to 0 after activation
+        scale_3d = np.ones((xyz.shape[0], 1))*(-1e7) 
         # print(scale_z.shape)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, scale_3d, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(save_path)

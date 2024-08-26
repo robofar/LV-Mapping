@@ -165,10 +165,7 @@ class KITTIOdometryDataset:
     
     def read_img(self, img_file: str):
         img = cv2.imread(img_file)
-        # print(img.shape)
-        
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # img = np.array(img) # as np array
         
         return img
     
