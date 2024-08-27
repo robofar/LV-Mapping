@@ -16,6 +16,7 @@ import matplotlib.cm as cm
 import numpy as np
 import open3d as o3d
 import torch
+import torch.nn.functional as F
 import wandb
 from numpy.linalg import inv
 from rich import print
@@ -294,10 +295,12 @@ class SLAMDataset():
                     # print(cur_img[3])
 
                     H, W = cur_img.shape[1], cur_img.shape[2]
+                    sky_mask = None # optional sky mask (sky:1, non-sky:0)
 
                     # print(cur_img.shape) # for kitti: 376, 1241
 
                     # TODO
+                    
                     if self.monodepth_on and cam_name == self.loader.main_cam_name:
                         
                         # cur_K = self.K_mats[cam_name]
@@ -312,40 +315,37 @@ class SLAMDataset():
                             # pred_depth, confidence, output_dict = self.metric3d.inference({'input': rgb})
                             pred_depth, confidence, output_dict = self.metric3d.inference({'input': mono_depth_input_rgb.unsqueeze(0)}) #B,C,H,W 
                         
-                        pred_depth = pred_depth[0] # 1, H, W
-                        confidence = confidence[0] # 1, H, W
+                        pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models  # 1, 3, H, W
+                        normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details  # 1, H, W
+
+                        pred_depth = F.interpolate(pred_depth, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
+                        confidence = F.interpolate(confidence, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
+
+                        pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
+                        normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
+
+                        sky_mask = pred_depth > self.config.max_range * 1.5 # mask out the sky # 1, H, W
+                        sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
 
                         # TODO: make use of this confidence here
                         toc_metric3d = get_time()
                         if not self.config.silence:
-                            print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)
+                            print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)                        
 
-                        # print(confidence)
-                        # print(torch.min(confidence), torch.max(confidence))
-
-                        pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models
-                        normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details
-
-                        # TODO: aslo record and use this normal prediction here
+                        # TODO: also record and use this normal prediction here
 
                         # print(normal_confidence)
                         # print(torch.min(normal_confidence), torch.max(normal_confidence))
 
-                        # print(pred_depth.shape)
-
                         # How to set these threshold to filter unreliable depth
-                        pred_depth[confidence < 0.5] = 0 
+                        pred_depth[confidence < 0.6] = 0 
                         pred_depth[normal_confidence < 1.0] = 0
 
                         # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
                         # pred_depth_np = pred_depth.detach().cpu().numpy()
 
-                        pred_depth_np = pred_depth.permute(1,2,0).detach().cpu().numpy()
+                        pred_depth_np = pred_depth.permute(1,2,0).squeeze(-1).detach().cpu().numpy() # H, W
                         # pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy()
-
-                        # in metric3d, input/output should be 32x pix ? really # 196, 628
-                        pred_depth_np = cv2.resize(pred_depth_np, (W, H), interpolation=cv2.INTER_LINEAR) 
-                        # pred_normal_np = cv2.resize(pred_normal_np, (cur_img.shape[2], cur_img.shape[1]))
 
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
@@ -386,6 +386,11 @@ class SLAMDataset():
                         # print(np.shape(edges))
                         # print(edges)
 
+                        # show sky mask
+                        # cur_img_rgb_np[sky_mask_np] = 0  
+                        # cur_img_rgb_np = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR)
+                        # cv2.imshow(" Sky mask", cur_img_rgb_np)
+
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
 
@@ -421,7 +426,7 @@ class SLAMDataset():
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.1,
-                                                          cam_name, img_down_rate, self.device)
+                                                          cam_name, img_down_rate, sky_mask, self.device)
 
         
 

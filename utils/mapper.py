@@ -961,7 +961,8 @@ class Mapper:
    
 
     # jointly optimize the neural point features and gaussian parameters
-    def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True, validate_on = True):
+    def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True, 
+        use_inverse_depth = True, validate_on = True):
 
         if iter_count < 1:
             return
@@ -1031,7 +1032,7 @@ class Mapper:
                 
                 if viewpoint_cam.depth_on:
                     gt_rgb_image = gt_image[:3]
-                    gt_depth_image = gt_image[3]
+                    gt_depth_image = gt_image[3].unsqueeze(0)
                 else:
                     gt_rgb_image = gt_image
                     gt_depth_image = None
@@ -1059,13 +1060,19 @@ class Mapper:
                 surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
                 surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
 
+                rend_alpha = render_pkg["rend_alpha"] # 1, H, W accumulated opacity # TODO: add a BCE sky loss here
+
                 # depth rendering loss
                 valid_depth_mask = None
                 if gt_depth_image is not None:
                     valid_depth_mask = (gt_depth_image>0.0)  
-                    gt_depth_image = gt_depth_image * valid_depth_mask
-                    rend_dist_valid = surf_depth * valid_depth_mask
-                    depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
+                    gt_depth_image = gt_depth_image[valid_depth_mask]
+                    rend_dist_valid = surf_depth[valid_depth_mask]
+                    if use_inverse_depth:
+                        depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rend_dist_valid) # use inverse depth (then we will care more about the close range part)
+                    else:
+                        depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
+
                     # print(" Depth loss:", depth_loss.item()) 
                     depth_loss_batch += depth_loss
 
@@ -1090,7 +1097,10 @@ class Mapper:
                 # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
             if not self.silence:
-                print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
+                if use_inverse_depth:
+                    print(" Inverse depth rendering loss:", depth_loss_batch.item() / gs_bs)
+                else:
+                    print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
                 print(" Normal reg loss:", normal_loss_batch.item() / gs_bs, " Distortion reg loss:", distort_loss_batch.item() / gs_bs)
 
             depth_loss_batch *= self.config.lambda_depth
@@ -1105,7 +1115,9 @@ class Mapper:
             constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
             true_count = torch.sum(constraint_mask)
             true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
-            sample_bs = min(true_count, self.config.gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
+            gaussian_bs = self.config.bs * 8
+            # gaussian_bs = self.config.gaussian_bs
+            sample_bs = min(true_count, gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
             # print("Sampled neural point count: " , sample_bs)
             # don't use all the points here (random sample some of them as a batch)
             sampled_indices = true_indices[torch.randperm(true_count)[:sample_bs]]

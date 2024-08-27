@@ -74,7 +74,7 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, device = "cuda"):
+    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, sky_mask = None, device = "cuda"):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
@@ -124,6 +124,9 @@ class CamImage:
 
             down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
             down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
+
+        # TODO: also downsample sky mask
+        self.sky_mask = sky_mask
 
         if img_down_rate > 0:
             original_image = None

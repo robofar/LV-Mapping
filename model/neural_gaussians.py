@@ -375,7 +375,7 @@ class NeuralPoints(nn.Module):
         sensor_position: torch.Tensor,
         sensor_orientation: torch.Tensor,
         cur_ts,
-        is_reliable: bool = True
+        is_reliable: bool = True # if false, these neural points are initialized with the mono depth estimation, which is not accurate
     ):
         # update the neural point map using new observations
 
@@ -396,9 +396,9 @@ class NeuralPoints(nn.Module):
 
         grid_coords = (sample_points / cur_resolution).floor().to(self.primes)
         buffer_size = int(self.buffer_size)
-        hash = torch.fmod((grid_coords * self.primes).sum(-1), buffer_size)
+        hash_value = torch.fmod((grid_coords * self.primes).sum(-1), buffer_size)
 
-        hash_idx = self.buffer_pt_index[hash]
+        hash_idx = self.buffer_pt_index[hash_value]
 
         # not occupied before or is occupied but already far away (then it would be a hash collision)
         if not self.is_empty():
@@ -450,7 +450,7 @@ class NeuralPoints(nn.Module):
 
         new_point_ratio = new_point_count / sample_points.shape[0]
 
-        cur_pt_idx = self.buffer_pt_index[hash]
+        cur_pt_idx = self.buffer_pt_index[hash_value]
         # allocate new neural points
         cur_pt_count = self.neural_points.shape[0]
         cur_pt_idx[update_mask] = (
@@ -459,7 +459,7 @@ class NeuralPoints(nn.Module):
         )
 
         # torch.cat could be slow for large map
-        self.buffer_pt_index[hash] = cur_pt_idx
+        self.buffer_pt_index[hash_value] = cur_pt_idx
         self.neural_points = torch.cat((self.neural_points, added_pt), 0)
 
         added_orientations = [[1, 0, 0, 0]] * new_point_count
@@ -530,8 +530,11 @@ class NeuralPoints(nn.Module):
         # added_pt_dist2 = torch.sum((added_pt - sensor_position)**2, dim=-1)
 
         # the same scaling initialization for all Gaussians
-        mean_dist = torch.tensor([1.5 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO)
-        init_scale = mean_dist
+        mean_dist = torch.tensor([1.0 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO)
+        if is_reliable:
+            init_scale = mean_dist
+        else: # initalize with a larger radius
+            init_scale = mean_dist * 4.0
         new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
         
         self.scaling = torch.cat((self.scaling, new_scales), 0) 
@@ -545,7 +548,10 @@ class NeuralPoints(nn.Module):
         
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
-        init_opacity = self.config.gs_init_opacity # 0.1
+        if is_reliable:
+            init_opacity = self.config.gs_init_opacity # 0.1
+        else:
+            init_opacity = 0.1
 
         new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
         
@@ -1281,10 +1287,10 @@ class NeuralPoints(nn.Module):
             # don't filter the neural points (keep them, only merge when neccessary, figure out the better merging method later)
             sample_points = self.neural_points[sample_idx]
             grid_coords = (sample_points / cur_resolution).floor().to(self.primes)
-            hash = torch.fmod(
+            hash_value = torch.fmod(
                 (grid_coords * self.primes).sum(-1), int(self.buffer_size)
             )
-            self.buffer_pt_index[hash] = sample_idx
+            self.buffer_pt_index[hash_value] = sample_idx
 
         else:
             if not self.silence:
@@ -1323,10 +1329,10 @@ class NeuralPoints(nn.Module):
             new_point_count = self.neural_points.shape[0]
 
             grid_coords = (self.neural_points / cur_resolution).floor().to(self.primes)
-            hash = torch.fmod(
+            hash_value = torch.fmod(
                 (grid_coords * self.primes).sum(-1), int(self.buffer_size)
             )
-            self.buffer_pt_index[hash] = torch.arange(
+            self.buffer_pt_index[hash_value] = torch.arange(
                 new_point_count, dtype=self.idx_dtype, device=self.device
             )
 
@@ -1388,13 +1394,13 @@ class NeuralPoints(nn.Module):
         # T1 = get_time()
 
         # hash = (neighbord_cells * self.primes).sum(-1) % cur_buffer_size  # [N,K] # no negative number
-        hash = torch.fmod(
+        hash_value = torch.fmod(
             (neighbord_cells * self.primes).sum(-1), cur_buffer_size
         )  # [N,K] # with negative number (but actually the same)
 
         # T12 = get_time()
 
-        neighb_idx = self.buffer_pt_index[hash]
+        neighb_idx = self.buffer_pt_index[hash_value]
 
         # T2 = get_time()
 
