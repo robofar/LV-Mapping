@@ -94,6 +94,7 @@ class CamImage:
 
         # pyramid of images
         self.original_image_list = []
+        self.sky_mask_list = []
 
         original_image = image.to(device)
 
@@ -125,22 +126,35 @@ class CamImage:
             down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
             down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
 
-        # TODO: also downsample sky mask
-        self.sky_mask = sky_mask
+        if sky_mask is not None: # sky_mask 1, H, W
+            self.sky_mask_on = True
+            down_level1_sky_mask = F.interpolate(sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+            down_level2_sky_mask = F.interpolate(down_level1_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+            down_level3_sky_mask = F.interpolate(down_level2_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+        else:
+            down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
+            self.sky_mask_on = False
 
         if img_down_rate > 0:
             original_image = None
+            sky_mask = None
         self.original_image_list.append(original_image)
+        self.sky_mask_list.append(sky_mask)
 
         if img_down_rate > 1:
             down_level1_image = None
+            down_level1_sky_mask = None
         self.original_image_list.append(down_level1_image)
+        self.sky_mask_list.append(down_level1_sky_mask)
 
         if img_down_rate > 2:
             down_level2_image = None
+            down_level2_sky_mask = None
         self.original_image_list.append(down_level2_image)
+        self.sky_mask_list.append(down_level2_sky_mask)
 
         self.original_image_list.append(down_level3_image)
+        self.sky_mask_list.append(down_level3_sky_mask)
 
         self.zfar = z_max # 100.0
         self.znear = z_min # 0.1

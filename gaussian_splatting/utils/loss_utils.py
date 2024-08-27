@@ -24,7 +24,6 @@ def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
 
-
 def smooth_loss(disp, img):
     grad_disp_x = torch.abs(disp[:,1:-1, :-2] + disp[:,1:-1,2:] - 2 * disp[:,1:-1,1:-1])
     grad_disp_y = torch.abs(disp[:,:-2, 1:-1] + disp[:,2:,1:-1] - 2 * disp[:,1:-1,1:-1])
@@ -33,6 +32,13 @@ def smooth_loss(disp, img):
     grad_disp_x *= torch.exp(-grad_img_x)
     grad_disp_y *= torch.exp(-grad_img_y)
     return grad_disp_x.mean() + grad_disp_y.mean()
+
+def sky_bce_loss(sky_mask, alpha):
+    # reference: https://github.com/fudan-zvg/PVG/
+    o = alpha.clamp(1e-6, 1-1e-6)
+    sky = sky_mask.float()
+    loss_sky = (-sky * torch.log(1 - o)).mean()
+    return loss_sky
 
 def create_window(window_size, channel):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)

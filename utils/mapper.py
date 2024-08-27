@@ -34,7 +34,7 @@ from utils.tools import (
 )
 
 from gaussian_splatting.gaussian_renderer import render
-from gaussian_splatting.utils.loss_utils import l1_loss, ssim
+from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss
 from gaussian_splatting.utils.graphics_utils import focal2fov
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
@@ -314,10 +314,6 @@ class Mapper:
 
         if update_normals is not None:
             update_normals = transform_torch(update_normals, cur_pose_rot)
-
-        # TODO(for GS): for faraway walls that are not measured by the lidar but was observed in the img 
-        # if self.config.add_high_points:
-        #     update_points
             
         # prune map and recreate hash
         if self.config.prune_map_on and ((frame_id + 1) % self.config.prune_freq_frame == 0):
@@ -328,6 +324,7 @@ class Mapper:
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
 
+        # update gaussians using mono depth predictions 
         if mono_depth_point_cloud_torch is not None: 
             # use the mono depth estimation results to do the initialization
             mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
@@ -338,7 +335,7 @@ class Mapper:
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.max_range*0.025 # add to config # TODO
+            down_voxel_size = self.config.max_range*0.03 # add to config # TODO
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
@@ -1009,6 +1006,8 @@ class Mapper:
             # regularization losses
             normal_loss_batch = 0
             distort_loss_batch = 0
+
+            sky_loss_batch = 0
             
             gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
@@ -1024,7 +1023,6 @@ class Mapper:
                 T_c_l = torch.tensor(self.dataset.T_c_l_mats[viewpoint_cam.cam_id], device=self.device) 
                 T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame # Here there could be different cameras, support this
 
-                # gt_image = viewpoint_cam.original_image
                 gt_image = viewpoint_cam.original_image_list[down_rate]
                 
                 if gt_image.device != self.device: # this is one very time consuming part
@@ -1064,8 +1062,8 @@ class Mapper:
 
                 # depth rendering loss
                 valid_depth_mask = None
-                if gt_depth_image is not None:
-                    valid_depth_mask = (gt_depth_image>0.0)  
+                if gt_depth_image is not None and self.config.lambda_depth > 0:
+                    valid_depth_mask = (gt_depth_image > 0.0)  
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     rend_dist_valid = surf_depth[valid_depth_mask]
                     if use_inverse_depth:
@@ -1075,6 +1073,11 @@ class Mapper:
 
                     # print(" Depth loss:", depth_loss.item()) 
                     depth_loss_batch += depth_loss
+
+                if viewpoint_cam.sky_mask_on and self.config.lambda_sky > 0:
+                    cur_sky_mask = viewpoint_cam.sky_mask_list[down_rate]
+                    cur_sky_loss = sky_bce_loss(cur_sky_mask, rend_alpha) # let the sky has small opacity
+                    sky_loss_batch += cur_sky_loss
 
                 # regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
@@ -1086,7 +1089,7 @@ class Mapper:
                 normal_error = (1.0 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product # direction does not matters
                 # print(normal_error)
 
-                normal_loss =  normal_error.mean()
+                normal_loss = normal_error.mean()
                 distort_loss = dist_distortion.mean()
 
                 normal_loss_batch += normal_loss
@@ -1102,6 +1105,7 @@ class Mapper:
                 else:
                     print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
                 print(" Normal reg loss:", normal_loss_batch.item() / gs_bs, " Distortion reg loss:", distort_loss_batch.item() / gs_bs)
+                print(" Sky loss:", sky_loss_batch.item() / gs_bs)
 
             depth_loss_batch *= self.config.lambda_depth
             
@@ -1109,7 +1113,11 @@ class Mapper:
             lambda_normal = self.config.lambda_normal * lambda_normal_linear_ratio
             normal_loss_batch *= lambda_normal # should increase from 0 to config.lambda_normal (ref: gaussian surfel)
             
+            # depth distortion loss
             distort_loss_batch *= self.config.lambda_distort
+
+            # sky mask
+            sky_loss_batch *= self.config.lambda_sky
 
             # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
             constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
@@ -1204,7 +1212,7 @@ class Mapper:
 
             # total loss
             # TODO: monitor losses by wandb
-            total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch) / gs_bs \
+            total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch + sky_loss_batch) / gs_bs \
                 + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss \
                 + sdf_loss + eikonal_loss
 
