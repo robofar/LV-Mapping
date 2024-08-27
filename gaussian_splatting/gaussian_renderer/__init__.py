@@ -138,7 +138,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
             sh2rgb = eval_sh(neural_gaussians.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
-            shs = neural_gaussians.get_local_gaussian_sh_features # this is used
+            shs = neural_gaussians.get_local_gaussian_sh_features # this is used currently
     else:
         colors_precomp = override_color
     
@@ -151,7 +151,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp
+        cov3D_precomp = cov3D_precomp # TODO, none
     ) 
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
@@ -197,6 +197,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     # TODO: read the paper again
 
     depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected
+    # depth_ratio = 1 # bounded scene, in this case, just render_depth_median
     surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
     
     # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.

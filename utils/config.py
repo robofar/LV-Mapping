@@ -208,7 +208,8 @@ class Config:
 
         self.gs_iters: int = 0
         self.gs_bs: int = 5
-        self.gs_keyframe_interval: int = 5
+        self.gaussian_bs: int = 16384
+        self.gs_keyframe_interval: int = 2
         self.img_pool_size: int = 10 # training views
         self.img_test_pool_size: int = 10 # testing views
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
@@ -225,7 +226,7 @@ class Config:
         self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
         self.lambda_sdf: float = 1.0 # pin map sdf fitting loss
 
-        self.gs_init_opacity: float = 0.1 # initial value for the opacity of each gaussian # 0.99 (according to RTG-SLAM)
+        self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM)
 
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1
@@ -534,9 +535,11 @@ class Config:
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
-            self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs)
+            self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
+            self.gaussian_bs = config_args["gs"].get("gaussian_bs", self.gaussian_bs) # gaussian count per iter (for gsdf consistency loss)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
+            self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)

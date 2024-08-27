@@ -287,13 +287,12 @@ class IPBCarDataset:
         points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
         depth[depth==0] = -1e-6
-        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(np.int32)
-        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(np.int32)
+        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(int)
+        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(int)
 
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
-
 
 # image distortion
 PX_OFFSET_128 = 32 * [48, 32, 16, 0]  # Check os*.json

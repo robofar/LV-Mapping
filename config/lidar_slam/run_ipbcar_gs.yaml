@@ -19,7 +19,7 @@ continual:
   pool_capacity: 2e7
   pool_filter_freq: 10
 tracker:
-  source_vox_down_m: 1.0
+  source_vox_down_m: 0.8
   iter_n: 50
 pgo:
   map_context: True

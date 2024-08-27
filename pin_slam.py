@@ -311,7 +311,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T5_1 = get_time()
 
         # gaussian splatting mapping (fitting)
-        if config.color_channel == 3: # only when color available
+        if config.gs_on: # only when color available
             if config.gs_batch_training_on:
                 gs_iter_num = config.gs_iters if frame_id == (config.gs_batch_frame-1) else 0
             else:
@@ -443,6 +443,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         pgm.write_loops(os.path.join(run_path, "loop_log.txt"))
         if config.o3d_vis_on:
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
+    if config.gs_on:
+        val_pnsr_np = np.array(mapper.val_psnr_list)
+        print("Average validation view PSNR:", np.mean(val_pnsr_np))
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(None, None, False, False) # merge the final neural point map

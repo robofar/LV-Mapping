@@ -134,7 +134,7 @@ class WaymoDataset:
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
         
         for cam_name in list(img_dict.keys()):
-            points_rgb = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], 
+            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], 
                                                     self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
         if self.use_only_colorized_points:
@@ -225,11 +225,10 @@ class WaymoDataset:
 
         # self.gt_poses = np.array(self.gt_poses)
 
-    
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
-        points[:,3] = 1 # homo coordinate # TODO, this would override the intensity part
+        points[:,3] = 1 # homo coordinate
 
         # transfrom velodyne points to camera coordinate
         points_cam = np.matmul(T_c_l, points.T).T # N, 4
@@ -237,14 +236,14 @@ class WaymoDataset:
 
         # project to image space
         u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
-        u = u.astype(int)
-        v = v.astype(int)
+        u = u.astype(np.int32)
+        v = v.astype(np.int32)
 
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
         depth_map = np.zeros((img_height, img_width))
-        # depth_img = np.zeros((img_height, img_width, 3))
+        depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters
@@ -258,11 +257,11 @@ class WaymoDataset:
         depth_map[v_valid,u_valid] = depth[mask]
 
         # print(np.shape(points_rgb))
-        # overwrite the points_rgb
+
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
         points_rgb[mask, 3] = 0 # has color
 
-        return points_rgb
+        return points_rgb, depth_map
     
     def persepective_cam2image(self, points, K_mat):
         ndim = points.ndim
@@ -270,10 +269,9 @@ class WaymoDataset:
             points = np.expand_dims(points, 0)
         points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
         depth = points_proj[:,2,:]
-        depth[depth==0] = -1e-5
-
-        u = np.round(points_proj[:,0,:]/np.abs(depth))
-        v = np.round(points_proj[:,1,:]/np.abs(depth))
+        depth[depth==0] = -1e-6
+        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(int)
+        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(int)
 
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]

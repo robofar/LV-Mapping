@@ -94,9 +94,6 @@ class ReplicaDataset:
         rgb_image = o3d.io.read_image(self.rgb_frames[idx])
         depth_image = o3d.io.read_image(self.depth_frames[idx])
 
-        # print(rgb_image)
-        # print(depth_image)
-
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                         depth_image, 
                                                                         depth_scale=self.depth_scale, 
@@ -113,7 +110,6 @@ class ReplicaDataset:
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
         rgb_image = np.array(rgb_image)
-        # image_dict = {"cam": rgb_image}
 
         depth_image = np.array(depth_image)/self.depth_scale
         rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels

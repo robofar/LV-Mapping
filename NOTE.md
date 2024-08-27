@@ -257,6 +257,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Evaluate Chamfer distance and PSNR
 - [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
 - [ ] Add BoW python for image place recognition (loop detection)
+- [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] The goal is RAL
 
 ## Useful links
