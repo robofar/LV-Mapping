@@ -109,10 +109,12 @@ class Mapper:
         self.time_pool = torch.empty((0), device=self.device, dtype=torch.int)
 
         # for GS
-        self.cam_img_pool = []
-        self.cam_img_pool_id = [] # not really useful
+        self.cam_img_train_pool = []
+        self.cam_img_train_ids = []
 
         self.cam_img_test_pool = []
+        self.cam_img_test_ids = []
+
         self.gs_total_iter = 0
         self.gs_iter_window = config.gs_bs * config.gs_iters * config.img_pool_size
 
@@ -544,15 +546,14 @@ class Mapper:
             # training views
             if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
                 # better to use the newly added gaussians ratio (FIXME)
-                if len(self.cam_img_pool) > self.config.img_pool_size: # TODO, change maximum pool size
-                    self.cam_img_pool.pop(0) # pop the oldest cam
-                    self.cam_img_pool_id.pop(0) # pop the oldest cam
+                if len(self.cam_img_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
+                    self.cam_img_train_pool.pop(0) # pop the oldest cam
 
                 for cam_name in self.dataset.cam_names:
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.train_view = True
-                    self.cam_img_pool.append(cur_view_cam)
-                    self.cam_img_pool_id.append(cur_view_cam.uid)
+                    self.cam_img_train_pool.append(cur_view_cam)
+                    self.cam_img_train_ids.append(cur_view_cam.uid)
             # also add some testing views
             else:
                 if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
@@ -562,8 +563,9 @@ class Mapper:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.train_view = False
                 self.cam_img_test_pool.append(cur_view_cam)
+                self.cam_img_test_ids.append(cur_view_cam.uid)
 
-                # print(self.cam_img_pool_id)
+                # print(self.cam_img_train_pool_id)
 
         # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
         # print("time for sampling              (ms):", (T2-T1)*1e3)
@@ -1006,7 +1008,7 @@ class Mapper:
             # if iteration % 1000 == 0:
             #     gaussians.oneupSHdegree()
 
-            cur_img_pool_size = len(self.cam_img_pool)
+            cur_img_pool_size = len(self.cam_img_train_pool)
 
             # rendering losses
             rgb_loss_batch = 0
@@ -1024,7 +1026,7 @@ class Mapper:
 
                 T1 = get_time()
 
-                viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
+                viewpoint_cam: CamImage = self.cam_img_train_pool[rand_idx]
 
                 # print("Used cam id:", viewpoint_cam.uid)
                 
@@ -1267,17 +1269,17 @@ class Mapper:
             vis_cam_name = self.dataset.cam_names[0] # TODO # -1 
 
             # if self.config.gs_batch_training_on: 
-            #     rand_idx = random.randint(0, len(self.cam_img_pool)-1) # random frame
-            #     cur_viewpoint_cam: CamImage = self.cam_img_pool[rand_idx]
+            #     rand_idx = random.randint(0, len(self.cam_img_train_pool)-1) # random frame
+            #     cur_viewpoint_cam: CamImage = self.cam_img_train_pool[rand_idx]
             # else: # lastest frame
             #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
             # only use testing views
-            if len(self.cam_img_test_pool) > 5:
+            if len(self.cam_img_test_pool) >= self.config.img_test_pool_size-1:
                 cur_viewpoint_cam: CamImage = self.cam_img_test_pool[0]
             else:
                 # use the last one in the pool (for single cam mode)
-                cur_viewpoint_cam: CamImage = self.cam_img_pool[0] # training view
+                cur_viewpoint_cam: CamImage = self.cam_img_train_pool[0] # training view
 
             # print("Used cam id:", cur_viewpoint_cam.uid)
 
@@ -1352,23 +1354,23 @@ class Mapper:
             cur_pnsr = psnr(renderd_image, original_rgb).mean().item()
             cur_ssim = ssim(renderd_image, original_rgb).item()
             cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
-            
+
             if cur_viewpoint_cam.train_view:
                 print("Eval (train view)") 
             else:
+                self.val_psnr_list.append(cur_pnsr)
+                self.val_ssim_list.append(cur_ssim)
+                self.val_lpips_list.append(cur_lpips)
                 print("Eval (test view)") 
-            
-            print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
-            self.val_psnr_list.append(cur_pnsr)
-            self.val_ssim_list.append(cur_ssim)
-            self.val_lpips_list.append(cur_lpips)
+            print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
                 cur_depth_l1 = np.mean(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask])
                 print("Depth L1 (m) ↓ :", cur_depth_l1)
-                self.val_depthl1_list.append(cur_depth_l1)
+                if not cur_viewpoint_cam.train_view: # eval only on the test views
+                    self.val_depthl1_list.append(cur_depth_l1)
 
         return 
 

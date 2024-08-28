@@ -65,15 +65,6 @@ class KITTIOdometryDataset:
         else:
             self.image_available = False
 
-        # load depth image predicted by depth-anything
-        if self.image_available:
-            self.img2_depth_dir = os.path.join(self.kitti_sequence_dir, "image_2_monodepth/")
-            self.img2_depth_files = sorted(glob.glob(self.img2_depth_dir + "*.npy"))
-
-            # load metric3d models
-            # self.metric3d = torch.hub.load('yvanyin/metric3d', 'metric3d_vit_small', pretrain=True)
-
-
         # cam 3 (color)
         self.img3_dir = os.path.join(self.kitti_sequence_dir, "image_3/")
         self.img3_files = sorted(glob.glob(self.img3_dir + "*.png"))

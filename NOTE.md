@@ -238,7 +238,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
-- [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?)
+- [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)
@@ -250,6 +250,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add online gaussian visualizer
 - [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
+- [ ] New KITTI-MOT dataloader
+- [ ] New Waymo dataloader
 - [ ] KITTI-360 NVS benchmark
 - [ ] Deal with dynamic objects (tracking, filtering or 4DGS)
 - [x] Sky (out-of-lidar-fov) masking
@@ -258,6 +260,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
 - [ ] Add BoW python for image place recognition (loop detection)
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
+- [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
 - [ ] The goal is RAL
 
 ## Useful links

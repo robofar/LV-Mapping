@@ -39,15 +39,16 @@ gs:
   sh_degree: 0 # According to experiments, it seems to not play an important role, but why
   lambda_depth: 10.0
   lambda_distort: 100.0
-  lambda_normal: 0.0 # not too big 0.05 
+  lambda_normal: 0.1 # not too big 0.05 
   lambda_isotropic: 1.0 # todo
   # lambda_sky: 0.01 # not much impact
   # lambda_sdf_cons: 0.0
   # lambda_sdf_normal_cons: 0.0
   # lambda_sdf: 0.0
-  lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
-  lambda_sdf: 1.0
+  # actually making the results worse
+  lambda_sdf_cons: 0.0
+  lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss
+  lambda_sdf: 0.0
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7
