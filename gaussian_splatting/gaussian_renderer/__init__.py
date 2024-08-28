@@ -153,6 +153,8 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp # TODO, none
     ) 
+
+    rendered_image = torch.nan_to_num(rendered_image, 0, 0)
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.

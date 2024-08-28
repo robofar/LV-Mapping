@@ -89,6 +89,10 @@ class KITTIOdometryDataset:
         if self.image_available: # now we use cam2 (left color)
             self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
             self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
+            
+            # TODO; add for other loaders
+            self.cam_widths = {self.left_cam_name: 1241}
+            self.cam_heights = {self.left_cam_name: 376}
 
             # FIXME: mono_depth rgbd version
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()

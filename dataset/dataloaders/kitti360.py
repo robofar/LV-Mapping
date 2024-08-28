@@ -78,10 +78,13 @@ class KITTI360Dataset:
         self.T_c_l = np.matmul(self.T_cr_co, self.T_co_l) # tran from lidar to rectified camera frame
         self.T_l_c = np.linalg.inv(self.T_c_l)
 
-        self.T_c_l_mats["cam_left_rect"] = self.T_c_l
-        self.K_mats["cam_left_rect"] = self.K_mat_left
-
         self.main_cam_name = "cam_left_rect"
+
+        self.T_c_l_mats[self.main_cam_name] = self.T_c_l
+        self.K_mats[self.main_cam_name] = self.K_mat_left
+
+        self.cam_widths = {self.main_cam_name: 1408}
+        self.cam_heights = {self.main_cam_name: 376}
         
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         self.intrinsic.set_intrinsics(

@@ -1072,7 +1072,7 @@ class Mapper:
                 # depth rendering loss
                 valid_depth_mask = None
                 if gt_depth_image is not None and self.config.lambda_depth > 0:
-                    valid_depth_mask = (gt_depth_image > 0.0)  
+                    valid_depth_mask = (gt_depth_image > 0.0)  & (surf_depth > 0.0)
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     rend_dist_valid = surf_depth[valid_depth_mask]
                     if use_inverse_depth:
@@ -1101,7 +1101,9 @@ class Mapper:
                 #     surf_normal = surf_normal[:, valid_depth_mask]
                 #     dist_distortion = dist_distortion[:, valid_depth_mask]
                 
-                normal_error = (1.0 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product # direction does not matters
+                # normal_error = (1.0 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product 
+                normal_error = (1.0 - torch.abs((rend_normal * surf_normal).sum(dim=0)))[None] # direction does not matters
+                
                 # print(normal_error)
 
                 normal_loss = normal_error.mean()
@@ -1307,7 +1309,7 @@ class Mapper:
             self.T_w_c_cur_view = T_w_c.detach().cpu().numpy()
 
             render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
-            renderd_image, dist_distortion, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+            renderd_image, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
 
             if cur_viewpoint_cam.sky_mask_on:
                 cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
@@ -1351,12 +1353,10 @@ class Mapper:
             cur_ssim = ssim(renderd_image, original_rgb).item()
             cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
             
-            
-
             if cur_viewpoint_cam.train_view:
-                print("(train view)") 
+                print("Eval (train view)") 
             else:
-                print("(test view)") 
+                print("Eval (test view)") 
             
             print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
@@ -1371,8 +1371,75 @@ class Mapper:
                 self.val_depthl1_list.append(cur_depth_l1)
 
         return 
-    
-     # joint optimization of PIN map and the poses in the sliding window
+
+    # TODO
+    def gs_tsdf_fusion(self, render_frame_step = 1, down_rate=0, output_path = None):
+        # render and do tsdf fusion to build mesh
+
+        cam_name = self.dataset.loader.main_cam_name
+        K_mat = self.dataset.K_mats[cam_name]
+        height = self.dataset.loader.cam_heights[cam_name]
+        width = self.dataset.loader.cam_widths[cam_name] 
+        T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
+
+        cam_intrinsic_o3d = self.dataset.loader.intrinsic # main cam
+
+        bg_color = [0.5, 0.5, 0.5] # gray
+        background = torch.tensor(bg_color, dtype=self.dtype, device=self.device)
+
+        vox_size = self.config.voxel_size_m
+        trunc_dist = 3 * vox_size
+
+        volume = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length=vox_size, # unit: m
+            sdf_trunc=trunc_dist, # unit: m
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+
+        for frame_id in tqdm(range(0, self.dataset.processed_frame, render_frame_step), desc="TSDF fusion"):
+
+            cur_view_cam = CamImage(frame_id, None, K_mat, self.config.min_range*0.5, self.config.max_range*1.1, 
+                cam_name, device=self.device, img_width=width, img_height=height)
+            
+            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose for current frame
+            T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+
+            render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
+
+            # rendered results
+            renderd_rgb_image, surf_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
+
+            renderd_rgb_image = torch.clamp(renderd_rgb_image, 0, 1)
+            # print(torch.max(renderd_rgb_image), torch.min(renderd_rgb_image)) # why there are value larger than 1?
+
+            renderd_image_np = (renderd_rgb_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+
+            renderd_image_np = np.ascontiguousarray(renderd_image_np)
+            rgb_image = o3d.geometry.Image(renderd_image_np)
+
+            rendered_depth_np = surf_depth.squeeze(0).detach().cpu().numpy().astype(np.float32) 
+            rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
+            depth_image = o3d.geometry.Image(rendered_depth_np)
+
+            cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                        depth_image, 
+                                                                        depth_scale=1.0, 
+                                                                        depth_trunc=self.config.max_range*0.8, 
+                                                                        convert_rgb_to_intensity=False)
+
+            T_c_w_np = torch.inverse(T_w_c).detach().cpu().numpy()
+
+            volume.integrate(cur_rgbd, cam_intrinsic_o3d, T_c_w_np)
+
+        tsdf_fusion_mesh = volume.extract_triangle_mesh()
+
+        if output_path is not None:
+            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
+            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+
+        return tsdf_fusion_mesh
+
+
+    # joint optimization of PIN map and the poses in the sliding window
     # neural points are static in this case, we only fine-tune the neural point features for the map updating
     def bundle_adjustment(
         self, iter_count, window_size: int = 50, use_lie_group: bool = False

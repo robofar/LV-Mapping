@@ -18,18 +18,18 @@ sampler:
   free_sample_end_dist_m: 0.1
   free_front_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.1 # 0.04
+  voxel_size_m: 0.04 # 0.04
   query_nn_k: 8
   # from_sample_points: False
 gs:
   gs_iters: 5
-  gs_bs: 1
+  gs_bs: 5
   gs_keyframe_interval: 5
   img_pool_size: 30
-  gs_down_rate: 2
-  gs_vis_down_rate: 2
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   sh_degree: 0
-  lambda_depth: 0.1
+  lambda_depth: 1.0
   lambda_distort: 100.0
   lambda_normal: 0.1 # not too big 0.05 
   lambda_isotropic: 100.0

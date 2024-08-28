@@ -222,7 +222,7 @@ class Config:
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal consistency regularization weight
         self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene)
-        self.lambda_sky: float = 0.1 # bce loss, let the sky gaussians has small opacity
+        self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 1.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
         self.lambda_sdf: float = 1.0 # pin map sdf fitting loss

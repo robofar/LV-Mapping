@@ -74,7 +74,8 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, sky_mask = None, device = "cuda"):
+    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, sky_mask = None, 
+        device = "cuda", img_width = None, img_height = None):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
@@ -82,9 +83,13 @@ class CamImage:
 
         self.train_view = False # is used as train view or test view
 
-        image[:3] = image[:3].clamp(0.0, 1.0) # only for the RGB part
-        self.image_width = image.shape[2]
-        self.image_height = image.shape[1]
+        if image is not None:
+            image[:3] = image[:3].clamp(0.0, 1.0) # only for the RGB part
+            self.image_width = image.shape[2]
+            self.image_height = image.shape[1]
+        else:
+            self.image_width = img_width
+            self.image_height = img_height
 
         self.fx = K_mat[0,0]
         self.fy = K_mat[1,1]
@@ -92,75 +97,77 @@ class CamImage:
         self.FoVx = focal2fov(self.fx, self.image_width)
         self.FoVy = focal2fov(self.fy, self.image_height)
 
-        # pyramid of images
-        self.original_image_list = []
-        self.sky_mask_list = []
-
-        original_image = image.to(device)
-
-        self.channel_count = original_image.shape[0]
-        if self.channel_count == 4:
-            self.depth_on = True
-        else:
-            self.depth_on = False
-
-        # TODO: may add normal
-        # TODO: the issue of the depth rendering loss lie in the depth image downsampling, bilinear may not be a good idea, update it 
-        
-        # C can be either 3 or 4
-        # NOTE: F.interpolate require 4D input
-        # Downsample to Cx(H/2)x(W/2)
-        down_level1_image = F.interpolate(original_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        # Downsample to Cx(H/4)x(W/4)
-        down_level2_image = F.interpolate(down_level1_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-        # Downsample to Cx(H/8)x(W/8)
-        down_level3_image = F.interpolate(down_level2_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-
-        if self.depth_on:
-            down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            down_level1_image = torch.cat((down_level1_image, down_level1_depth), dim=0)
-
-            down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            down_level2_image = torch.cat((down_level2_image, down_level2_depth), dim=0)
-
-            down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
-
-        if sky_mask is not None: # sky_mask 1, H, W
-            self.sky_mask_on = True
-            down_level1_sky_mask = F.interpolate(sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
-            down_level2_sky_mask = F.interpolate(down_level1_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
-            down_level3_sky_mask = F.interpolate(down_level2_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
-        else:
-            down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
-            self.sky_mask_on = False
-
-        if img_down_rate > 0:
-            original_image = None
-            sky_mask = None
-        self.original_image_list.append(original_image)
-        self.sky_mask_list.append(sky_mask)
-
-        if img_down_rate > 1:
-            down_level1_image = None
-            down_level1_sky_mask = None
-        self.original_image_list.append(down_level1_image)
-        self.sky_mask_list.append(down_level1_sky_mask)
-
-        if img_down_rate > 2:
-            down_level2_image = None
-            down_level2_sky_mask = None
-        self.original_image_list.append(down_level2_image)
-        self.sky_mask_list.append(down_level2_sky_mask)
-
-        self.original_image_list.append(down_level3_image)
-        self.sky_mask_list.append(down_level3_sky_mask)
-
         self.zfar = z_max # 100.0
         self.znear = z_min # 0.1
 
         # GL
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).T # T_gi
+
+        # pyramid of images
+        self.original_image_list = []
+        self.sky_mask_list = []
+
+        if image is not None:
+            original_image = image.to(device)
+
+            self.channel_count = original_image.shape[0]
+            if self.channel_count == 4:
+                self.depth_on = True
+            else:
+                self.depth_on = False
+
+            # TODO: may add normal
+            # TODO: the issue of the depth rendering loss lie in the depth image downsampling, bilinear may not be a good idea, update it 
+            
+            # C can be either 3 or 4
+            # NOTE: F.interpolate require 4D input
+            # Downsample to Cx(H/2)x(W/2)
+            down_level1_image = F.interpolate(original_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            # Downsample to Cx(H/4)x(W/4)
+            down_level2_image = F.interpolate(down_level1_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            # Downsample to Cx(H/8)x(W/8)
+            down_level3_image = F.interpolate(down_level2_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+
+            if self.depth_on:
+                down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+                down_level1_image = torch.cat((down_level1_image, down_level1_depth), dim=0)
+
+                down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+                down_level2_image = torch.cat((down_level2_image, down_level2_depth), dim=0)
+
+                down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+                down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
+
+            if sky_mask is not None: # sky_mask 1, H, W
+                self.sky_mask_on = True
+                down_level1_sky_mask = F.interpolate(sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+                down_level2_sky_mask = F.interpolate(down_level1_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+                down_level3_sky_mask = F.interpolate(down_level2_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+            else:
+                down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
+                self.sky_mask_on = False
+
+            if img_down_rate > 0:
+                original_image = None
+                sky_mask = None
+            self.original_image_list.append(original_image)
+            self.sky_mask_list.append(sky_mask)
+
+            if img_down_rate > 1:
+                down_level1_image = None
+                down_level1_sky_mask = None
+            self.original_image_list.append(down_level1_image)
+            self.sky_mask_list.append(down_level1_sky_mask)
+
+            if img_down_rate > 2:
+                down_level2_image = None
+                down_level2_sky_mask = None
+            self.original_image_list.append(down_level2_image)
+            self.sky_mask_list.append(down_level2_sky_mask)
+
+            self.original_image_list.append(down_level3_image)
+            self.sky_mask_list.append(down_level3_sky_mask)
+
 
 # what does this mean?
 class MiniCam:

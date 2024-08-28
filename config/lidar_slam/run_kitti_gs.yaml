@@ -17,7 +17,7 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.2
+  voxel_size_m: 0.15
   search_alpha: 0.8
   query_nn_k: 8
 loss:
@@ -34,14 +34,14 @@ gs:
   gs_keyframe_interval: 2
   img_pool_size: 15 # 15
   img_test_pool_size: 15
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
-  sh_degree: 2
-  lambda_depth: 1.0
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
+  sh_degree: 0 # According to experiments, it seems to not play an important role, but why
+  lambda_depth: 10.0
   lambda_distort: 100.0
   lambda_normal: 0.0 # not too big 0.05 
   lambda_isotropic: 1.0 # todo
-  lambda_sky: 0.0
+  # lambda_sky: 0.01 # not much impact
   # lambda_sdf_cons: 0.0
   # lambda_sdf_normal_cons: 0.0
   # lambda_sdf: 0.0
