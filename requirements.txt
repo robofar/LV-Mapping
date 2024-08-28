@@ -17,6 +17,7 @@ scikit-image==0.21.0
 wandb==0.17.0
 # for gs
 opencv-python
+torchmetrics==1.4.1
 -e submodules/diff-surfel-rasterization # editable install
 # for metric3d
 mmcv

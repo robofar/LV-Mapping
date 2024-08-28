@@ -324,7 +324,7 @@ class SLAMDataset():
                         pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
                         normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
 
-                        sky_mask = pred_depth > self.config.max_range * 1.5 # mask out the sky # 1, H, W
+                        sky_mask = pred_depth > self.config.max_range * 2.0 # mask out the sky # 1, H, W
                         sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
 
                         # TODO: make use of this confidence here

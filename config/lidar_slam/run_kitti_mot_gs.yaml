@@ -1,5 +1,5 @@
 setting: 
-  name: "test_kitti_gs"
+  name: "test_kitti_mot_gs"
   output_root: "./experiments"
   color_channel: 3
   deskew: False
@@ -18,17 +18,16 @@ neuralpoints:
   query_nn_k: 8
 loss:
   sigma_sigmoid_m: 0.08
-  # loss_weight_on: True
-  # dist_weight_scale: 0.8
+  loss_weight_on: True
+  dist_weight_scale: 0.8
   ekional_loss_on: True
   weight_e: 0.5
 gs:
   monodepth_on: True
   gs_iters: 10
   gs_bs: 5
-  gaussian_bs: 16384
   gs_keyframe_interval: 2
-  img_pool_size: 15 # 15
+  img_pool_size: 15
   img_test_pool_size: 15
   gs_down_rate: 1
   gs_vis_down_rate: 1
@@ -36,22 +35,21 @@ gs:
   lambda_depth: 1.0
   lambda_distort: 100.0
   lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0 # todo
-  lambda_sky: 0.0
+  lambda_isotropic: 1.0 # todo  
   # lambda_sdf_cons: 0.0
   # lambda_sdf_normal_cons: 0.0
   # lambda_sdf: 0.0
   lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss
-  lambda_sdf: 0.0
+  lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
+  lambda_sdf: 1.0
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 2e7
   pool_filter_freq: 10
-# tracker:
-#   photo_loss: False
-#   source_vox_down_m: 0.6
-#   iter_n: 50
+tracker:
+  photo_loss: False
+  source_vox_down_m: 0.6
+  iter_n: 50
 pgo:
   map_context: True
   pgo_freq_frame: 30

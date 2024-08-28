@@ -530,11 +530,11 @@ class NeuralPoints(nn.Module):
         # added_pt_dist2 = torch.sum((added_pt - sensor_position)**2, dim=-1)
 
         # the same scaling initialization for all Gaussians
-        mean_dist = torch.tensor([1.0 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO)
+        mean_dist = torch.tensor([1.5 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO)
         if is_reliable:
             init_scale = mean_dist
         else: # initalize with a larger radius
-            init_scale = mean_dist * 4.0
+            init_scale = mean_dist * 3.0
         new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
         
         self.scaling = torch.cat((self.scaling, new_scales), 0) 

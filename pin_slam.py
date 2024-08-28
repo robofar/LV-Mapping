@@ -443,14 +443,20 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         pgm.write_loops(os.path.join(run_path, "loop_log.txt"))
         if config.o3d_vis_on:
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
-    if config.gs_on:
+    
+    # gs eval
+    if config.gs_on: 
         val_pnsr_np = np.array(mapper.val_psnr_list)
-        print("Average validation view PSNR:", np.mean(val_pnsr_np))
+        val_ssim_np = np.array(mapper.val_ssim_list)
+        val_lpips_np = np.array(mapper.val_lpips_list)
+        print("Average validation view PSNR ↑ :", np.mean(val_pnsr_np))
+        print("Average validation view SSIM ↑ :", np.mean(val_ssim_np))
+        print("Average validation view LPIPS ↓ :", np.mean(val_lpips_np))
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(None, None, False, False) # merge the final neural point map
     
-    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0)
+    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0, vis_normals=True)
     if config.save_map:
         o3d.io.write_point_cloud(os.path.join(run_path, "map", "neural_points.ply"), neural_pcd) # write the neural point cloud
     if config.save_mesh and cur_mesh is None:

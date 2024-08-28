@@ -117,13 +117,13 @@ class CamImage:
         down_level3_image = F.interpolate(down_level2_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
 
         if self.depth_on:
-            down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
             down_level1_image = torch.cat((down_level1_image, down_level1_depth), dim=0)
 
-            down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
             down_level2_image = torch.cat((down_level2_image, down_level2_depth), dim=0)
 
-            down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0)
+            down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
             down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
 
         if sky_mask is not None: # sky_mask 1, H, W

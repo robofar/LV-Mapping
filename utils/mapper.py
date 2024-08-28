@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import wandb
 from rich import print
 from tqdm import tqdm
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 from dataset.slam_dataset import SLAMDataset
 from model.decoder import Decoder
@@ -116,8 +117,12 @@ class Mapper:
         self.gs_iter_window = config.gs_bs * config.gs_iters * config.img_pool_size
 
         self.T_w_c_cur_view = None # validate render view camera pose
+        
+        # evaluation
         self.val_psnr_list = []
-
+        self.val_ssim_list = []
+        self.val_lpips_list = []
+        self.lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(self.device) 
 
     def dynamic_filter(self, points_torch, type_2_on: bool = True):
 
@@ -319,6 +324,9 @@ class Mapper:
         if self.config.prune_map_on and ((frame_id + 1) % self.config.prune_freq_frame == 0):
             if self.neural_points.prune_map(self.config.max_prune_certainty):
                 self.neural_points.recreate_hash(None, None, True, True, frame_id)
+        # TODO: we can prune those free gaussians that has a very small opacity? # TODO: there's some floating gaussians in the sky due to wrong mono depth initialization
+        
+
         # update neural point map
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
@@ -1074,10 +1082,16 @@ class Mapper:
                     # print(" Depth loss:", depth_loss.item()) 
                     depth_loss_batch += depth_loss
 
-                if viewpoint_cam.sky_mask_on and self.config.lambda_sky > 0:
+                if viewpoint_cam.sky_mask_on: 
                     cur_sky_mask = viewpoint_cam.sky_mask_list[down_rate]
-                    cur_sky_loss = sky_bce_loss(cur_sky_mask, rend_alpha) # let the sky has small opacity
-                    sky_loss_batch += cur_sky_loss
+                    non_sky_mask = ~cur_sky_mask
+                    if self.config.lambda_sky > 0:
+                        cur_sky_loss = sky_bce_loss(cur_sky_mask, rend_alpha) # let the sky has small opacity, the others have a large opacity?
+                        sky_loss_batch += cur_sky_loss
+
+                    rend_normal = rend_normal * non_sky_mask
+                    surf_normal = surf_normal * non_sky_mask
+                    dist_distortion = dist_distortion * non_sky_mask
 
                 # regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
@@ -1105,7 +1119,7 @@ class Mapper:
                 else:
                     print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
                 print(" Normal reg loss:", normal_loss_batch.item() / gs_bs, " Distortion reg loss:", distort_loss_batch.item() / gs_bs)
-                print(" Sky loss:", sky_loss_batch.item() / gs_bs)
+                # print(" Sky loss:", sky_loss_batch.item() / gs_bs)
 
             depth_loss_batch *= self.config.lambda_depth
             
@@ -1121,9 +1135,9 @@ class Mapper:
 
             # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
             constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
-            true_count = torch.sum(constraint_mask)
+            true_count = torch.sum(constraint_mask).item()
             true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
-            gaussian_bs = self.config.bs * 8
+            gaussian_bs = self.config.bs * 4
             # gaussian_bs = self.config.gaussian_bs
             sample_bs = min(true_count, gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
             # print("Sampled neural point count: " , sample_bs)
@@ -1150,13 +1164,19 @@ class Mapper:
                 sampled_guassians_sdf = self.sdf(sampled_guassians_xyz)[0] # sdf, sdf_std
                 sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one
                 grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
+                valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
+                valid_grad_mask = valid_grad_mask.detach()
+                valid_grad_count = torch.sum(valid_grad_mask).item()
+
+                # print(" Valid count:", valid_grad_count, " from ", sample_bs)
                 sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame
 
-                sdf_consistency_loss = torch.abs(sampled_guassians_sdf).mean() # gaussians should better lie on the surface
+                sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
                 # this loss may have some issue here, sdf gradient is not good enough ...
                 # gaussian normals should better align with the sdf gradient direction
-                gaussian_normal_error = (1.0 - torch.abs((sampled_guassians_sdf_grad * sampled_guassians_normals).sum(dim=1))) # direction does not matters               
+                # gaussian_normal_error = (1.0 - torch.abs((sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))) # direction does not matters 
+                gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1)) # direction does not matters                             
                 sdf_normal_consistency_loss = gaussian_normal_error.mean()
                 # this definately have issue (it has value larger than 1)
 
@@ -1250,7 +1270,7 @@ class Mapper:
             if len(self.cam_img_test_pool) > 5:
                 cur_viewpoint_cam: CamImage = self.cam_img_test_pool[0]
             else:
-                # use the oldest one in the pool (for single cam mode)
+                # use the last one in the pool (for single cam mode)
                 cur_viewpoint_cam: CamImage = self.cam_img_pool[0] # training view
 
             # print("Used cam id:", cur_viewpoint_cam.uid)
@@ -1259,7 +1279,7 @@ class Mapper:
             vis_down_rate = self.config.gs_vis_down_rate
 
             original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
-
+    
             original_img_np = original_img.detach().cpu().numpy() # C, H, W
             original_img_rgb = (np.transpose(original_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
             original_img_rgb = cv2.cvtColor(original_img_rgb, cv2.COLOR_RGB2BGR)
@@ -1284,6 +1304,13 @@ class Mapper:
 
             render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
             renderd_image, dist_distortion, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_dist"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+
+            if cur_viewpoint_cam.sky_mask_on:
+                cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
+                non_sky_mask = ~ cur_sky_mask
+                surf_depth = surf_depth * non_sky_mask
+                surf_normal = surf_normal * non_sky_mask
+                rend_normal = rend_normal * non_sky_mask
 
             renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
             renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1314,12 +1341,18 @@ class Mapper:
             cv2.waitKey(1)
 
             # cur psnr
-            cur_pnsr = psnr(renderd_image, original_img[:3]).mean().item()
+            original_rgb = original_img[:3]
+            cur_pnsr = psnr(renderd_image, original_rgb).mean().item()
+            cur_ssim = ssim(renderd_image, original_rgb).item()
+            cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
+
             if cur_viewpoint_cam.train_view:
-                print("Current PSNR (train view):", cur_pnsr)
+                print("(train view) Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
             else:
-                print("Current PSNR (test view):", cur_pnsr)
+                print("(test view) Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
             self.val_psnr_list.append(cur_pnsr)
+            self.val_ssim_list.append(cur_ssim)
+            self.val_lpips_list.append(cur_lpips)
 
         return 
     
