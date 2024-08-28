@@ -105,7 +105,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     
     compute_cov3D_python = False 
 
-    if compute_cov3D_python: # False now
+    if compute_cov3D_python: # False now (do not use precomputed covariance)
         # currently don't support normal consistency loss if use precomputed covariance
         splat2world = neural_gaussians.get_local_covariance(scaling_modifier)
         # print(splat2world)
@@ -118,7 +118,7 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
             [0, 0, 0, 1]]).float().cuda().T
         world2pix =  viewpoint_camera.full_proj_transform @ ndc2pix
         cov3D_precomp = (splat2world[:, [0,1,3]] @ world2pix[:,[0,1,3]]).permute(0,2,1).reshape(-1, 9) # column major
-    else:  # this is used
+    else:  # this is used now
         scales = neural_gaussians.get_local_scaling 
         rotations = neural_gaussians.get_local_rotation
 

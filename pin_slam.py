@@ -449,8 +449,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         val_pnsr_np = np.array(mapper.val_psnr_list)
         val_ssim_np = np.array(mapper.val_ssim_list)
         val_lpips_np = np.array(mapper.val_lpips_list)
-        print("Average validation view PSNR ↑ :", np.mean(val_pnsr_np))
-        print("Average validation view SSIM ↑ :", np.mean(val_ssim_np))
+        print("Average validation view PSNR  ↑ :", np.mean(val_pnsr_np))
+        print("Average validation view SSIM  ↑ :", np.mean(val_ssim_np))
         print("Average validation view LPIPS ↓ :", np.mean(val_lpips_np))
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     

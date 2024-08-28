@@ -245,14 +245,14 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation
 - [ ] Use depth map to do TSDF fusion to generate the refined mesh?
-- [ ] Check RTG-SLAM (opacity in RTG-SLAM are fixed as either 0.99 or 0.1)
+- [x] Check RTG-SLAM (opacity in RTG-SLAM are fixed as either 0.99 or 0.1)
 - [ ] Allow the freee gaussians to move freely with a larger learning rate
 - [ ] Add online gaussian visualizer
 - [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
 - [ ] KITTI-360 NVS benchmark
 - [ ] Deal with dynamic objects (tracking, filtering or 4DGS)
-- [ ] Sky (out-of-lidar-fov) masking
+- [x] Sky (out-of-lidar-fov) masking
 - [ ] Level of details, especially for the closer range
 - [ ] Evaluate Chamfer distance and PSNR
 - [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)

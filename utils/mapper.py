@@ -122,6 +122,7 @@ class Mapper:
         self.val_psnr_list = []
         self.val_ssim_list = []
         self.val_lpips_list = []
+        self.val_depthl1_list = []
         self.lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(self.device) 
 
     def dynamic_filter(self, points_torch, type_2_on: bool = True):
@@ -343,7 +344,7 @@ class Mapper:
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.max_range*0.03 # add to config # TODO
+            down_voxel_size = self.config.max_range*0.025 # add to config # TODO
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
@@ -1061,7 +1062,7 @@ class Mapper:
 
                 # TODO Figure out how they are calculated
                 dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
-                rend_normal  = render_pkg['rend_normal'] # 3, H, W # what is this actually?
+                rend_normal = render_pkg['rend_normal'] # 3, H, W # what is this actually?
 
                 surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
                 surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
@@ -1159,6 +1160,7 @@ class Mapper:
                 sampled_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
                 # this might have some problem or maybe this is not in the world frame (TODO, figure it out)
                 sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3
+
                 sampled_guassians_xyz.requires_grad_(True)
 
                 sampled_guassians_sdf = self.sdf(sampled_guassians_xyz)[0] # sdf, sdf_std
@@ -1167,16 +1169,18 @@ class Mapper:
                 valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
                 valid_grad_mask = valid_grad_mask.detach()
                 valid_grad_count = torch.sum(valid_grad_mask).item()
-
                 # print(" Valid count:", valid_grad_count, " from ", sample_bs)
-                sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame
 
                 sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
+                sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame
+
+                # print(sampled_guassians_sdf_grad)                
+
                 # this loss may have some issue here, sdf gradient is not good enough ...
                 # gaussian normals should better align with the sdf gradient direction
-                # gaussian_normal_error = (1.0 - torch.abs((sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))) # direction does not matters 
-                gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1)) # direction does not matters                             
+                gaussian_normal_error = (1.0 - torch.abs((sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))) # direction does not matters 
+                # gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1)) # direction does not matters                             
                 sdf_normal_consistency_loss = gaussian_normal_error.mean()
                 # this definately have issue (it has value larger than 1)
 
@@ -1290,11 +1294,11 @@ class Mapper:
                 # print(original_img_np[3]) # why all 1?
                 original_img_depth = original_img_np[3]
                 depth_valid_mask = original_img_depth > 0
-                original_img_depth = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+                original_img_depth_color = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
                 # print(np.shape(original_img_depth))
-                original_img_depth = np.transpose(original_img_depth[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
-                original_img_depth = cv2.cvtColor(original_img_depth, cv2.COLOR_RGB2BGR)
-                cv2.imshow(cam_name + ": Observed Depth", original_img_depth)
+                original_img_depth_color = np.transpose(original_img_depth_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
+                original_img_depth_color = cv2.cvtColor(original_img_depth_color, cv2.COLOR_RGB2BGR)
+                cv2.imshow(cam_name + ": Observed Depth", original_img_depth_color)
 
             T_w_l = self.used_poses[cur_viewpoint_cam.frame_id] # already in torch tensor, lidar pose for current frame
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
@@ -1318,10 +1322,11 @@ class Mapper:
             cv2.imshow(cam_name + ": Rendered RGB", renderd_image_np)
             #cv2.waitKey(1) # 1ms
 
-            rendered_depth_np = (colorize_depth_maps(surf_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
-            rendered_depth_np = np.transpose(rendered_depth_np[0], (1, 2, 0)) # H, W, 3
-            rendered_depth_np = cv2.cvtColor(rendered_depth_np, cv2.COLOR_RGB2BGR)
-            cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_np)
+            rendered_depth_np = surf_depth.detach().cpu().numpy()
+            rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+            rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
+            rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
+            cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
 
             rend_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
             rendered_normal_np = (rend_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1345,14 +1350,25 @@ class Mapper:
             cur_pnsr = psnr(renderd_image, original_rgb).mean().item()
             cur_ssim = ssim(renderd_image, original_rgb).item()
             cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
+            
+            
 
             if cur_viewpoint_cam.train_view:
-                print("(train view) Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
+                print("(train view)") 
             else:
-                print("(test view) Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
+                print("(test view)") 
+            
+            print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
+
             self.val_psnr_list.append(cur_pnsr)
             self.val_ssim_list.append(cur_ssim)
             self.val_lpips_list.append(cur_lpips)
+
+            if cur_viewpoint_cam.depth_on:
+                # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
+                cur_depth_l1 = np.mean(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask])
+                print("Depth L1 (m) ↓ :", cur_depth_l1)
+                self.val_depthl1_list.append(cur_depth_l1)
 
         return 
     
