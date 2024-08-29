@@ -1367,7 +1367,7 @@ class Mapper:
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                cur_depth_l1 = np.mean(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask])
+                cur_depth_l1 = np.mean(np.abs(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask]))
                 print("Depth L1 (m) ↓ :", cur_depth_l1)
                 if not cur_viewpoint_cam.train_view: # eval only on the test views
                     self.val_depthl1_list.append(cur_depth_l1)

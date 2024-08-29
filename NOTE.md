@@ -42,6 +42,16 @@ python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 03 -i ./data/k
 
 **pass**
 
+## Run on KITTI MOT dataset
+
+```
+python pin_slam.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -dvl
+
+```
+
+**pass**
+
+
 ## Run on Nuscenes dataset
 ```
 python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
@@ -250,7 +260,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add online gaussian visualizer
 - [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
-- [ ] New KITTI-MOT dataloader
+- [x] New KITTI-MOT dataloader
 - [ ] New Waymo dataloader
 - [ ] KITTI-360 NVS benchmark
 - [ ] Deal with dynamic objects (tracking, filtering or 4DGS)

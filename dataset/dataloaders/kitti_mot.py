@@ -23,6 +23,7 @@
 import glob
 import importlib
 import os
+from collections import namedtuple
 
 import cv2
 import numpy as np
@@ -41,8 +42,9 @@ class KITTIMOTDataset:
         # self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
         
         self.velodyne_dir = os.path.join(data_dir, "velodyne", self.sequence_id) 
-        self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
+        self.scan_files = sorted(glob.glob(self.velodyne_dir + "/*.bin"))
         scan_count = len(self.scan_files)
+        # print(scan_count)
 
         # img related
         self.load_img = False # default
@@ -50,8 +52,9 @@ class KITTIMOTDataset:
 
         # cam 2 (color)
         self.img2_dir = os.path.join(data_dir, "image_02", self.sequence_id) 
-        self.img2_files = sorted(glob.glob(self.img2_dir + "*.png"))
+        self.img2_files = sorted(glob.glob(self.img2_dir + "/*.png"))
         img2_count = len(self.img2_files)
+        # print(img2_count)
         if img2_count == scan_count:
             self.image_available = True
         else:
@@ -59,50 +62,50 @@ class KITTIMOTDataset:
 
         # cam 3 (color)
         self.img3_dir = os.path.join(data_dir, "image_03", self.sequence_id) 
-        self.img3_files = sorted(glob.glob(self.img3_dir + "*.png"))
+        self.img3_files = sorted(glob.glob(self.img3_dir + "/*.png"))
         img3_count = len(self.img3_files)
 
         # cam 2 sky mask
         # cam 3 sky mask
 
         calib_file_path = os.path.join(data_dir, "calib", self.sequence_id+".txt")
-        self.calibration = self.read_calib_file(calib_file_path) 
+        calib_mats = self.tracking_calib_from_txt(calib_file_path) 
+        K_mat2 = calib_mats["K2"]
+        K_mat3 = calib_mats["K3"]
+        T_c2_l = calib_mats["T_c2_l"] 
+        T_c3_l = calib_mats["T_c3_l"] 
 
-        calib_data = self._load_calib() # load all calib first
+        T_r_c = calib_mats["T_r_c"] 
+        T_r2_l = T_r_c @ T_c2_l
+        T_r3_l = T_r_c @ T_c3_l
 
         self.main_cam_name = "cam2" # cam2 as main cam
 
         if self.image_available: # now we use cam2 (left color)
-            self.T_c_l_mats = {self.main_cam_name: calib_data['T_cam2_velo']}
-            self.K_mats = {self.main_cam_name: calib_data["K_cam2"]}
+            self.T_c_l_mats = {self.main_cam_name: T_r2_l} # use rectified frame or not?
+            self.K_mats = {self.main_cam_name: K_mat2}
+            self.cam_widths = {self.main_cam_name: 1242}
+            self.cam_heights = {self.main_cam_name: 375}
 
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(
                                         height=375,
                                         width=1242,
-                                        fx=calib_data["K_cam2"][0,0],
-                                        fy=calib_data["K_cam2"][1,1],
-                                        cx=calib_data["K_cam2"][0,2],
-                                        cy=calib_data["K_cam2"][1,2])
+                                        fx=K_mat2[0,0],
+                                        fy=K_mat2[1,1],
+                                        cx=K_mat2[0,2],
+                                        cy=K_mat2[1,2])
 
-            self.extrinsic = calib_data['T_cam2_velo']
-
-        # FIXME: mono_depth rgbd version
-
-        # self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
-        # self.T_l_c = np.eye(4)
-        # self.T_c_l = np.linalg.inv(self.T_l_c)
-        # self.T_c_l_mats = {self.left_cam_name: self.T_c_l}
-        
-        # print(calib_data["K_cam2"])
-        ###
+            self.extrinsic = T_c2_l
 
         oxts_file_path = os.path.join(data_dir, "oxts", self.sequence_id+".txt")
 
-        self.oxts, self.imu_poses = self.load_oxts_packets_and_poses(oxts_file_path) # gt poses in IMU frame
+        poses_imu_w_tracking, _, _ = self.get_poses_calibration(data_dir, oxts_file_path)  # (n_frames, 4, 4) imu pose
 
         # GT poses in LiDAR frame
-        self.gt_poses = self.Tr_lidar_imu @ self.imu_poses @ self.Tr_imu_lidar 
+        Tr_lidar_imu = calib_mats["T_l_i"]
+        Tr_imu_lidar = np.linalg.inv(Tr_lidar_imu)
+        self.gt_poses = Tr_lidar_imu @ poses_imu_w_tracking @ Tr_imu_lidar 
 
     def __getitem__(self, idx):
         
@@ -110,12 +113,13 @@ class KITTIMOTDataset:
         point_ts = self.get_timestamps(points)
 
         if self.load_img and self.image_available:
+            print("load img")
             img = self.read_img(self.img2_files[idx]) # just for vis here
         
             points_rgb = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
+            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
 
             if self.use_only_colorized_points:
                 with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -126,7 +130,7 @@ class KITTIMOTDataset:
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
-            img_dict = {self.left_cam_name: img}
+            img_dict = {self.main_cam_name: img}
 
             frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
         else:
@@ -139,12 +143,6 @@ class KITTIMOTDataset:
 
     def scans(self, idx):
         return self.read_point_cloud(self.scan_files[idx])
-
-    def apply_calibration(self, poses: np.ndarray) -> np.ndarray:
-        """Converts from Velodyne to Camera Frame"""
-        Tr = np.eye(4, dtype=np.float64)
-        Tr[:3, :4] = self.calibration["Tr"].reshape(3, 4)
-        return Tr @ poses @ np.linalg.inv(Tr)
 
     def read_point_cloud(self, scan_file: str):
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
@@ -165,46 +163,8 @@ class KITTIMOTDataset:
         timestamps = 0.5 * (yaw / np.pi + 1.0)
         return timestamps
 
-    def load_poses(self, poses_file):
-        def _lidar_pose_gt(poses_gt):
-            _tr = self.calibration["Tr"].reshape(3, 4)
-            tr = np.eye(4, dtype=np.float64)
-            tr[:3, :4] = _tr
-            left = np.einsum("...ij,...jk->...ik", np.linalg.inv(tr), poses_gt)
-            right = np.einsum("...ij,...jk->...ik", left, tr)
-            return right
 
-        poses = np.loadtxt(poses_file, delimiter=" ")
-        n = poses.shape[0]
-        poses = np.concatenate(
-            (poses, np.zeros((n, 3), dtype=np.float32), np.ones((n, 1), dtype=np.float32)), axis=1
-        )
-        poses = poses.reshape((n, 4, 4))  # [N, 4, 4]
-        return _lidar_pose_gt(poses)
-
-    def get_frames_timestamps(self) -> np.ndarray:
-        timestamps = np.loadtxt(os.path.join(self.kitti_sequence_dir, "times.txt")).reshape(-1, 1)
-        return timestamps
-
-    @staticmethod
-    def read_calib_file(file_path: str) -> dict:
-        calib_dict = {}
-        with open(file_path, "r") as calib_file:
-            for line in calib_file.readlines():
-                tokens = line.split(" ")
-                if tokens[0] == "calib_time:":
-                    continue
-                # Only read with float data
-                if len(tokens) > 0:
-                    values = [float(token) for token in tokens[1:]]
-                    values = np.array(values, dtype=np.float32)
-
-                    # The format in KITTI's file is <key>: <f1> <f2> <f3> ...\n -> Remove the ':'
-                    key = tokens[0][:-1]
-                    calib_dict[key] = values
-        return calib_dict
-
-    def tracking_calib_from_txt(calibration_path):
+    def tracking_calib_from_txt(self, calibration_path):
         # borrow from https://github.com/fudan-zvg/PVG/blob/main/scene/kittimot_loader.py
         """
         Extract tracking calibration information from a KITTI tracking calibration file.
@@ -218,7 +178,7 @@ class KITTIMOTDataset:
 
         Returns:
             dict: A dictionary containing the following calibration information:
-                P0, P1, P2, P3 (np.array): 3x4 projection matrices for the cameras.
+                P0, P1, P2, P3 (np.array): 3x4 projection matrices for the cameras. (already the rectified ones)
                 Tr_cam2camrect (np.array): 4x4 transformation matrix from camera to rectified camera coordinates.
                 Tr_velo2cam (np.array): 4x4 transformation matrix from LiDAR to camera coordinates.
                 Tr_imu2velo (np.array): 4x4 transformation matrix from IMU to LiDAR coordinates.
@@ -226,6 +186,9 @@ class KITTIMOTDataset:
         # Read the calibration file
         f = open(calibration_path)
         calib_str = f.read().splitlines()
+
+        def kitti_string_to_float(str):
+            return float(str.split("e")[0]) * 10 ** int(str.split("e")[1])
 
         # Process the calibration data
         calibs = []
@@ -238,6 +201,9 @@ class KITTIMOTDataset:
         P2 = np.reshape(calibs[2], [3, 4])
         P3 = np.reshape(calibs[3], [3, 4])
 
+        K2 = P2[:3,:3]
+        K3 = P3[:3,:3]
+
         # Extract the transformation matrix for camera to rectified camera coordinates
         Tr_cam2camrect = np.eye(4)
         R_rect = np.reshape(calibs[4], [3, 3])
@@ -247,14 +213,26 @@ class KITTIMOTDataset:
         Tr_velo2cam = np.concatenate([np.reshape(calibs[5], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
         Tr_imu2velo = np.concatenate([np.reshape(calibs[6], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
 
+        # Compute the rectified extrinsics from cam0 to camN
+        T1 = np.eye(4)
+        T1[0, 3] = P1[0, 3] / P1[0, 0]
+        T2 = np.eye(4)
+        T2[0, 3] = P2[0, 3] / P2[0, 0]
+        T3 = np.eye(4)
+        T3[0, 3] = P3[0, 3] / P3[0, 0]
+
+        T_c0_l = Tr_velo2cam
+        T_c1_l = T1.dot(T_c0_l)
+        T_c2_l = T2.dot(T_c0_l)
+        T_c3_l = T3.dot(T_c0_l)
+
         return {
-            "P0": P0,
-            "P1": P1,
-            "P2": P2,
-            "P3": P3,
-            "Tr_cam2camrect": Tr_cam2camrect,
-            "Tr_velo2cam": Tr_velo2cam,
-            "Tr_imu2velo": Tr_imu2velo,
+            "K2": K2,
+            "K3": K3,
+            "T_c2_l": T_c2_l,
+            "T_c3_l": T_c3_l,
+            "T_r_c": Tr_cam2camrect,
+            "T_l_i": Tr_imu2velo,
         }
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
@@ -309,239 +287,156 @@ class KITTIMOTDataset:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
     
-    # from pykitti
-    def _load_calib(self):
-        """Load and compute intrinsic and extrinsic calibration parameters."""
-        # We'll build the calibration parameters as a dictionary, then
-        # convert it to a namedtuple to prevent it from being modified later
-        data = {}
-
-        filedata = self.calibration
-
-        # Create 3x4 projection matrices
-        P_rect_00 = np.reshape(filedata['P0'], (3, 4))
-        P_rect_10 = np.reshape(filedata['P1'], (3, 4))
-        P_rect_20 = np.reshape(filedata['P2'], (3, 4))
-        P_rect_30 = np.reshape(filedata['P3'], (3, 4))
-
-        data['P_rect_00'] = P_rect_00
-        data['P_rect_10'] = P_rect_10
-        data['P_rect_20'] = P_rect_20
-        data['P_rect_30'] = P_rect_30
-
-        # Compute the rectified extrinsics from cam0 to camN
-        T1 = np.eye(4)
-        T1[0, 3] = P_rect_10[0, 3] / P_rect_10[0, 0]
-        T2 = np.eye(4)
-        T2[0, 3] = P_rect_20[0, 3] / P_rect_20[0, 0]
-        T3 = np.eye(4)
-        T3[0, 3] = P_rect_30[0, 3] / P_rect_30[0, 0]
-
-        # Compute the velodyne to rectified camera coordinate transforms
-        data['T_cam0_velo'] = np.reshape(filedata['Tr'], (3, 4))
-        data['T_cam0_velo'] = np.vstack([data['T_cam0_velo'], [0, 0, 0, 1]])
-        data['T_cam1_velo'] = T1.dot(data['T_cam0_velo'])
-        data['T_cam2_velo'] = T2.dot(data['T_cam0_velo'])
-        data['T_cam3_velo'] = T3.dot(data['T_cam0_velo'])
-
-        # Compute the camera intrinsics
-        data['K_cam0'] = P_rect_00[0:3, 0:3]
-        data['K_cam1'] = P_rect_10[0:3, 0:3]
-        data['K_cam2'] = P_rect_20[0:3, 0:3]
-        data['K_cam3'] = P_rect_30[0:3, 0:3]
-
-        # Compute the stereo baselines in meters by projecting the origin of
-        # each camera frame into the velodyne frame and computing the distances
-        # between them
-        p_cam = np.array([0, 0, 0, 1])
-        p_velo0 = np.linalg.inv(data['T_cam0_velo']).dot(p_cam)
-        p_velo1 = np.linalg.inv(data['T_cam1_velo']).dot(p_cam)
-        p_velo2 = np.linalg.inv(data['T_cam2_velo']).dot(p_cam)
-        p_velo3 = np.linalg.inv(data['T_cam3_velo']).dot(p_cam)
-
-        data['b_gray'] = np.linalg.norm(p_velo1 - p_velo0)  # gray baseline
-        data['b_rgb'] = np.linalg.norm(p_velo3 - p_velo2)   # rgb baseline
-
-        return data
-    
-     ### FROM THIS POINT EVERYTHING IS COPY PASTED FROM PYKITTI
-    @staticmethod
-    def transform_from_rot_trans(R, t):
-        """Transforation matrix from rotation matrix and translation vector."""
-        R = R.reshape(3, 3)
-        t = t.reshape(3, 1)
-        return np.vstack((np.hstack([R, t]), [0, 0, 0, 1]))
-    
-    @staticmethod
-    def pose_from_oxts_packet(packet, scale):
-        """Helper method to compute a SE(3) pose matrix from an OXTS packet."""
-
-        def rotx(t):
-            """Rotation about the x-axis."""
-            c = np.cos(t)
-            s = np.sin(t)
-            return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
-
-        def roty(t):
-            """Rotation about the y-axis."""
-            c = np.cos(t)
-            s = np.sin(t)
-            return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
-
-        def rotz(t):
-            """Rotation about the z-axis."""
-            c = np.cos(t)
-            s = np.sin(t)
-            return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-
-        er = 6378137.0  # earth radius (approx.) in meters
-
-        # Use a Mercator projection to get the translation vector
-        tx = scale * packet.lon * np.pi * er / 180.0
-        ty = scale * er * np.log(np.tan((90.0 + packet.lat) * np.pi / 360.0))
-        tz = packet.alt
-        t = np.array([tx, ty, tz])
-
-        # Use the Euler angles to get the rotation matrix
-        Rx = rotx(packet.roll)
-        Ry = roty(packet.pitch)
-        Rz = rotz(packet.yaw)
-        R = Rz.dot(Ry.dot(Rx))
-
-        # Combine the translation and rotation into a homogeneous transform
-        return R, t
-    
-    def postprocess_oxts_poses(poses_in):
-        """ convert coordinate system from
-        #   x=forward, y=right, z=down 
-        # to
-        #   x=forward, y=left, z=up
-        """
-
-        R = np.array([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
-        
-        poses  = []
-        
-        for i in range(len(poses_in)):
-            # if there is no data => no pose
-            if not len(poses_in[i]):
-                poses.append([])
-                continue
-            P = poses_in[i]
-            poses.append(np.matmul(R, P.T).T )
-        
-        return poses
-
-    def load_oxts_packets_and_poses(self, oxts_files):
-        """Generator to read OXTS ground truth data.
-
-        Poses are given in an East-North-Up coordinate system
-        whose origin is the first GPS position.
-
-        GPS/IMU 3D localization unit
-        ============================
-
-        The GPS/IMU information is given in a single small text file which is
-        written for each synchronized frame. Each text file contains 30 values
-        which are:
-
-          - lat:     latitude of the oxts-unit (deg)
-          - lon:     longitude of the oxts-unit (deg)
-          - alt:     altitude of the oxts-unit (m)
-          - roll:    roll angle (rad),  0 = level, positive = left side up (-pi..pi)
-          - pitch:   pitch angle (rad), 0 = level, positive = front down (-pi/2..pi/2)
-          - yaw:     heading (rad),     0 = east,  positive = counter clockwise (-pi..pi)
-          - vn:      velocity towards north (m/s)
-          - ve:      velocity towards east (m/s)
-          - vf:      forward velocity, i.e. parallel to earth-surface (m/s)
-          - vl:      leftward velocity, i.e. parallel to earth-surface (m/s)
-          - vu:      upward velocity, i.e. perpendicular to earth-surface (m/s)
-          - ax:      acceleration in x, i.e. in direction of vehicle front (m/s^2)
-          - ay:      acceleration in y, i.e. in direction of vehicle left (m/s^2)
-          - az:      acceleration in z, i.e. in direction of vehicle top (m/s^2)
-          - af:      forward acceleration (m/s^2)
-          - al:      leftward acceleration (m/s^2)
-          - au:      upward acceleration (m/s^2)
-          - wx:      angular rate around x (rad/s)
-          - wy:      angular rate around y (rad/s)
-          - wz:      angular rate around z (rad/s)
-          - wf:      angular rate around forward axis (rad/s)
-          - wl:      angular rate around leftward axis (rad/s)
-          - wu:      angular rate around upward axis (rad/s)
-          - posacc:  velocity accuracy (north/east in m)
-          - velacc:  velocity accuracy (north/east in m/s)
-          - navstat: navigation status
-          - numsats: number of satellites tracked by primary GPS receiver
-          - posmode: position mode of primary GPS receiver
-          - velmode: velocity mode of primary GPS receiver
-          - orimode: orientation mode of primary GPS receiver
-
-        To read the text file and interpret them properly an example is given in
-        the matlab folder: First, use oxts = loadOxtsliteData('2011_xx_xx_drive_xxxx')
-        to read in the GPS/IMU data. Next, use pose = convertOxtsToPose(oxts) to
-        transform the oxts data into local euclidean poses, specified by 4x4 rigid
-        transformation matrices. For more details see the comments in those files.
+    def get_poses_calibration(self, basedir, oxts_path_tracking=None, selected_frames=None):
+        # reference: https://github.com/fudan-zvg/PVG/blob/main/scene/kittimot_loader.py
 
         """
-        # Per dataformat.txt
-        OxtsPacket = namedtuple(
-            "OxtsPacket",
-            "lat, lon, alt, "
-            + "roll, pitch, yaw, "
-            + "vn, ve, vf, vl, vu, "
-            + "ax, ay, az, af, al, au, "
-            + "wx, wy, wz, wf, wl, wu, "
-            + "pos_accuracy, vel_accuracy, "
-            + "navstat, numsats, "
-            + "posmode, velmode, orimode",
-        )
+        Extract poses and calibration information from the KITTI dataset.
 
-        # Bundle into an easy-to-access structure
-        OxtsData = namedtuple("OxtsData", "packet, T_w_imu")
-        # Scale for Mercator projection (from first lat value)
-        scale = None
-        # Origin of the global coordinate system (first GPS position)
-        origin = None
+        This function processes the OXTS data (GPS/IMU) and extracts the
+        pose information (translation and rotation) for each frame. It also
+        retrieves the calibration information (transformation matrices and focal length)
+        required for further processing.
 
-        oxts = []
-        T_w_imu_poses = []
+        Args:
+            basedir (str): The base directory containing the KITTI dataset.
+            oxts_path_tracking (str, optional): Path to the OXTS data file for tracking sequences.
+                If not provided, the function will look for OXTS data in the basedir.
+            selected_frames (list, optional): A list of frame indices to process.
+                If not provided, all frames in the dataset will be processed.
 
-        for filename in oxts_files:
-            with open(filename, "r") as f:
-                for line in f.readlines():
-                    line = line.split()
-                    # Last five entries are flags and counts
-                    line[:-5] = [float(x) for x in line[:-5]]
-                    line[-5:] = [int(float(x)) for x in line[-5:]]
+        Returns:
+            tuple: A tuple containing the following elements:
+                poses (np.array): An array of 4x4 pose matrices representing the vehicle's
+                    position and orientation for each frame (IMU pose).
+                calibrations (dict): A dictionary containing the transformation matrices
+                    and focal length obtained from the calibration files.
+                focal (float): The focal length of the left camera.
+        """
 
-                    packet = OxtsPacket(*line)
+        def oxts_to_pose(oxts):
+            """
+            OXTS (Oxford Technical Solutions) data typically refers to the data generated by an Inertial and GPS Navigation System (INS/GPS) that is used to provide accurate position, orientation, and velocity information for a moving platform, such as a vehicle. In the context of the KITTI dataset, OXTS data is used to provide the ground truth for the vehicle's trajectory and 6 degrees of freedom (6-DoF) motion, which is essential for evaluating and benchmarking various computer vision and robotics algorithms, such as visual odometry, SLAM, and object detection.
 
-                    if scale is None:
-                        scale = np.cos(packet.lat * np.pi / 180.0)
+            The OXTS data contains several important measurements:
 
-                    R, t = self.pose_from_oxts_packet(packet, scale)
+            1. Latitude, longitude, and altitude: These are the global coordinates of the moving platform.
+            2. Roll, pitch, and yaw (heading): These are the orientation angles of the platform, usually given in Euler angles.
+            3. Velocity (north, east, and down): These are the linear velocities of the platform in the local navigation frame.
+            4. Accelerations (ax, ay, az): These are the linear accelerations in the platform's body frame.
+            5. Angular rates (wx, wy, wz): These are the angular rates (also known as angular velocities) of the platform in its body frame.
 
-                    if origin is None:
-                        origin = t
+            In the KITTI dataset, the OXTS data is stored as plain text files with each line corresponding to a timestamp. Each line in the file contains the aforementioned measurements, which are used to compute the ground truth trajectory and 6-DoF motion of the vehicle. This information can be further used for calibration, data synchronization, and performance evaluation of various algorithms.
+            """
+            poses = []
 
-                    T_w_imu = self.transform_from_rot_trans(R, t)
-                    T_w_imu_poses.append(T_w_imu)
+            def latlon_to_mercator(lat, lon, s):
+                """
+                Converts latitude and longitude coordinates to Mercator coordinates (x, y) using the given scale factor.
 
-                    # print(T_w_imu)
+                The Mercator projection is a widely used cylindrical map projection that represents the Earth's surface
+                as a flat, rectangular grid, distorting the size of geographical features in higher latitudes.
+                This function uses the scale factor 's' to control the amount of distortion in the projection.
 
-                    oxts.append(OxtsData(packet, T_w_imu))
+                Args:
+                    lat (float): Latitude in degrees, range: -90 to 90.
+                    lon (float): Longitude in degrees, range: -180 to 180.
+                    s (float): Scale factor, typically the cosine of the reference latitude.
 
-        # imu frame definition is different from original KITTI_raw
-        # convert coordinate system from
-        #   x=forward, y=right, z=down 
-        # to
-        #   x=forward, y=left, z=up
-        tran_mat = np.array([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
-        T_w_imu_poses = T_w_imu_poses @ tran_mat
+                Returns:
+                    list: A list containing the Mercator coordinates [x, y] in meters.
+                """
+                r = 6378137.0  # the Earth's equatorial radius in meters
+                x = s * r * ((np.pi * lon) / 180)
+                y = s * r * np.log(np.tan((np.pi * (90 + lat)) / 360))
+                return [x, y]
+            
+            def get_rotation(roll, pitch, heading):
+                s_heading = np.sin(heading)
+                c_heading = np.cos(heading)
+                rot_z = np.array([[c_heading, -s_heading, 0], [s_heading, c_heading, 0], [0, 0, 1]])
 
-        # # Start from identity
-        first_pose = T_w_imu_poses[0]
-        T_w_imu_poses = np.linalg.inv(first_pose) @ T_w_imu_poses
-        
-        return oxts, T_w_imu_poses
+                s_pitch = np.sin(pitch)
+                c_pitch = np.cos(pitch)
+                rot_y = np.array([[c_pitch, 0, s_pitch], [0, 1, 0], [-s_pitch, 0, c_pitch]])
+
+                s_roll = np.sin(roll)
+                c_roll = np.cos(roll)
+                rot_x = np.array([[1, 0, 0], [0, c_roll, -s_roll], [0, s_roll, c_roll]])
+
+                rot = np.matmul(rot_z, np.matmul(rot_y, rot_x))
+
+                return rot
+            
+            def invert_transformation(rot, t):
+                t = np.matmul(-rot.T, t)
+                inv_translation = np.concatenate([rot.T, t[:, None]], axis=1)
+                return np.concatenate([inv_translation, np.array([[0.0, 0.0, 0.0, 1.0]])])
+
+            # Compute the initial scale and pose based on the selected frames
+            if selected_frames is None:
+                lat0 = oxts[0][0]
+                scale = np.cos(lat0 * np.pi / 180)
+                pose_0_inv = None
+            else:
+                oxts0 = oxts[selected_frames[0][0]]
+                lat0 = oxts0[0]
+                scale = np.cos(lat0 * np.pi / 180)
+
+                pose_i = np.eye(4)
+
+                [x, y] = latlon_to_mercator(oxts0[0], oxts0[1], scale)
+                z = oxts0[2]
+                translation = np.array([x, y, z])
+                rotation = get_rotation(oxts0[3], oxts0[4], oxts0[5])
+                pose_i[:3, :] = np.concatenate([rotation, translation[:, None]], axis=1)
+                pose_0_inv = invert_transformation(pose_i[:3, :3], pose_i[:3, 3])
+
+            # Iterate through the OXTS data and compute the corresponding pose matrices
+            for oxts_val in oxts:
+                pose_i = np.zeros([4, 4])
+                pose_i[3, 3] = 1
+
+                [x, y] = latlon_to_mercator(oxts_val[0], oxts_val[1], scale)
+                z = oxts_val[2]
+                translation = np.array([x, y, z])
+
+                roll = oxts_val[3]
+                pitch = oxts_val[4]
+                heading = oxts_val[5]
+                rotation = get_rotation(roll, pitch, heading)  # (3,3)
+
+                pose_i[:3, :] = np.concatenate([rotation, translation[:, None]], axis=1)  # (4, 4)
+                if pose_0_inv is None:
+                    pose_0_inv = invert_transformation(pose_i[:3, :3], pose_i[:3, 3])
+
+                pose_i = np.matmul(pose_0_inv, pose_i)
+                poses.append(pose_i)
+
+            return np.array(poses)
+
+        # If there is no tracking path specified, use the default path
+        if oxts_path_tracking is None:
+            oxts_path = os.path.join(basedir, "oxts/data")
+            oxts = np.array([np.loadtxt(os.path.join(oxts_path, file)) for file in sorted(os.listdir(oxts_path))])
+            calibration_path = os.path.dirname(basedir)
+
+            calibrations = calib_from_txt(calibration_path)
+
+            focal = calibrations[4]
+
+            poses = oxts_to_pose(oxts)
+
+        # If a tracking path is specified, use it to load OXTS data and compute the poses
+        else:
+            oxts_tracking = np.loadtxt(oxts_path_tracking)
+            poses = oxts_to_pose(oxts_tracking)  # (n_frames, 4, 4)
+            calibrations = None
+            focal = None
+            # Set velodyne close to z = 0
+            # poses[:, 2, 3] -= 0.8
+
+        # Return the poses, calibrations, and focal length
+        return poses, calibrations, focal
+
     

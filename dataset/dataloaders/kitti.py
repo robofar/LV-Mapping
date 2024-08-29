@@ -321,33 +321,3 @@ class KITTIOdometryDataset:
         data['b_rgb'] = np.linalg.norm(p_velo3 - p_velo2)   # rgb baseline
 
         return data
-    
-    # RGBD version
-    # def __getitem__(self, idx):
-    #     rgb_image = o3d.io.read_image(self.img2_files[idx])
-
-    #     depth = np.load(self.img2_depth_files[idx])
-
-    #     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
-    #                                                                         o3d.geometry.Image(depth),
-    #                                                                         depth_scale=1.0, 
-    #                                                                         depth_trunc=100.0, 
-    #                                                                         convert_rgb_to_intensity=False)
-
-    #     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-    #         rgbd_image, self.intrinsic)
-    #     # if self.down_sample_on:
-    #     #     pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)
-        
-    #     points_xyz = np.array(pcd.points, dtype=np.float64)
-    #     points_rgb = np.array(pcd.colors, dtype=np.float64)
-    #     points_xyzrgb = np.hstack((points_xyz, points_rgb))
-
-    #     rgb_image = np.array(rgb_image)
-
-    #     rgb_image_dict = {self.left_cam_name: rgb_image}
-
-    #     frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
-
-    #     return frame_data 
-

@@ -28,7 +28,7 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True
-  gs_iters: 10
+  gs_iters: 50 # 10
   gs_bs: 5
   gaussian_bs: 16384
   gs_keyframe_interval: 2
@@ -37,9 +37,9 @@ gs:
   gs_down_rate: 0
   gs_vis_down_rate: 0
   sh_degree: 0 # According to experiments, it seems to not play an important role, but why
-  lambda_depth: 10.0
+  lambda_depth: 10.0 # 10.0
   lambda_distort: 100.0
-  lambda_normal: 0.1 # not too big 0.05 
+  lambda_normal: 0.05 # not too big 0.05 
   lambda_isotropic: 1.0 # todo
   # lambda_sky: 0.01 # not much impact
   # lambda_sdf_cons: 0.0
