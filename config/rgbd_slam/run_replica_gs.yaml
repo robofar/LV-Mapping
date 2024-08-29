@@ -30,7 +30,7 @@ gs:
   gs_vis_down_rate: 1
   sh_degree: 0
   lambda_depth: 1.0
-  lambda_distort: 100.0
+  lambda_distort: 1000.0
   lambda_normal: 0.1 # not too big 0.05 
   lambda_isotropic: 100.0
   lambda_sdf_cons: 1.0

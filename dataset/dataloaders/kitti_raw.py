@@ -28,11 +28,13 @@ from pathlib import Path
 import numpy as np
 
 # https://www.cvlibs.net/datasets/kitti/setup.php
+# https://www.cvlibs.net/datasets/kitti/raw_data.php
 
 __raw_to_odometry_mapping__ = {
     "00": "2011_10_03/2011_10_03_drive_0027_sync/",
     "01": "2011_10_03/2011_10_03_drive_0042_sync/",
     "02": "2011_10_03/2011_10_03_drive_0034_sync/",
+    # 03 missing
     "04": "2011_09_30/2011_09_30_drive_0016_sync/",
     "05": "2011_09_30/2011_09_30_drive_0018_sync/",
     "06": "2011_09_30/2011_09_30_drive_0020_sync/",
@@ -40,6 +42,22 @@ __raw_to_odometry_mapping__ = {
     "08": "2011_09_30/2011_09_30_drive_0028_sync/",
     "09": "2011_09_30/2011_09_30_drive_0033_sync/",
     "10": "2011_09_30/2011_09_30_drive_0034_sync/",
+}
+
+# https://www.cvlibs.net/datasets/kitti/raw_data.php?type=road
+__raw_to_kitti_road_mapping__ = {
+    "30": "2011_09_26/2011_09_26_drive_0015_sync/",
+    "31": "2011_09_26/2011_09_26_drive_0027_sync/",
+    "32": "2011_09_26/2011_09_26_drive_0028_sync/",
+    "33": "2011_09_26/2011_09_26_drive_0029_sync/",
+    "34": "2011_09_26/2011_09_26_drive_0032_sync/",
+    "35": "2011_09_26/2011_09_26_drive_0052_sync/",
+    "36": "2011_09_26/2011_09_26_drive_0070_sync/",
+    "37": "2011_09_26/2011_09_26_drive_0101_sync/",
+    "38": "2011_09_29/2011_09_29_drive_0004_sync/",
+    "39": "2011_09_30/2011_09_30_drive_0016_sync/",
+    "40": "2011_10_03/2011_10_03_drive_0042_sync/",
+    "41": "2011_10_03/2011_10_03_drive_0047_sync/",
 }
 
 class KITTIRawDataset:

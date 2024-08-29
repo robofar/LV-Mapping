@@ -1296,7 +1296,7 @@ class Mapper:
                 # print(np.shape(original_img_depth))
                 # print(original_img_np[3]) # why all 1?
                 original_img_depth = original_img_np[3]
-                depth_valid_mask = original_img_depth > 0
+                depth_valid_mask = (original_img_depth > 0)
                 original_img_depth_color = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
                 # print(np.shape(original_img_depth))
                 original_img_depth_color = np.transpose(original_img_depth_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
@@ -1366,6 +1366,7 @@ class Mapper:
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
+                depth_valid_mask = (original_img_depth > 0) & (rendered_depth_np > 0)
                 cur_depth_l1 = np.mean(np.abs(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask]))
                 print("Depth L1 (m) ↓ :", cur_depth_l1)
                 if not cur_viewpoint_cam.train_view: # eval only on the test views
@@ -1374,7 +1375,7 @@ class Mapper:
         return 
 
     # TODO: deal with local and global map
-    def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, output_path = None):
+    def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, depth_trunc = 10.0, output_path = None):
         # render depth and color from GS map and do tsdf fusion to build mesh
 
         cam_name = self.dataset.loader.main_cam_name
@@ -1423,7 +1424,7 @@ class Mapper:
             cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                         depth_image, 
                                                                         depth_scale=1.0, 
-                                                                        depth_trunc=self.config.max_range*0.8, 
+                                                                        depth_trunc=depth_trunc, 
                                                                         convert_rgb_to_intensity=False)
 
             T_c_w_np = torch.inverse(T_w_c).detach().cpu().numpy()

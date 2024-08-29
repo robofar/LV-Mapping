@@ -48,6 +48,8 @@ class ReplicaDataset:
 
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         # From cam_params.json, shared by all sequences
+
+        H, W = 680, 1200
         
         self.fx = 600.0
         self.fy = 600.0
@@ -67,11 +69,11 @@ class ReplicaDataset:
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
         self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
-        self.cam_heights = {self.main_cam_name: 680}
-        self.cam_widths = {self.main_cam_name: 1200}
+        self.cam_heights = {self.main_cam_name: H}
+        self.cam_widths = {self.main_cam_name: W}
 
-        self.intrinsic.set_intrinsics(height=680,
-                                      width=1200,
+        self.intrinsic.set_intrinsics(height=H,
+                                      width=W,
                                       fx=self.fx,
                                       fy=self.fy,
                                       cx=self.cx,
@@ -115,7 +117,7 @@ class ReplicaDataset:
         depth_image = np.array(depth_image)/self.depth_scale
         rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        image_dict = {"cam": rgbd_image}
+        image_dict = {self.main_cam_name: rgbd_image}
 
         frame_data = {"points": points_xyzrgb, "img": image_dict}
 

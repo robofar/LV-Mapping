@@ -5,7 +5,7 @@ setting:
   first_frame_ref: False
 process:
   min_range_m: 0.9
-  max_range_m: 1.5  # distance filter for each frame
+  max_range_m: 2.5  # distance filter for each frame
   vox_down_m: 0.003
 sampler:
   surface_sample_range_m: 0.02
@@ -29,9 +29,16 @@ gs:
   gs_bs: 2
   gs_keyframe_interval: 2
   img_pool_size: 20
-  sh_degree: 1
+  sh_degree: 0
   gs_down_rate: 1
   gs_vis_down_rate: 1
+  lambda_depth: 10.0
+  lambda_distort: 1000.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_isotropic: 100.0
+  lambda_sdf_cons: 0.0
+  lambda_sdf_normal_cons: 0.0
+  lambda_sdf: 0.0
 # tracker:
 #   track_on: True
 #   photo_loss: True

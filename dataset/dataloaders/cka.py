@@ -84,15 +84,18 @@ class CKADataset:
             self.K_mat[0,2]=self.cx
             self.K_mat[1,2]=self.cy
 
-            self.K_mats = {"cam_mid": self.K_mat}
+            self.main_cam_name = "cam_mid"
+
+            self.K_mats = {self.main_cam_name: self.K_mat}
 
             self.T_l_c = np.eye(4)
             self.T_c_l = np.linalg.inv(self.T_l_c)
 
-            self.T_c_l_mats = {"cam_mid": self.T_c_l}
+            self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
 
-            self.main_cam_name = "cam_mid"
-                    
+            self.cam_heights = {self.main_cam_name: height}
+            self.cam_widths = {self.main_cam_name: width}
+        
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(height=height,
                                           width=width,
@@ -101,7 +104,7 @@ class CKADataset:
                                           cx=self.cx,
                                           cy=self.cy)
         
-        self.max_depth_m = 2.0
+        self.max_depth_m = 2.5
         self.down_sample_on = False
         self.rand_down_rate = 0.1
 
@@ -130,12 +133,12 @@ class CKADataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-        depth /= self.depth_scale
+        depth = 1.0 * depth / self.depth_scale
         rgb_image = np.array(rgb_image)
         rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth, axis=-1)), axis=-1) # 4 channels
 
-        rgbd_image_dict = {"cam_mid": rgbd_image}
+        rgbd_image_dict = {self.main_cam_name: rgbd_image}
 
-        frame_data = {"points": points_xyzrgb, "img": rgb_image_dict}
+        frame_data = {"points": points_xyzrgb, "img": rgbd_image_dict}
 
         return frame_data 

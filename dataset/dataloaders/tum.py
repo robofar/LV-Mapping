@@ -47,6 +47,8 @@ class TUMDataset:
         else: # default
             self.fx, self.fy, self.cx, self.cy  = 525.0, 525.0, 319.5, 239.5
 
+        self.depth_scale = 5000.0
+
         self.intrinsic.set_intrinsics(height=H,
                                      width=W,
                                      fx=self.fx,
@@ -60,14 +62,17 @@ class TUMDataset:
         self.K_mat[0,2]=self.cx
         self.K_mat[1,2]=self.cy
 
-        self.K_mats = {"cam": self.K_mat}
+        self.main_cam_name = "cam"
+
+        self.K_mats = {self.main_cam_name: self.K_mat}
 
         self.T_l_c = np.eye(4)
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
-        self.T_c_l_mats = {"cam": self.T_c_l}
+        self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
 
-        self.main_cam_name = "cam"
+        self.cam_heights = {self.main_cam_name: H}
+        self.cam_widths = {self.main_cam_name: W}
         
         self.down_sample_on = False
         self.rand_down_rate = 0.1
@@ -166,11 +171,11 @@ class TUMDataset:
 
         im_color = np.array(im_color)
 
-        # depth_image = np.array(im_depth)/self.depth_scale
-        depth_image = np.array(im_depth)
+        depth_image = np.array(im_depth)/self.depth_scale
+        # depth_image = np.array(im_depth)
         rgbd_image = np.concatenate((im_color, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        im_rgbd_dict = {"cam": rgbd_image}
+        im_rgbd_dict = {self.main_cam_name: rgbd_image}
 
         frame_data = {"points": points_xyzrgb, "img": im_rgbd_dict}
 

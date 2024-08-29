@@ -21,11 +21,18 @@ neuralpoints:
 gs:
   gs_iters: 10
   gs_bs: 5
-  gs_keyframe_interval: 10
-  img_pool_size: 20
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
-  sh_degree: 1
+  gs_keyframe_interval: 2
+  img_pool_size: 30
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
+  sh_degree: 0
+  lambda_depth: 10.0
+  lambda_distort: 1000.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_isotropic: 100.0
+  lambda_sdf_cons: 0.0
+  lambda_sdf_normal_cons: 0.0
+  lambda_sdf: 0.0
 decoder:
   mlp_level: 1
   mlp_hidden_dim: 64
@@ -38,7 +45,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.2 # TODO 0.5
 continual: # the data sample pool
-  batch_size_new_sample: 4000 # don't split current and history
+  batch_size_new_sample: 3000 # don't split current and history
   pool_capacity: 2e7
 # tracker:
 #   uniform_motion_on: True
@@ -56,7 +63,7 @@ optimizer:
   iters: 15  # iterations per frame
   batch_size: 16384 # 16384 # 16384 # 8192
   # ba_freq_frame: 20
-  lr_pose_ba: 1e-3
+  # lr_pose_ba: 1e-3
   # you need to train more iterations, lots of the samples are not even learned --> this cause the roughness of the reconstruction
 eval:
   mesh_freq_frame: 50 # reconstruct the mesh every x frames

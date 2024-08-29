@@ -49,6 +49,8 @@ class AzureDataset:
         self.extrinsic_file = os.path.join(data_dir, "intrinsic", "extrinsic_color.txt")
         self.depth_scale = 1000.0
 
+        H, W = 720, 1280
+
         intrinsic_mat = np.loadtxt(self.intrinsic_file)
         self.extrinsic = np.loadtxt(self.extrinsic_file)
 
@@ -57,18 +59,22 @@ class AzureDataset:
         self.cx = intrinsic_mat[0,2]
         self.cy = intrinsic_mat[1,2]
 
+        self.main_cam_name = "cam"
+        
         self.K_mat = intrinsic_mat[:3,:3]
-        self.K_mats = {"cam": self.K_mat}
+        self.K_mats = {self.main_cam_name: self.K_mat}
 
         self.T_l_c = np.eye(4)
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
-        self.T_c_l_mats = {"cam": self.T_c_l}
-        self.main_cam_name = "cam"
+        self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
+
+        self.cam_heights = {self.main_cam_name: H}
+        self.cam_widths = {self.main_cam_name: W}
                     
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
-        self.intrinsic.set_intrinsics(height=720,
-                                    width=1280,
+        self.intrinsic.set_intrinsics(height=H,
+                                    width=W,
                                     fx=self.fx,
                                     fy=self.fy,
                                     cx=self.cx,
@@ -84,7 +90,7 @@ class AzureDataset:
             gt_poses_list.append(cur_pose)
         self.gt_poses = np.array(gt_poses_list) # N,4,4
         
-        self.max_depth_m = 6.0
+        self.max_depth_m = 8.0
         self.down_sample_on = False
         self.rand_down_rate = 0.1
 
@@ -121,7 +127,7 @@ class AzureDataset:
         depth_image = np.array(depth_image)/self.depth_scale
         rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
-        rgbd_image_dict = {"cam": rgbd_image}
+        rgbd_image_dict = {self.main_cam_name: rgbd_image}
 
         frame_data = {"points": points_xyzrgb, "img": rgbd_image_dict}
 
