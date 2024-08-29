@@ -459,8 +459,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             val_depthl1_np = np.mean(np.array(mapper.val_depthl1_list))
             print("Average validation view Depth L1 (m) ↓ :", f"{val_depthl1_np:.3f}")
 
-        # gs_tsdf_mesh_path = os.path.join(run_path, "mesh", "gs_rendered_tsdf_fusion_mesh.ply")
-        # gs_rendered_tsdf_mesh = mapper.gs_tsdf_fusion(output_path=gs_tsdf_mesh_path)
+        if config.save_mesh:
+            output_mc_res_m = config.mc_res_m*0.6
+            mc_cm_str = str(round(output_mc_res_m*1e2))
+            gs_tsdf_mesh_path = os.path.join(run_path, "mesh", "gs_rendered_tsdf_fusion_mesh_" + mc_cm_str + "cm.ply")
+            gs_rendered_tsdf_mesh = mapper.gs_tsdf_fusion(vox_size=output_mc_res_m, output_path=gs_tsdf_mesh_path)
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(None, None, False, False) # merge the final neural point map

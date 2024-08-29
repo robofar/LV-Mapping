@@ -60,14 +60,15 @@ class ReplicaDataset:
         self.K_mat[0,2]=self.cx
         self.K_mat[1,2]=self.cy
 
-        self.K_mats = {"cam": self.K_mat}
+        self.main_cam_name = "cam"
+        self.K_mats = {self.main_cam_name: self.K_mat}
 
         self.T_l_c = np.eye(4)
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
-        self.T_c_l_mats = {"cam": self.T_c_l}
-        
-        self.main_cam_name = "cam"
+        self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
+        self.cam_heights = {self.main_cam_name: 680}
+        self.cam_widths = {self.main_cam_name: 1200}
 
         self.intrinsic.set_intrinsics(height=680,
                                       width=1200,

@@ -111,6 +111,9 @@ class R3LiveDataset:
 
         self.T_c_l_mats[self.main_cam_name] = T_c_l
 
+        self.cam_heights = {self.main_cam_name: H}
+        self.cam_widths = {self.main_cam_name: W}
+
         # no gt pose available
         # gt_poses_file = os.path.join(data_dir, "gt.txt")
         # if os.path.exists(gt_poses_file):

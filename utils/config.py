@@ -216,6 +216,7 @@ class Config:
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
+        self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_depth: float = 0.1 # weight for depth rendering
@@ -545,6 +546,7 @@ class Config:
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
+            self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             self.lambda_distort = config_args["gs"].get("lambda_distort", self.lambda_distort) # weight for the distance distortion loss
             self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
             self.lambda_isotropic = config_args["gs"].get("lambda_isotropic", self.lambda_isotropic)

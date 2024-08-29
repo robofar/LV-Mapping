@@ -969,8 +969,7 @@ class Mapper:
    
 
     # jointly optimize the neural point features and gaussian parameters
-    def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True, 
-        use_inverse_depth = True, validate_on = True):
+    def joint_gsdf_mapping(self, iter_count, sdf_loss_on = True, validate_on = True):
 
         if iter_count < 1:
             return
@@ -1077,7 +1076,7 @@ class Mapper:
                     valid_depth_mask = (gt_depth_image > 0.0)  & (surf_depth > 0.0)
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     rend_dist_valid = surf_depth[valid_depth_mask]
-                    if use_inverse_depth:
+                    if self.config.inverse_depth_loss:
                         depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rend_dist_valid) # use inverse depth (then we will care more about the close range part)
                     else:
                         depth_loss = l1_loss(gt_depth_image, rend_dist_valid)
@@ -1119,7 +1118,7 @@ class Mapper:
                 # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
             if not self.silence:
-                if use_inverse_depth:
+                if self.config.inverse_depth_loss:
                     print(" Inverse depth rendering loss:", depth_loss_batch.item() / gs_bs)
                 else:
                     print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
@@ -1374,9 +1373,9 @@ class Mapper:
 
         return 
 
-    # TODO
-    def gs_tsdf_fusion(self, render_frame_step = 1, down_rate=0, output_path = None):
-        # render and do tsdf fusion to build mesh
+    # TODO: deal with local and global map
+    def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, output_path = None):
+        # render depth and color from GS map and do tsdf fusion to build mesh
 
         cam_name = self.dataset.loader.main_cam_name
         K_mat = self.dataset.K_mats[cam_name]
@@ -1389,8 +1388,7 @@ class Mapper:
         bg_color = [0.5, 0.5, 0.5] # gray
         background = torch.tensor(bg_color, dtype=self.dtype, device=self.device)
 
-        vox_size = self.config.voxel_size_m
-        trunc_dist = 3 * vox_size
+        trunc_dist = 4 * vox_size
 
         volume = o3d.pipelines.integration.ScalableTSDFVolume(
             voxel_length=vox_size, # unit: m

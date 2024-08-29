@@ -254,10 +254,10 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [x] Depth rendering loss (optional)
 - [x] Support multi-cam datasets
 - [x] Add mono depth estimation
-- [ ] Use depth map to do TSDF fusion to generate the refined mesh?
+- [x] Use depth map to do TSDF fusion to generate the refined mesh
 - [x] Check RTG-SLAM (opacity in RTG-SLAM are fixed as either 0.99 or 0.1)
-- [ ] Allow the freee gaussians to move freely with a larger learning rate
-- [ ] Add online gaussian visualizer
+- [ ] Allow the freee gaussians to move freely with a larger learning rate, but then you need to have two parameter lists
+- [ ] Add online gaussian visualizer (ft. Liren), check MonoGS
 - [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
 - [x] New KITTI-MOT dataloader
