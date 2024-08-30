@@ -27,6 +27,8 @@ we are using the kitti odometry dataset here, you need `image_2` and `velodyne` 
 python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -dvl
 
 python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -dvl
+
+python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -dvls
 ```
 
 **pass**

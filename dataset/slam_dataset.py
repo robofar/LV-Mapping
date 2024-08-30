@@ -357,7 +357,7 @@ class SLAMDataset():
                             # depth least square fitting with regards to the lidar measurement
                             coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
                             k, b = coefficients
-                            print("depth fitting residual (m): ", (residuals[0]/np.shape(valid_depth_measurement)[0])**(0.5))
+                            print("depth fitting residual (m): ", (residuals[0]/np.shape(valid_depth_measurement)[0])**(0.5)) # RMSE (m)
                             pred_depth_np = k * pred_depth_np + b
 
                         # why depthanything is so slow
@@ -401,7 +401,7 @@ class SLAMDataset():
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
 
-                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m * 2)
+                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
 
                         # print(len(pred_pcd.points))
                         

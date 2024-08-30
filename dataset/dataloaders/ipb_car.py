@@ -49,6 +49,7 @@ class IPBCarDataset:
         self.cam_rear_topic_name = "cam_rear"   # "camera_rear"
 
         self.main_cam_name = self.cam_front_topic_name
+        self.main_cam_only: bool = True
 
         self.K_mats = {}
         self.T_c_l_mats = {}
@@ -124,13 +125,17 @@ class IPBCarDataset:
         points = points[valid_mask]
         point_ts = point_ts[valid_mask]
 
-        img_left = self.read_img(self.img_left_files[idx])
-        img_right = self.read_img(self.img_right_files[idx])
-        img_front = self.read_img(self.img_front_files[idx])
-        img_rear = self.read_img(self.img_rear_files[idx])
+        if self.main_cam_only:
+            img_front = self.read_img(self.img_front_files[idx])
+            img_dict = {self.cam_front_topic_name: img_front}
+        else:
+            img_front = self.read_img(self.img_front_files[idx])
+            img_left = self.read_img(self.img_left_files[idx])
+            img_right = self.read_img(self.img_right_files[idx])
+            img_rear = self.read_img(self.img_rear_files[idx])
 
-        img_dict = {self.cam_front_topic_name: img_front, self.cam_left_topic_name: img_left, 
-                    self.cam_rear_topic_name: img_rear, self.cam_right_topic_name: img_right}
+            img_dict = {self.cam_front_topic_name: img_front, self.cam_left_topic_name: img_left, 
+                        self.cam_rear_topic_name: img_rear, self.cam_right_topic_name: img_right}
 
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
         
@@ -222,23 +227,22 @@ class IPBCarDataset:
             self.K_mats[self.cam_front_topic_name] = np.array(camera_front_calib["K"])
             self.T_c_l_mats[self.cam_front_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_front_topic_name])
 
-            # print(self.K_mats[self.cam_front_topic_name])
-            # print(self.T_c_l_mats[self.cam_front_topic_name])
+            if not self.main_cam_only:
 
-            camera_rear_calib = calib_dict[self.cam_rear_topic_name]
-            self.K_mats[self.cam_rear_topic_name] = np.array(camera_rear_calib["K"])
-            self.T_c_l_mats[self.cam_rear_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_rear_topic_name])
+                camera_rear_calib = calib_dict[self.cam_rear_topic_name]
+                self.K_mats[self.cam_rear_topic_name] = np.array(camera_rear_calib["K"])
+                self.T_c_l_mats[self.cam_rear_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_rear_topic_name])
 
-            # print(self.K_mats[self.cam_rear_topic_name])
-            # print(self.T_c_l_mats[self.cam_rear_topic_name])
+                # print(self.K_mats[self.cam_rear_topic_name])
+                # print(self.T_c_l_mats[self.cam_rear_topic_name])
 
-            camera_left_calib = calib_dict[self.cam_left_topic_name]
-            self.K_mats[self.cam_left_topic_name] = np.array(camera_left_calib["K"])
-            self.T_c_l_mats[self.cam_left_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_left_topic_name])
+                camera_left_calib = calib_dict[self.cam_left_topic_name]
+                self.K_mats[self.cam_left_topic_name] = np.array(camera_left_calib["K"])
+                self.T_c_l_mats[self.cam_left_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_left_topic_name])
 
-            camera_right_calib = calib_dict[self.cam_right_topic_name]
-            self.K_mats[self.cam_right_topic_name] = np.array(camera_right_calib["K"])
-            self.T_c_l_mats[self.cam_right_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_right_topic_name])
+                camera_right_calib = calib_dict[self.cam_right_topic_name]
+                self.K_mats[self.cam_right_topic_name] = np.array(camera_right_calib["K"])
+                self.T_c_l_mats[self.cam_right_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_right_topic_name])
 
         return calib_dict
     

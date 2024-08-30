@@ -47,11 +47,14 @@ class MapVisualizer:
         self.frame_axis = o3d.geometry.TriangleMesh()
         self.sensor_cad = o3d.geometry.TriangleMesh()
         self.rend_cam_frame_axis = o3d.geometry.TriangleMesh()
-        self.cam_cad = o3d.geometry.TriangleMesh() # render view camera
         self.mesh = o3d.geometry.TriangleMesh()
         self.sdf = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
         self.data_pool = o3d.geometry.PointCloud()
+
+        # gs rendering related
+        self.cam_cad = o3d.geometry.TriangleMesh() # render view camera
+        self.rendered_pcd = o3d.geometry.PointCloud() 
 
         self.odom_traj_pcd = o3d.geometry.PointCloud()
         self.pgo_traj_pcd = o3d.geometry.PointCloud()
@@ -106,6 +109,7 @@ class MapVisualizer:
         self.render_data_pool: bool = False
         self.render_sdf: bool = False
         self.render_pgo: bool = self.render_trajectory
+        self.show_rendered_pcd: bool = False
 
         self.sdf_slice_height_step: float = 0.1
 
@@ -152,9 +156,10 @@ class MapVisualizer:
         neural_points=None,
         data_pool=None,
         cur_cam_pose=None,
+        rendered_pcd=None,
         pause_now=False,
     ):
-        self._update_geometries(scan, pose, sdf, mesh, neural_points, data_pool, cur_cam_pose)
+        self._update_geometries(scan, pose, sdf, mesh, neural_points, data_pool, cur_cam_pose, rendered_pcd)
         self.update_view()
         self.pause_view()
         if pause_now:
@@ -211,6 +216,7 @@ class MapVisualizer:
         self.vis.add_geometry(self.gt_traj_pcd)
         self.vis.add_geometry(self.pgo_traj_pcd)
         self.vis.add_geometry(self.pgo_edges)
+        self.vis.add_geometry(self.rendered_pcd)
 
         self.vis.get_render_option().line_width = 500
         self.vis.get_render_option().light_on = True
@@ -269,6 +275,7 @@ class MapVisualizer:
         self._register_key_callback(["M"], self._toggle_mesh)
         self._register_key_callback(["P"], self._toggle_neural_points)
         self._register_key_callback(["D"], self._toggle_data_pool)
+        self._register_key_callback(["J"], self._toggle_rendered_pcd)
         self._register_key_callback(["T"], self._toggle_trajectory)
         self._register_key_callback(["Y"], self._toggle_gt_trajectory)
         self._register_key_callback(["U"], self._toggle_odom_trajectory)
@@ -289,7 +296,7 @@ class MapVisualizer:
         self._register_key_callback(["8"], self._toggle_free_gaussian)
         self._register_key_callback(["0"], self._toggle_mono_depth_frame)
 
-        # self.vis.register_key_callback(262, partial(self._toggle_)) # right arrow # for future
+        self.vis.register_key_callback(262, partial(self._toggle_uniform_color)) # right arrow # for future
         # self.vis.register_key_callback(263, partial(self._toggle_)) # left arrow
         self.vis.register_key_callback(
             265, partial(self._toggle_increase_slice_height)
@@ -374,6 +381,9 @@ class MapVisualizer:
 
     def _toggle_pointcloud(self, vis):
         self.render_pointcloud = not self.render_pointcloud
+
+    def _toggle_rendered_pcd(self, vis):
+        self.show_rendered_pcd = not self.show_rendered_pcd
 
     def _toggle_frame_axis(self, vis):
         self.render_frame_axis = not self.render_frame_axis
@@ -509,6 +519,7 @@ class MapVisualizer:
         neural_points=None,
         data_pool=None,
         cur_cam_pose=None,
+        rendered_pcd=None,
     ):
 
         # Scan (toggled by "F")
@@ -534,6 +545,22 @@ class MapVisualizer:
         if self.ego_view and pose is not None:
             self.scan.transform(np.linalg.inv(pose))
         self.vis.update_geometry(self.scan)
+
+        # Rerendered point cloud (from GS, toggled by "J")
+        if self.show_rendered_pcd:
+            if rendered_pcd is not None:
+                self.rendered_pcd.points = o3d.utility.Vector3dVector(rendered_pcd.points)
+                if rendered_pcd.has_colors():
+                    self.rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_pcd.colors)
+                if rendered_pcd.has_normals():
+                    self.rendered_pcd.normals = o3d.utility.Vector3dVector(rendered_pcd.normals)
+            else:
+                self.rendered_pcd.points = o3d.utility.Vector3dVector()
+        else:
+            self.rendered_pcd.points = o3d.utility.Vector3dVector()
+        if self.ego_view and pose is not None:
+            self.rendered_pcd.transform(np.linalg.inv(pose))
+        self.vis.update_geometry(self.rendered_pcd)
 
         # Mesh Map (toggled by "M")
         if self.render_mesh:

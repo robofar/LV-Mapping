@@ -405,12 +405,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             loop_edges = pgm.loop_edges_vis if config.pgo_on else None
             o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
             
-            frame_point_cloud_for_vis = dataset.cur_frame_o3d
+            frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
+
             if o3d_vis.vis_mono_depth_frame:
                 frame_point_cloud_for_vis.paint_uniform_color(np.array([1.0, 0, 0])) # RED
-                frame_point_cloud_for_vis += dataset.cur_frame_mono_depth_o3d
+                frame_point_cloud_for_vis += dataset.cur_frame_mono_depth_o3d 
                 
-            o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view)
+            o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
 
             if config.rerun_vis_on:
                 if neural_pcd is not None:
@@ -456,9 +457,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             print("Average validation view SSIM  ↑ :", f"{val_ssim_np:.3f}")
             print("Average validation view LPIPS ↓ :", f"{val_lpips_np:.3f}")
 
-        if len(mapper.val_depthl1_list) > 0:
+        if len(mapper.val_depth_rmse_list) > 0:
             val_depthl1_np = np.mean(np.array(mapper.val_depthl1_list))
+            val_depth_rmse_np = np.mean(np.array(mapper.val_depth_rmse_list))
             print("Average validation view Depth L1 (m) ↓ :", f"{val_depthl1_np:.3f}")
+            print("Average validation view Depth RMSE (m) ↓ :", f"{val_depth_rmse_np:.3f}")
 
         if config.save_mesh:
             output_mc_res_m = config.mc_res_m*0.6

@@ -81,15 +81,17 @@ class KITTIOdometryDataset:
             self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
             self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
             
+            H, W = 376, 1241
+
             # TODO; add for other loaders
-            self.cam_widths = {self.left_cam_name: 1241}
-            self.cam_heights = {self.left_cam_name: 376}
+            self.cam_widths = {self.left_cam_name: W}
+            self.cam_heights = {self.left_cam_name: H}
 
             # FIXME: mono_depth rgbd version
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(
-                                        height=376,
-                                        width=1241,
+                                        height=H,
+                                        width=W,
                                         fx=calib_data["K_cam2"][0,0],
                                         fy=calib_data["K_cam2"][1,1],
                                         cx=calib_data["K_cam2"][0,2],
@@ -221,6 +223,8 @@ class KITTIOdometryDataset:
         # points as np.numpy (N,4)
         points[:,3] = 1 # homo coordinate
 
+        points = self.intrinsic_correct(points) # FIXME: only for kitti
+
         # transfrom velodyne points to camera coordinate
         points_cam = np.matmul(T_c_l, points.T).T # N, 4
         points_cam = points_cam[:,:3] # N, 3
@@ -322,3 +326,15 @@ class KITTIOdometryDataset:
         data['b_rgb'] = np.linalg.norm(p_velo3 - p_velo2)   # rgb baseline
 
         return data
+
+    def intrinsic_correct(self, points, correct_deg=0.195):
+        corrected_points = np.copy(points)
+        dist = np.linalg.norm(points[:, :3], axis=1)
+        kitti_var_vertical_ang = correct_deg / 180.0 * np.pi
+        v_ang = np.arcsin(points[:, 2] / dist)
+        v_ang_c = v_ang + kitti_var_vertical_ang
+        hor_scale = np.cos(v_ang_c) / np.cos(v_ang)
+        corrected_points[:, 0] *= hor_scale
+        corrected_points[:, 1] *= hor_scale
+        corrected_points[:, 2] = dist * np.sin(v_ang_c)
+        return corrected_points

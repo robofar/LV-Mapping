@@ -544,6 +544,7 @@ class Config:
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
+            self.gs_init_opacity = config_args["gs"].get("init_opacity", self.gs_init_opacity)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)

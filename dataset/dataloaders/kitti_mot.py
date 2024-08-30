@@ -82,15 +82,17 @@ class KITTIMOTDataset:
         self.main_cam_name = "cam2" # cam2 as main cam
 
         if self.image_available: # now we use cam2 (left color)
+            H, W = 375, 1242
+            
             self.T_c_l_mats = {self.main_cam_name: T_r2_l} # use rectified frame or not?
             self.K_mats = {self.main_cam_name: K_mat2}
-            self.cam_widths = {self.main_cam_name: 1242}
-            self.cam_heights = {self.main_cam_name: 375}
+            self.cam_widths = {self.main_cam_name: W}
+            self.cam_heights = {self.main_cam_name: H}
 
             self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
             self.intrinsic.set_intrinsics(
-                                        height=375,
-                                        width=1242,
+                                        height=H,
+                                        width=W,
                                         fx=K_mat2[0,0],
                                         fy=K_mat2[1,1],
                                         cx=K_mat2[0,2],

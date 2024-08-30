@@ -22,12 +22,12 @@ neuralpoints:
   query_nn_k: 8
   from_sample_points: False
 gs:
-  gs_iters: 10
+  gs_iters: 0 # 5
   gs_bs: 5
   gs_keyframe_interval: 5
   img_pool_size: 30
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
   sh_degree: 0
   init_opacity: 0.5
   lambda_depth: 1.0
