@@ -1,60 +1,61 @@
 setting:
   name: "test_r3live_gs"
   output_root: "./experiments"
-  color_channel: 3
   deskew: True
-  color_map_on: True # pin slam does not make use of color
+  color_channel: 0
+  color_map_on: False # pin slam does not make use of color
 process:
   min_range_m: 0.5
-  max_range_m: 40.0
+  max_range_m: 50.0
   min_z_m: -3.0
-  vox_down_m: 0.06
-  estimate_normal: True
+  vox_down_m: 0.08
+  estimate_normal: False
 sampler:
-  surface_sample_range_m: 0.15
+  surface_sample_range_m: 0.25
   surface_sample_n: 4
-  free_sample_begin_ratio: 0.5
+  free_sample_begin_ratio: 0.3
   free_front_sample_n: 2 
 neuralpoints:
-  voxel_size_m: 0.2
-  search_alpha: 0.8
-gs:
-  gs_iters: 5
-  gs_bs: 2
-  gs_keyframe_interval: 4
-  img_pool_size: 30
-  gs_down_rate: 1
-  gs_vis_down_rate: 1
-  sh_degree: 1
-  lambda_depth: 0.1
-  lambda_distort: 100.0
-  lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0
-  lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 1.0
-  lambda_sdf: 1.0
+  voxel_size_m: 0.4
+  search_alpha: 0.5
+  # weighted_first: False
+# gs:
+#   gs_iters: 5
+#   gs_bs: 2
+#   gs_keyframe_interval: 4
+#   img_pool_size: 30
+#   gs_down_rate: 1
+#   gs_vis_down_rate: 1
+#   sh_degree: 1
+#   lambda_depth: 0.1
+#   lambda_distort: 100.0
+#   lambda_normal: 0.05 # not too big 0.05 
+#   lambda_isotropic: 1.0
+#   lambda_sdf_cons: 1.0
+#   lambda_sdf_normal_cons: 1.0
+#   lambda_sdf: 1.0
 loss:
-  sigma_sigmoid_m: 0.06
+  sigma_sigmoid_m: 0.08
   loss_weight_on: True
   dist_weight_scale: 0.8
+  numerical_grad_on: False
 continual:
-  batch_size_new_sample: 2000
-  pool_capacity: 2e7
-  pool_filter_freq: 10
+  batch_size_new_sample: 4000
+  pool_capacity: 5e6
 tracker:
   photo_loss: True
-  source_vox_down_m: 0.4
+  source_vox_down_m: 0.6
   iter_n: 50
 pgo:
   map_context: True
   context_cosdist: 0.3
   min_loop_travel_ratio: 3.0
 optimizer: # mapper
-  iters: 20
+  iters: 15
   batch_size: 16384
   adaptive_iters: True
 eval:
   o3d_vis_on: False # visualize the mapping or not
-  mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 15
+  mesh_freq_frame: 20 # reconstruct the mesh every x frames
+  mesh_min_nn: 18
   sensor_cad_path: ./cad/livox.ply

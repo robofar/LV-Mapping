@@ -270,8 +270,8 @@ class SLAMDataset():
 
         if isinstance(frame_data, dict):
             dict_keys = list(frame_data.keys())
-            if not self.silence:
-                print("Available data source:", dict_keys)
+            # if not self.silence:
+            #     print("Available data source:", dict_keys)
             if "points" in dict_keys:
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
@@ -1187,7 +1187,7 @@ class SLAMDataset():
         map_color_np = np.empty((0, 3))
 
         for frame_id in tqdm(
-            range(0, self.total_pc_count, frame_step)
+            range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
         ):  # frame id as the idx of the frame in the data folder without skipping
             if self.config.use_dataloader:
                 self.read_frame_with_loader(frame_id, False, False)
@@ -1297,11 +1297,9 @@ class SLAMDataset():
             map_out_o3d = map_out_o3d.voxel_down_sample(voxel_size=down_vox_m)
 
         if self.run_path is not None:
-            print("Output merged point cloud map")
-            o3d.t.io.write_point_cloud(
-                os.path.join(self.run_path, "map", out_file_name+".ply"), map_out_o3d
-            )
-
+            save_path = os.path.join(self.run_path, "map", out_file_name+".ply")
+            o3d.t.io.write_point_cloud(save_path, map_out_o3d)
+            print(f"save the merged raw point cloud map to {save_path}")
 
 def read_point_cloud(
     filename: str, color_channel: int = 0, bin_channel_count: int = 4

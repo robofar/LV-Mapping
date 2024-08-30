@@ -458,11 +458,9 @@ class Mapper:
             self.cur_sample_count = coord.shape[0]
             self.pool_sample_count = self.coord_pool.shape[0]
 
-        # if not self.silence:
-        #     print(
-        #         "# Total sample in pool: ", self.pool_sample_count
-        #     )  # including the current samples
-        #     print("# Current sample      : ", self.cur_sample_count)
+        if not self.silence:
+            print("# Total sample in pool: ", self.pool_sample_count)
+            print("# Current sample      : ", self.cur_sample_count)
 
         T3_2 = get_time()
 
@@ -1323,10 +1321,10 @@ class Mapper:
             renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             renderd_image_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Rendered RGB", renderd_image_np)
-            #cv2.waitKey(1) # 1ms
 
             rendered_depth_np = surf_depth.detach().cpu().numpy()
             rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+            rendered_depth_np = rendered_depth_np[0] # H, W
             rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
             rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
@@ -1341,10 +1339,10 @@ class Mapper:
             depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
 
-            # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-            # # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
-
-            # cv2.imshow("Rendered Alpha", rendered_alpha_np)
+            print("Max alpha value:", torch.max(rend_alpha).item())
+            rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+            rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
+            cv2.imshow(cam_name + ": Rendered Alpha", rendered_alpha_np)
 
             cv2.waitKey(1)
 
@@ -1367,7 +1365,7 @@ class Mapper:
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
                 depth_valid_mask = (original_img_depth > 0) & (rendered_depth_np > 0)
-                cur_depth_l1 = np.mean(np.abs(original_img_depth[depth_valid_mask] - rendered_depth_np[0, depth_valid_mask]))
+                cur_depth_l1 = np.mean(np.abs(original_img_depth[depth_valid_mask] - rendered_depth_np[depth_valid_mask]))
                 print("Depth L1 (m) ↓ :", cur_depth_l1)
                 if not cur_viewpoint_cam.train_view: # eval only on the test views
                     self.val_depthl1_list.append(cur_depth_l1)

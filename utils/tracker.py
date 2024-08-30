@@ -78,7 +78,7 @@ class Tracker:
         term_thre_m = self.config.reg_term_thre_m
 
         max_valid_final_sdf_residual_cm = (
-            self.config.surface_sample_range_m * 0.5 * 100.0
+            self.config.surface_sample_range_m * 0.6 * 100.0
         )
         min_valid_ratio = 0.2
         if loop_reg:

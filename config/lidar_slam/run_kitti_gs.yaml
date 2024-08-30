@@ -10,6 +10,10 @@ process:
   max_range_m: 80.0 # 80.0
   vox_down_m: 0.05
   estimate_normal: False
+  dynamic_filter_on: True
+  dynamic_certainty_thre: 1.0
+  dynamic_sdf_ratio_thre: 0.5
+  dynamic_min_grad_norm_thre: 0.25
 sampler:
   surface_sample_range_m: 0.15 
   surface_sample_n: 5
@@ -26,29 +30,29 @@ loss:
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   weight_e: 0.5
-gs:
-  monodepth_on: True
-  gs_iters: 50 # 10
-  gs_bs: 5
-  gaussian_bs: 16384
-  gs_keyframe_interval: 2
-  img_pool_size: 15 # 15
-  img_test_pool_size: 15
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
-  sh_degree: 0 # According to experiments, it seems to not play an important role, but why
-  lambda_depth: 10.0 # 10.0
-  lambda_distort: 100.0
-  lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0 # todo
-  # lambda_sky: 0.01 # not much impact
-  # lambda_sdf_cons: 0.0
-  # lambda_sdf_normal_cons: 0.0
-  # lambda_sdf: 0.0
-  # actually making the results worse
-  lambda_sdf_cons: 0.0
-  lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss
-  lambda_sdf: 0.0
+# gs:
+#   monodepth_on: True
+#   gs_iters: 1 # 10
+#   gs_bs: 5
+#   gaussian_bs: 16384
+#   gs_keyframe_interval: 1 # 2
+#   img_pool_size: 15 # 15
+#   img_test_pool_size: 15
+#   gs_down_rate: 0
+#   gs_vis_down_rate: 0
+#   sh_degree: 0 # According to experiments, it seems to not play an important role, but why
+#   lambda_depth: 10.0 # 10.0
+#   lambda_distort: 100.0
+#   lambda_normal: 0.05 # not too big 0.05 
+#   lambda_isotropic: 1.0 # todo
+#   # lambda_sky: 0.01 # not much impact
+#   # lambda_sdf_cons: 0.0
+#   # lambda_sdf_normal_cons: 0.0
+#   # lambda_sdf: 0.0
+#   # actually making the results worse
+#   lambda_sdf_cons: 0.0
+#   lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss
+#   lambda_sdf: 0.0
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7

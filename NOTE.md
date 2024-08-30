@@ -49,6 +49,8 @@ python pin_slam.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./d
 
 ```
 
+Used by PVG, frame 380 to 431 on sequence 01
+
 **pass**
 
 

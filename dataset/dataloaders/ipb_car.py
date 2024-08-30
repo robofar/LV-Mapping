@@ -106,7 +106,7 @@ class IPBCarDataset:
     def __getitem__(self, idx):
         
         points = self.read_point_cloud(self.lidar_horizontal_files[idx]) # lidar_h_points
-        points_ts = self.get_timestamps()
+        point_ts = self.get_timestamps()
         
         if not self.use_only_lidar_h:
             lidar_v_points = self.read_point_cloud(self.lidar_vertical_files[idx])
@@ -118,11 +118,11 @@ class IPBCarDataset:
 
             points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
 
-            points_ts = np.tile(points_ts, (2, 1)) # 2N, 1
+            point_ts = np.tile(point_ts, (2, 1)) # 2N, 1
 
         valid_mask = ~np.all(points[:,:3] == 0, axis=1) 
         points = points[valid_mask]
-        points_ts = points_ts[valid_mask]
+        point_ts = point_ts[valid_mask]
 
         img_left = self.read_img(self.img_left_files[idx])
         img_right = self.read_img(self.img_right_files[idx])
@@ -143,12 +143,12 @@ class IPBCarDataset:
             with_rgb_mask = (points_rgb[:, 3] == 0)
             points = points[with_rgb_mask]
             points_rgb = points_rgb[with_rgb_mask]
-            points_ts = points_ts[with_rgb_mask]
+            point_ts = point_ts[with_rgb_mask]
 
         # # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        frame_data = {"points": points, "point_ts": points_ts, "img": img_dict}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
 
         return frame_data
 

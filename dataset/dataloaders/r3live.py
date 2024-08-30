@@ -56,6 +56,7 @@ from datetime import datetime
 class R3LiveDataset:
     def __init__(self, data_dir, *_, **__):
         
+        self.load_img = False # default
         self.use_only_colorized_points = True
 
         self.livox_dir = os.path.join(data_dir, "livox_points", "data/")
@@ -124,29 +125,34 @@ class R3LiveDataset:
         
         points = self.scans(idx)
 
-        point_ts = np.arange(np.shape(points)[0])*1.0
+        # livox timestamp
+        point_count = np.shape(points)[0] # 24000 for livox
+        point_ts = np.arange(point_count)*1.0/point_count
 
-        img = self.read_img(self.img_files[idx]) # just for vis here
+        if self.load_img: # default
+            img = self.read_img(self.img_files[idx]) # just for vis here
 
-        points_color = np.ones_like(points)
+            points_color = np.ones_like(points)
 
-        # project to the image plane to get the corresponding color
-        points_color, depth_map = self.project_points_to_cam(points, points_color, img, 
-            self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
+            # project to the image plane to get the corresponding color
+            points_color, depth_map = self.project_points_to_cam(points, points_color, img, 
+                self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
 
-        if self.use_only_colorized_points:
-            with_rgb_mask = (points_color[:, 3] == 0)
-            points = points[with_rgb_mask]
-            points_color = points_color[with_rgb_mask]
-            # point_ts = point_ts[with_rgb_mask]
+            if self.use_only_colorized_points:
+                with_rgb_mask = (points_color[:, 3] == 0)
+                points = points[with_rgb_mask]
+                points_color = points_color[with_rgb_mask]
+                point_ts = point_ts[with_rgb_mask]
 
-        # we skip the intensity here for now (and also the color mask)
-        points = np.hstack((points[:,:3], points_color[:,:3]))
+            # we skip the intensity here for now (and also the color mask)
+            points = np.hstack((points[:,:3], points_color[:,:3]))
 
-        img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
-        img_dict = {self.main_cam_name: img}
+            img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+            img_dict = {self.main_cam_name: img}
 
-        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+            frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+        else:
+            frame_data = {"points": points, "point_ts": point_ts}
 
         return frame_data
 

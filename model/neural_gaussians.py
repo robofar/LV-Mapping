@@ -972,7 +972,7 @@ class NeuralPoints(nn.Module):
         # neural_points_np = self.neural_points[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
         neural_pc_o3d = o3d.geometry.PointCloud()
 
-        if color_mode == 0 or color_mode == 1:  # "gaussian fused color" # here we do not use random_down_ratio            
+        if self.config.gs_on:  # "gaussian fused color" # here we do not use random_down_ratio            
             if query_global:
                 if vis_free_gaussians:
                     shown_gaussian_mask = self.valid_color_mask
@@ -1067,7 +1067,7 @@ class NeuralPoints(nn.Module):
             if vis_normals:
                 neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
 
-        # temporalily desabled
+        # original pin-slam, no gs enabled
         else:
             if query_global:
                 neural_points_np = (
@@ -1087,7 +1087,7 @@ class NeuralPoints(nn.Module):
                     .astype(np.float64)
                 )
 
-            if color_mode == 2:  # "geo_feature"
+            if color_mode == 0:  # "geo_feature"
                 if query_global:
                     neural_features_vis = self.geo_features[:-1:random_down_ratio].detach()
                 else:
@@ -1100,24 +1100,24 @@ class NeuralPoints(nn.Module):
                     neural_features_np[:, 0:3] * ratio_vis
                 )
 
-            # elif color_mode == 1:  # "color_feature"
-            #     if self.color_features is None:
-            #         return neural_pc_o3d
-            #     if query_global:
-            #         neural_features_vis = self.color_features[
-            #             :-1:random_down_ratio
-            #         ].detach()
-            #     else:
-            #         neural_features_vis = self.local_color_features[
-            #             :-1:random_down_ratio
-            #         ].detach()
-            #     neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
-            #     neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
-            #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(
-            #         neural_features_np[:, 0:3] * ratio_vis
-            #     )
+            elif color_mode == 1:  # "color_feature"
+                if self.color_features is None:
+                    return neural_pc_o3d
+                if query_global:
+                    neural_features_vis = self.color_features[
+                        :-1:random_down_ratio
+                    ].detach()
+                else:
+                    neural_features_vis = self.local_color_features[
+                        :-1:random_down_ratio
+                    ].detach()
+                neural_features_vis = F.normalize(neural_features_vis, p=2, dim=1)
+                neural_features_np = neural_features_vis.cpu().numpy().astype(np.float64)
+                neural_pc_o3d.colors = o3d.utility.Vector3dVector(
+                    neural_features_np[:, 0:3] * ratio_vis
+                )
 
-            elif color_mode == 3:  # "ts": # frame number (ts) as the color
+            elif color_mode == 2:  # "ts": # frame number (ts) as the color
                 if query_global:
                     if self.config.use_mid_ts:
                         show_ts = ((self.point_ts_create + self.point_ts_update) / 2).int()
@@ -1143,7 +1143,7 @@ class NeuralPoints(nn.Module):
                 ts_color = color_map(ts_np)[:, :3].astype(np.float64)
                 neural_pc_o3d.colors = o3d.utility.Vector3dVector(ts_color)
 
-            elif color_mode == 4:  # "certainty" # certainty as color
+            elif color_mode == 3:  # "certainty" # certainty as color
                 if query_global:
                     certainty_np = (
                         1.0
@@ -1168,11 +1168,11 @@ class NeuralPoints(nn.Module):
                 certainty_color = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
                 neural_pc_o3d.colors = o3d.utility.Vector3dVector(certainty_color)
 
-            # elif color_mode == 4:  # "random" # random color
-            #     random_color = np.random.rand(neural_points_np.shape[0], 3).astype(
-            #         np.float64
-            #     )
-            #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(random_color)
+            elif color_mode == 4:  # "random" # random color
+                random_color = np.random.rand(neural_points_np.shape[0], 3).astype(
+                    np.float64
+                )
+                neural_pc_o3d.colors = o3d.utility.Vector3dVector(random_color)
 
         # coordinate
         neural_pc_o3d.points = o3d.utility.Vector3dVector(neural_points_np)

@@ -160,7 +160,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T0 = get_time()
 
         if config.use_dataloader:
-            dataset.read_frame_with_loader(frame_id)
+            dataset.read_frame_with_loader(frame_id, use_image=config.gs_on)
         else:
             dataset.read_frame(frame_id)
 
@@ -336,7 +336,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
             print("time for mapping preparation    (ms):", (T5-T4)*1e3)
             print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
-            print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)
+            if config.gs_on:
+                print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)
 
         # V: Mesh reconstruction and visualization
         cur_mesh = None

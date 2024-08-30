@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 
+# Bonn RGBD dataset shares the same data format, which can also be loaded with this data loader 
 class TUMDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
  

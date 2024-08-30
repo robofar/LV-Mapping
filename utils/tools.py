@@ -707,6 +707,7 @@ def deskewing(
     tran_lerp = ts[:, None] * pose[:3, 3].to(points)
 
     points_deskewd = points
+
     points_deskewd[:, :3] = (rotmat_slerp @ points[:, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
 
     return points_deskewd
