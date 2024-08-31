@@ -306,9 +306,12 @@ class SLAMDataset():
                         # cur_K = self.K_mats[cam_name]
                         # rgb, pad_info = self.preprocess_img(cur_img_np, cur_K) # why getting slower here
 
-                        # mono_depth_input_rgb = F.interpolate(cur_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                         mono_depth_input_rgb = cur_img[:3]
                         
+                        # down-sample input image to save computation
+                        if H*W > 5e5:
+                            mono_depth_input_rgb = F.interpolate(mono_depth_input_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+
                         tic_metric3d = get_time()
 
                         with torch.no_grad():
@@ -318,6 +321,7 @@ class SLAMDataset():
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models  # 1, 3, H, W
                         normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details  # 1, H, W
 
+                        # interpolate to the original image size
                         pred_depth = F.interpolate(pred_depth, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
                         confidence = F.interpolate(confidence, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
 
@@ -338,8 +342,11 @@ class SLAMDataset():
                         # print(torch.min(normal_confidence), torch.max(normal_confidence))
 
                         # How to set these threshold to filter unreliable depth
-                        pred_depth[confidence < 0.6] = 0 
-                        pred_depth[normal_confidence < 1.0] = 0
+
+                        invalid_mask = (confidence < 0.8) & (normal_confidence < 1.0)
+                        invalid_mask_np = invalid_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
+
+                        pred_depth[invalid_mask] = 0 
 
                         # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
                         # pred_depth_np = pred_depth.detach().cpu().numpy()
@@ -388,8 +395,10 @@ class SLAMDataset():
 
                         # show sky mask
                         # cur_img_rgb_np[sky_mask_np] = 0  
-                        # cur_img_rgb_np = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR)
-                        # cv2.imshow(" Sky mask", cur_img_rgb_np)
+                        # cur_img_rgb_np[invalid_mask_np] = 0  
+                        # cur_img_rgb_cvshow = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR)
+                        # # cv2.imshow(" Sky mask", cur_img_rgb_cvshow)
+                        # cv2.imshow(" Invalid mask", cur_img_rgb_cvshow)
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)

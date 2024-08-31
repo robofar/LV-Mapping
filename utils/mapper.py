@@ -1138,7 +1138,7 @@ class Mapper:
                 constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
                 true_count = torch.sum(constraint_mask).item()
                 true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
-                gaussian_bs = self.config.bs * 4
+                gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
                 # gaussian_bs = self.config.gaussian_bs
                 sample_bs = min(true_count, gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
                 # print("Sampled neural point count: " , sample_bs)
@@ -1390,8 +1390,7 @@ class Mapper:
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                # depth_valid_mask = (original_img_depth > 0) & (rendered_depth_np > 0) & (original_img_depth < self.config.max_range)
-                eval_depth = 20.0
+                eval_depth = self.config.max_range
                 depth_valid_mask = (original_img_depth > 0) & (rendered_depth_np > 0) & (original_img_depth < eval_depth) & (rendered_depth_np < eval_depth)
                 
                 diff_depth = original_img_depth[depth_valid_mask] - rendered_depth_np[depth_valid_mask]

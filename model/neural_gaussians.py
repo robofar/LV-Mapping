@@ -139,7 +139,7 @@ class NeuralPoints(nn.Module):
         self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
         self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
-        self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning
+        self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)
 
         # self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
         # self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
@@ -179,7 +179,7 @@ class NeuralPoints(nn.Module):
         self.local_opacity = nn.Parameter()
 
         # this is just for vis
-        self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device)
+        self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
         self.local_free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
@@ -287,20 +287,20 @@ class NeuralPoints(nn.Module):
     def training_setup_gs(self):
 
         if self.config.movable_gs:
-            self.position_lr_init: float = 0.00016 # let the gaussians to move 
+            self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
         else:
             self.position_lr_init: float = 0.0 # not movable
 
+        self.feature_lr: float = 0.0025 # for SH, color
+        self.opacity_lr: float = self.config.gs_opacity_lr # 0.05
+        self.scaling_lr: float = self.config.gs_scaling_lr # 0.005
+        self.rotation_lr: float = self.config.gs_rotation_lr # 0.1 # 0.001 # ADD to config. TODO
+
+        # not very useful
         self.position_lr_final: float = 0.0000016
         self.position_lr_delay_mult: float = 0.01
         self.position_lr_max_steps: float = 30_000
-        self.feature_lr: float = 0.0025
-        self.opacity_lr: float = 0.05
-        self.scaling_lr: float = 0.005 # 0.005
-        self.rotation_lr: float = 0.001 # 0.001
         self.percent_dense: float = 0.01
-
-        # not very useful
         self.feature_rest_lr_init: float = 0.0025 / 20.
         self.feature_rest_lr_final_factor: float = 0.1
         self.feature_rest_lr_max_steps: int = -1

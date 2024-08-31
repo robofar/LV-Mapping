@@ -173,16 +173,17 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
 
     # get normal map
     # transform normal from view space to world space
+    # this is the normal of the gaussian at the rendered surface
     render_normal = allmap[2:5]
     render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
     
     # get median depth map # what does this mean? # TODO
     render_depth_median = allmap[5:6]
-    render_depth_median = torch.nan_to_num(render_depth_median, 0, 0)
+    render_depth_median = torch.nan_to_num(render_depth_median, 0, 0) # gaussian depth (camera to ray-splat intersection) when aplha (most close to) = 0.5
 
     # get expected depth map
     render_depth_expected = allmap[0:1]
-    render_depth_expected = (render_depth_expected / render_alpha)
+    render_depth_expected = (render_depth_expected / render_alpha) # alpha blending of the gaussian depth (camera to ray-splat intersection)
     render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
     
     # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)

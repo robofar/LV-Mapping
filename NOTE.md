@@ -252,6 +252,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
+- [ ] Make use of the mono normal clue in training
 - [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
@@ -275,6 +276,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add BoW python for image place recognition (loop detection)
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
+- [ ] Try GaussianSurfel instead of 2D GS
+- [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.)
 - [ ] The goal is RAL
 
 ## Useful links
@@ -308,6 +311,10 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 
 + [GOF](https://github.com/autonomousvision/gaussian-opacity-fields)
 
++ [PGSR](https://github.com/zju3dv/PGSR)
+
++ [RaDe-GS](https://baowenz.github.io/radegs/)
+
 + [MipGS](https://github.com/autonomousvision/mip-splatting)
 
 + [GauStudio](https://github.com/GAP-LAB-CUHK-SZ/gaustudio)
@@ -317,6 +324,12 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 + [LargeScale_3DGS](https://github.com/DeepLabc/LargeScale_3DGS)
 
 + [MARS: Nerf-based Simulation](https://github.com/OPEN-AIR-SUN/mars)
+
++ [NerualSim](https://github.com/PJLab-ADG/neuralsim)
+
++ [PVG](https://github.com/fudan-zvg/PVG/)
+
++ [OmniRe Driving Studio](https://github.com/ziyc/drivestudio)
 
 + [GS4Robo](https://github.com/dtc111111/awesome-3dgs-for-robotics)
 

@@ -208,7 +208,7 @@ class Config:
 
         self.gs_iters: int = 0
         self.gs_bs: int = 5
-        self.gaussian_bs: int = 16384
+        self.gaussian_bs_ratio: float = 4.0 # gaussian_bs = bs * gaussian_bs_ratio
         self.gs_keyframe_interval: int = 2
         self.img_pool_size: int = 10 # training views
         self.img_test_pool_size: int = 10 # testing views
@@ -222,13 +222,18 @@ class Config:
         self.lambda_depth: float = 0.1 # weight for depth rendering
         self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.05 # normal consistency regularization weight
-        self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene)
+        self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 1.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
         self.lambda_sdf: float = 1.0 # pin map sdf fitting loss
 
         self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM)
+        
+        self.gs_position_lr: float = 0.00016 # # the original value in 3D GS is 0.00016
+        self.gs_rotation_lr: float = 0.1 # the original value in 3D GS is 1e-3, we set it to a larger value here
+        self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
+        self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
 
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1
@@ -538,7 +543,7 @@ class Config:
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
-            self.gaussian_bs = config_args["gs"].get("gaussian_bs", self.gaussian_bs) # gaussian count per iter (for gsdf consistency loss)
+            self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)

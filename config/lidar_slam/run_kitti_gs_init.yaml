@@ -34,7 +34,7 @@ gs:
   monodepth_on: False
   gs_iters: 0 # 20
   gs_bs: 5
-  gaussian_bs: 16384
+  gaussian_bs_ratio: 8
   gs_keyframe_interval: 2 # 2
   img_pool_size: 20 # 15
   img_test_pool_size: 15
