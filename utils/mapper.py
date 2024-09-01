@@ -1290,6 +1290,7 @@ class Mapper:
     
             original_img_np = original_img.detach().cpu().numpy() # C, H, W
             original_img_int8 = (np.transpose(original_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
+            original_img_int8 = np.ascontiguousarray(original_img_int8) 
             original_img_rgb = cv2.cvtColor(original_img_int8, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Observed RGB", original_img_rgb)
 
@@ -1298,7 +1299,7 @@ class Mapper:
                 # print(original_img_np[3]) # why all 1?
                 original_img_depth = original_img_np[3]
                 depth_valid_mask = (original_img_depth > 0)
-                original_img_depth_color = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+                original_img_depth_color = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
                 # print(np.shape(original_img_depth))
                 original_img_depth_color = np.transpose(original_img_depth_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
                 original_img_depth_color = cv2.cvtColor(original_img_depth_color, cv2.COLOR_RGB2BGR)
@@ -1328,7 +1329,7 @@ class Mapper:
             cv2.imshow(cam_name + ": Rendered RGB", renderd_image_rgb_np)
 
             rendered_depth_np = surf_depth.detach().cpu().numpy()
-            rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8) # 1, 3, H, W 
+            rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
             rendered_depth_np = rendered_depth_np[0] # H, W
             rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
             rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3

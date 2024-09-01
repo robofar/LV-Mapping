@@ -79,6 +79,7 @@ class ReplicaDataset:
                                       cx=self.cx,
                                       cy=self.cy)
         
+        self.extrinsic = self.T_c_l
 
         self.depth_scale = 6553.5
         self.max_depth_m = 15.0

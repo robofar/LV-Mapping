@@ -74,7 +74,8 @@ class Camera(nn.Module):
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min, z_max, cam_id: str = "cam", img_down_rate = 0, sky_mask = None, 
+    def __init__(self, frame_id: int, image, K_mat, z_min, z_max,
+        cam_id: str = "cam", img_down_rate = 0, normal_img = None, sky_mask = None, 
         device = "cuda", img_width = None, img_height = None):
         
         self.frame_id = frame_id
@@ -106,6 +107,7 @@ class CamImage:
         # pyramid of images
         self.original_image_list = []
         self.sky_mask_list = []
+        self.normal_img_list = []
 
         if image is not None:
             original_image = image.to(device)
@@ -147,26 +149,42 @@ class CamImage:
                 down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
                 self.sky_mask_on = False
 
+            if normal_img is not None: # normal already in device
+                self.mono_normal_on = True
+                down_level1_normal = F.interpolate(normal_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                down_level2_normal = F.interpolate(down_level1_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                down_level3_normal = F.interpolate(down_level2_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            else:
+                down_level1_normal = down_level2_normal = down_level3_normal = None
+                self.mono_normal_on = False
+
             if img_down_rate > 0:
                 original_image = None
                 sky_mask = None
+                normal_img = None
             self.original_image_list.append(original_image)
             self.sky_mask_list.append(sky_mask)
+            self.normal_img_list.append(normal_img)
 
             if img_down_rate > 1:
                 down_level1_image = None
                 down_level1_sky_mask = None
+                down_level1_normal = None
             self.original_image_list.append(down_level1_image)
             self.sky_mask_list.append(down_level1_sky_mask)
+            self.normal_img_list.append(down_level1_normal)
 
             if img_down_rate > 2:
                 down_level2_image = None
                 down_level2_sky_mask = None
+                down_level2_normal = None
             self.original_image_list.append(down_level2_image)
             self.sky_mask_list.append(down_level2_sky_mask)
+            self.normal_img_list.append(down_level2_normal)
 
             self.original_image_list.append(down_level3_image)
             self.sky_mask_list.append(down_level3_sky_mask)
+            self.normal_img_list.append(down_level3_normal)
 
 
 # what does this mean?

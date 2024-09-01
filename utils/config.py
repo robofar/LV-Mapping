@@ -219,19 +219,19 @@ class Config:
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
         self.lambda_dssim: float = 0.2 # weight for ssim
-        self.lambda_depth: float = 0.1 # weight for depth rendering
-        self.lambda_isotropic: float = 10.0 # weight for scale isotropic loss # 10.0
-        self.lambda_normal: float = 0.05 # normal consistency regularization weight
+        self.lambda_depth: float = 0.0 # weight for depth rendering
+        self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
+        self.lambda_normal: float = 0.0 # normal consistency regularization weight # 0.05
         self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
-        self.lambda_sdf_cons: float = 1.0 # gaussian center's sdf should be close to 0
-        self.lambda_sdf_normal_cons: float = 0.5 # gaussian's normal should align with sdf's gradient direction
-        self.lambda_sdf: float = 1.0 # pin map sdf fitting loss
+        self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
+        self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction
+        self.lambda_sdf: float = 0.0 # pin map sdf fitting loss
 
         self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM)
         
         self.gs_position_lr: float = 0.00016 # # the original value in 3D GS is 0.00016
-        self.gs_rotation_lr: float = 0.1 # the original value in 3D GS is 1e-3, we set it to a larger value here
+        self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
         self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
         self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
 
@@ -551,15 +551,19 @@ class Config:
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.gs_init_opacity = config_args["gs"].get("init_opacity", self.gs_init_opacity)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
-            self.lambda_depth = config_args["gs"].get("lambda_depth", self.lambda_depth)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
-            self.lambda_distort = config_args["gs"].get("lambda_distort", self.lambda_distort) # weight for the distance distortion loss
-            self.lambda_normal = config_args["gs"].get("lambda_normal", self.lambda_normal) # weight for the distance/normal consistency loss
-            self.lambda_isotropic = config_args["gs"].get("lambda_isotropic", self.lambda_isotropic)
-            self.lambda_sky = config_args["gs"].get("lambda_sky", self.lambda_sky)
-            self.lambda_sdf_cons = config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons)
-            self.lambda_sdf_normal_cons = config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons)
-            self.lambda_sdf = config_args["gs"].get("lambda_sdf", self.lambda_sdf)
+            self.lambda_depth = float(config_args["gs"].get("lambda_depth", self.lambda_depth))
+            self.lambda_distort = float(config_args["gs"].get("lambda_distort", self.lambda_distort)) # weight for the distance distortion loss
+            self.lambda_normal = float(config_args["gs"].get("lambda_normal", self.lambda_normal)) # weight for the distance/normal consistency loss
+            self.lambda_isotropic = float(config_args["gs"].get("lambda_isotropic", self.lambda_isotropic))
+            self.lambda_sky = float(config_args["gs"].get("lambda_sky", self.lambda_sky))
+            self.lambda_sdf_cons = float(config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons))
+            self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
+            self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
+
+            self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
+            self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
+
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:

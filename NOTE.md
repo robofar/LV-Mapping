@@ -277,8 +277,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
 - [ ] Try GaussianSurfel instead of 2D GS
-- [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.)
-- [ ] The goal is RAL
+- [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.), would be very useful and important
+- [ ] The goal is RAL or ISPRS Journal
 
 ## Useful links
 + [3D-GS](https://github.com/graphdeco-inria/gaussian-splatting)
@@ -312,6 +312,8 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 + [GOF](https://github.com/autonomousvision/gaussian-opacity-fields)
 
 + [PGSR](https://github.com/zju3dv/PGSR)
+
++ [NeuSG](https://arxiv.org/pdf/2312.00846)
 
 + [RaDe-GS](https://baowenz.github.io/radegs/)
 

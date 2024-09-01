@@ -22,6 +22,7 @@ neuralpoints:
   query_nn_k: 8
   from_sample_points: False
 gs:
+  monodepth_on: True
   gs_iters: 10
   gs_bs: 5
   gs_keyframe_interval: 5

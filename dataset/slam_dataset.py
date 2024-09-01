@@ -30,6 +30,7 @@ from eval.eval_traj_utils import absolute_error, plot_trajectories, relative_err
 from utils.config import Config
 from utils.semantic_kitti_utils import sem_kitti_color_map, sem_map_function
 from utils.tools import (
+    colorize_depth_maps,
     deskewing,
     get_time,
     plot_timing_detail,
@@ -276,6 +277,8 @@ class SLAMDataset():
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
+            if "imus" in dict_keys: # TODO: add from Pinochio
+                self.cur_frame_imus = frame_data["imus"]
             if "img" in dict_keys and use_image: # support multiple cameras
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
@@ -309,8 +312,9 @@ class SLAMDataset():
                         mono_depth_input_rgb = cur_img[:3]
                         
                         # down-sample input image to save computation
-                        if H*W > 5e5:
+                        if H*W > 5e5: # 5e5
                             mono_depth_input_rgb = F.interpolate(mono_depth_input_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                            # For kitti, if downsized, computational time can be decrease to 20ms on my GPU
 
                         tic_metric3d = get_time()
 
@@ -318,6 +322,10 @@ class SLAMDataset():
                             # pred_depth, confidence, output_dict = self.metric3d.inference({'input': rgb})
                             pred_depth, confidence, output_dict = self.metric3d.inference({'input': mono_depth_input_rgb.unsqueeze(0)}) #B,C,H,W 
                         
+                        toc_metric3d = get_time()
+                        if not self.config.silence:
+                            print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)  
+
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models  # 1, 3, H, W
                         normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details  # 1, H, W
 
@@ -325,34 +333,31 @@ class SLAMDataset():
                         pred_depth = F.interpolate(pred_depth, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
                         confidence = F.interpolate(confidence, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
 
-                        pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
+                        pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 3, H, W
                         normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
 
-                        sky_mask = pred_depth > self.config.max_range * 2.0 # mask out the sky # 1, H, W
+                        sky_mask = pred_depth > self.config.max_range * 1.5 # mask out the sky # 1, H, W
                         sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
 
-                        # TODO: make use of this confidence here
-                        toc_metric3d = get_time()
-                        if not self.config.silence:
-                            print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)                        
-
-                        # TODO: also record and use this normal prediction here
-
-                        # print(normal_confidence)
-                        # print(torch.min(normal_confidence), torch.max(normal_confidence))
-
                         # How to set these threshold to filter unreliable depth
+                        # NOTE: confidence does not really play an important role
+                        # invalid_mask = (confidence < 0.8) & (normal_confidence < 1.0) 
+                        # invalid_mask_np = invalid_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
 
-                        invalid_mask = (confidence < 0.8) & (normal_confidence < 1.0)
-                        invalid_mask_np = invalid_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
-
-                        pred_depth[invalid_mask] = 0 
-
-                        # pred_depth = self.postprocess_depth(pred_depth, pad_info, cur_K[0,0], cur_img_np.shape[:2])
-                        # pred_depth_np = pred_depth.detach().cpu().numpy()
-
+                        # pred_depth[invalid_mask] = 0 
                         pred_depth_np = pred_depth.permute(1,2,0).squeeze(-1).detach().cpu().numpy() # H, W
-                        # pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy()
+
+                        pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                        pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
+                        pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
+                        cv2.imshow("Mono Depth", pred_depth_color)
+                
+
+                        # pred_normal[invalid_mask] = 0
+                        pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy() # 3, H, W
+                        pred_normal_vis_np = ((0.5 - pred_normal_np * 0.5) * 255.0).astype(np.uint8) # convert to the normal vis color # surf_normal
+                        pred_normal_vis_np = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR)
+                        cv2.imshow("Mono Normal", pred_normal_vis_np)
 
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
@@ -402,13 +407,28 @@ class SLAMDataset():
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
+                        cur_normal_o3d = o3d.geometry.Image(cur_img_rgb_np)
 
-                        # change the depth_scale here
+                        # change the depth trunc here
                         rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, 
-                            depth_scale=1.0, depth_trunc=self.config.max_range*1.1, convert_rgb_to_intensity=False)
+                            depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
+
+                        nd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_normal_o3d, pred_depth_o3d, 
+                            depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
                                                                                 
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+
+                        normal_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+                            nd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+
+                        points_normal = 1.0 - 2 * np.asarray(normal_pcd.colors)
+
+                        # print(points_normal)
+
+                        pred_pcd.normals = o3d.utility.Vector3dVector(points_normal) # [-1, 1]
+
+                        pred_pcd.normalize_normals() # normals norm to 1
 
                         pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
 
@@ -435,12 +455,11 @@ class SLAMDataset():
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.1,
-                                                          cam_name, img_down_rate, sky_mask, self.device)
+                                                          cam_name, img_down_rate, pred_normal, sky_mask, self.device)
 
         
 
-            if "imus" in dict_keys:
-                self.cur_frame_imus = frame_data["imus"]
+           
          
         self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
 

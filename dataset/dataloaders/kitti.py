@@ -99,14 +99,6 @@ class KITTIOdometryDataset:
 
             self.extrinsic = calib_data['T_cam2_velo']
 
-        # FIXME: mono_depth rgbd version
-
-        # self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
-        # self.T_l_c = np.eye(4)
-        # self.T_c_l = np.linalg.inv(self.T_l_c)
-        # self.T_c_l_mats = {self.left_cam_name: self.T_c_l}
-        
-        # print(calib_data["K_cam2"])
         ###
 
         # Load GT Poses (if available)

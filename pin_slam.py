@@ -6,6 +6,7 @@
 import argparse
 import os
 import sys
+import csv
 
 import rerun as rr
 import numpy as np
@@ -147,6 +148,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     if config.save_merged_pc and dataset.gt_pose_provided:
         dataset.write_merged_point_cloud(use_gt_pose=True, out_file_name='merged_gt_pc', 
             frame_step=5, merged_downsample=True)
+    
+    gs_time_table = []
 
     # TODO: test TSDF fusion (pass)
     # tsdf_mesh_path = os.path.join(run_path, "mesh", "tsdf_fusion_mesh.ply")
@@ -339,6 +342,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             if config.gs_on:
                 print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)
 
+
         # V: Mesh reconstruction and visualization
         cur_mesh = None
         if config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
@@ -408,8 +412,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
 
             if o3d_vis.vis_mono_depth_frame:
-                frame_point_cloud_for_vis.paint_uniform_color(np.array([1.0, 0, 0])) # RED
-                frame_point_cloud_for_vis += dataset.cur_frame_mono_depth_o3d 
+                frame_point_cloud_for_vis = dataset.cur_frame_mono_depth_o3d 
+                if o3d_vis.debug_mode == 1: # show mono depth and lidar together, lidar as red color
+                    dataset.cur_frame_o3d.paint_uniform_color(np.array([1.0, 0, 0])) # RED
+                    frame_point_cloud_for_vis += dataset.cur_frame_o3d 
                 
             o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
 
@@ -429,6 +435,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         cur_frame_process_time = np.array([T2-T1, T3-T2, T5-T4, T6-T5, T4-T3]) # loop & pgo in the end, visualization and I/O time excluded
         dataset.time_table.append(cur_frame_process_time) # in s
+        gs_time_table.append(T6-T5_1)
 
         if config.wandb_vis_on:
             wandb_log_content = {'frame': frame_id, 'timing(s)/preprocess': T2-T1, 'timing(s)/tracking': T3-T2, 'timing(s)/pgo': T4-T3, 'timing(s)/mapping': T6-T4} 
@@ -446,8 +453,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if config.o3d_vis_on:
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
     
-    # gs eval
-    if config.gs_on: 
+    # gs eval 
+    if config.gs_on: # TODO: add to a function inside mapper or dataset 
         if len(mapper.val_psnr_list) > 0:
             val_pnsr_np = np.mean(np.array(mapper.val_psnr_list))
             val_ssim_np = np.mean(np.array(mapper.val_ssim_list))
@@ -462,6 +469,38 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             val_depth_rmse_np = np.mean(np.array(mapper.val_depth_rmse_list))
             print("Average validation view Depth L1 (m) ↓ :", f"{val_depthl1_np:.3f}")
             print("Average validation view Depth RMSE (m) ↓ :", f"{val_depth_rmse_np:.3f}")
+
+        gs_time_mean = np.mean(np.array(gs_time_table))
+
+        gs_csv_columns = [
+                "PSNR ↑",
+                "SSIM ↑",
+                "LPIPS ↓",
+                "Depth L1 (m)",
+                "Depth RMSE (m) ↓",
+                "Consuming time per frame [s]",
+                "Frame count",
+            ]
+        gs_eval = [
+                {
+                    gs_csv_columns[0]: val_pnsr_np,
+                    gs_csv_columns[1]: val_ssim_np,
+                    gs_csv_columns[2]: val_lpips_np,
+                    gs_csv_columns[3]: val_depthl1_np,
+                    gs_csv_columns[4]: val_depth_rmse_np,
+                    gs_csv_columns[5]: gs_time_mean,
+                    gs_csv_columns[6]: len(mapper.val_psnr_list),
+                }
+            ]
+        gs_output_csv_path = os.path.join(run_path, "gs_eval.csv")
+        try:
+            with open(gs_output_csv_path, "w") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
+                writer.writeheader()
+                for data in gs_eval:
+                    writer.writerow(data)
+        except IOError:
+            print("I/O error")
 
         if config.save_mesh:
             output_mc_res_m = config.mc_res_m*0.6
