@@ -55,6 +55,15 @@ Used by PVG, frame 380 to 431 on sequence 01
 
 **pass**
 
+## Run on VKITTI synthetic dataset
+
+```
+python pin_slam.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitti2 -dvl
+
+```
+
+**pass**
+
 
 ## Run on Nuscenes dataset
 ```
@@ -252,7 +261,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
-- [ ] Make use of the mono normal clue in training
+- [ ] Make use of the mono normal clue in training, also use mono normal as the initialization of the gaussians
 - [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
@@ -273,6 +282,7 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 - [ ] Level of details, especially for the closer range
 - [ ] Evaluate Chamfer distance and PSNR
 - [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
+- [ ] Prune dynamic Gaussians using the PIN Map
 - [ ] Add BoW python for image place recognition (loop detection)
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)

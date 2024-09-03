@@ -349,7 +349,7 @@ class Mapper:
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.max_range*0.01 # add to config # TODO # 0.025
+            down_voxel_size = self.config.max_range*0.025 # add to config # TODO # 0.025
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
@@ -1018,6 +1018,8 @@ class Mapper:
                 
                 gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
+                batch_visbility_mask = torch.zeros(self.neural_points.local_count(), dtype=torch.bool, device=self.device)
+
                 for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
 
                     T1 = get_time()
@@ -1046,6 +1048,17 @@ class Mapper:
                     
                     # rendered results
                     renderd_rgb_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+
+                    batch_visbility_mask = batch_visbility_mask | visibility_filter # update the gaussian visbility mask for this batch
+
+                    # print(viewspace_point_tensor.shape) # N, 3
+                    # print(viewspace_point_tensor) # 
+                    # print(visibility_filter.shape) # N
+                    # # print(visibility_filter) # bool for gaussians
+                    # # print(radii.shape) # N
+
+                    # invisible_count = torch.sum(~visibility_filter).item()
+                    # print(invisible_count)
 
                     loss_rgb_l1 = l1_loss(renderd_rgb_image, gt_rgb_image)
 
@@ -1134,8 +1147,12 @@ class Mapper:
                 # sky mask
                 sky_loss_batch *= self.config.lambda_sky
 
+                invisible_count = torch.sum(~batch_visbility_mask).item()
+                # print("# Invisible local gaussians in this batch:", invisible_count)
+
                 # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
-                constraint_mask = (~self.neural_points.local_free_gs_mask) # & self.neural_points.local_valid_color_mask 
+                # only these gaussians would be optimized
+                constraint_mask = (~self.neural_points.local_free_gs_mask) & batch_visbility_mask # & self.neural_points.local_valid_color_mask 
                 true_count = torch.sum(constraint_mask).item()
                 true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
                 gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
@@ -1144,6 +1161,8 @@ class Mapper:
                 # print("Sampled neural point count: " , sample_bs)
                 # don't use all the points here (random sample some of them as a batch)
                 sampled_indices = true_indices[torch.randperm(true_count)[:sample_bs]]
+
+                # how to find those gaussians only in the training field of views?
 
                 isotropic_loss = 0.0
                 if self.config.lambda_isotropic > 0:
@@ -1255,7 +1274,12 @@ class Mapper:
                 # print("Optimization iter time (ms):", (T3-T2)*1e3) # still, this backpropagation is slow, but better to do this in batch
             
             self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
+            
+            print(torch.mean(self.neural_points.geo_features).item())
+            
             self.neural_points.assign_local_to_global() # set back pin feature
+
+            print(torch.mean(self.neural_points.geo_features).item())
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)
 
@@ -1285,6 +1309,7 @@ class Mapper:
             cam_name = cur_viewpoint_cam.cam_id
             val_frame_id = cur_viewpoint_cam.frame_id 
             vis_down_rate = self.config.gs_vis_down_rate
+            vis_down_scale = 2**(vis_down_rate)
 
             original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
     
@@ -1365,8 +1390,16 @@ class Mapper:
                                                                                     depth_trunc=self.config.max_range*0.9, 
                                                                                     convert_rgb_to_intensity=False)
 
+                
+                original_intrinsic = self.dataset.loader.intrinsic
+                resized_intrinsic = o3d.camera.PinholeCameraIntrinsic(width=int(original_intrinsic.width/vis_down_scale), 
+                    height=int(original_intrinsic.height/vis_down_scale), 
+                    intrinsic_matrix=original_intrinsic.intrinsic_matrix/vis_down_scale)
+
+                
                 # rendered point cloud in the world frame
-                self.rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(rendered_rgbd_o3d, self.dataset.loader.intrinsic, np.linalg.inv(self.T_w_c_cur_view))
+                self.rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(rendered_rgbd_o3d, 
+                    resized_intrinsic, np.linalg.inv(self.T_w_c_cur_view))
 
             
             # cur_lidar_pose_np = self.used_poses[-1].detach().cpu().numpy() 
@@ -1391,16 +1424,24 @@ class Mapper:
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                eval_depth = self.config.max_range
-                depth_valid_mask = (original_img_depth > 0) & (rendered_depth_np > 0) & (original_img_depth < eval_depth) & (rendered_depth_np < eval_depth)
-                
-                diff_depth = original_img_depth[depth_valid_mask] - rendered_depth_np[depth_valid_mask]
-                cur_depth_l1 = np.mean(np.abs(diff_depth))
-                cur_depth_rmse = np.sqrt(np.mean(diff_depth**2))
+                eval_depth_max = self.config.max_range
+                eval_depth_min = self.config.min_range
+                depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
+                diff_depth = np.abs(original_img_depth - rendered_depth_np) # already abs
+                diff_depth[~depth_valid_mask] = 0.0
+                diff_depth_masked = diff_depth[depth_valid_mask]
+                cur_depth_l1 = np.mean(diff_depth_masked)
+                cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
                 print("Depth L1 (m) ↓ :", cur_depth_l1, ", Depth RMSE (m) ↓ :", cur_depth_rmse)
                 if not cur_viewpoint_cam.train_view: # eval only on the test views
                     self.val_depthl1_list.append(cur_depth_l1)
                     self.val_depth_rmse_list.append(cur_depth_rmse)
+
+                
+                diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, 5.0)*255.0).astype(np.uint8) # 1, 3, H, W 
+                diff_depth_color = np.transpose(diff_depth_color[0], (1, 2, 0)) # H, W, 3
+                diff_depth_color = cv2.cvtColor(diff_depth_color, cv2.COLOR_RGB2BGR)
+                cv2.imshow(cam_name + ": Rendered Depth Error", diff_depth_color)
 
         return 
 

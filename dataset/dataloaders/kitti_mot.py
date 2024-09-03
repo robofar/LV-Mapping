@@ -2,6 +2,7 @@
 #
 # Copyright (c) 2022 Ignacio Vizzo, Tiziano Guadagnino, Benedikt Mersch, Cyrill
 # Stachniss.
+# 2024 Yue Pan
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -75,16 +76,12 @@ class KITTIMOTDataset:
         T_c2_l = calib_mats["T_c2_l"] 
         T_c3_l = calib_mats["T_c3_l"] 
 
-        T_r_c = calib_mats["T_r_c"] 
-        T_r2_l = T_r_c @ T_c2_l
-        T_r3_l = T_r_c @ T_c3_l
-
         self.main_cam_name = "cam2" # cam2 as main cam
 
         if self.image_available: # now we use cam2 (left color)
             H, W = 375, 1242
             
-            self.T_c_l_mats = {self.main_cam_name: T_r2_l} # use rectified frame or not?
+            self.T_c_l_mats = {self.main_cam_name: T_c2_l} # use rectified frame or not?
             self.K_mats = {self.main_cam_name: K_mat2}
             self.cam_widths = {self.main_cam_name: W}
             self.cam_heights = {self.main_cam_name: H}
@@ -100,14 +97,19 @@ class KITTIMOTDataset:
 
             self.extrinsic = T_c2_l
 
+        # get poses in IMU frame by loading oxts data
         oxts_file_path = os.path.join(data_dir, "oxts", self.sequence_id+".txt")
-
         poses_imu_w_tracking, _, _ = self.get_poses_calibration(data_dir, oxts_file_path)  # (n_frames, 4, 4) imu pose
 
         # GT poses in LiDAR frame
         Tr_lidar_imu = calib_mats["T_l_i"]
         Tr_imu_lidar = np.linalg.inv(Tr_lidar_imu)
-        self.gt_poses = Tr_lidar_imu @ poses_imu_w_tracking @ Tr_imu_lidar 
+        self.gt_poses_oxts = Tr_lidar_imu @ poses_imu_w_tracking @ Tr_imu_lidar 
+
+        # Use PIN-SLAM poses (directly in LiDAR frame)
+        poses_fn = os.path.join(data_dir, "poses_pin_slam", f"{self.sequence_id}.txt")
+        self.gt_poses = self.load_poses(poses_fn)
+
 
     def __getitem__(self, idx):
         
@@ -121,7 +123,8 @@ class KITTIMOTDataset:
             points_rgb = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
+            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, 
+                self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
 
             if self.use_only_colorized_points:
                 with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -166,6 +169,15 @@ class KITTIMOTDataset:
         timestamps = 0.5 * (yaw / np.pi + 1.0)
         return timestamps
 
+    def load_poses(self, poses_file):
+        poses = np.loadtxt(poses_file, delimiter=" ")
+        n = poses.shape[0]
+        poses = np.concatenate(
+            (poses, np.zeros((n, 3), dtype=np.float32), np.ones((n, 1), dtype=np.float32)), axis=1
+        )
+        poses = poses.reshape((n, 4, 4))  # [N, 4, 4]
+        return poses
+    
 
     def tracking_calib_from_txt(self, calibration_path):
         # borrow from https://github.com/fudan-zvg/PVG/blob/main/scene/kittimot_loader.py
@@ -206,42 +218,42 @@ class KITTIMOTDataset:
 
         K2 = P2[:3,:3]
         K3 = P3[:3,:3]
+        t2 = P2[:, 3]
+        t3 = P3[:, 3]
+
+        T_c2_r = np.eye(4)
+        T_c2_r[:3, 3] = np.dot(np.linalg.inv(K2), t2)
+
+        T_c3_r = np.eye(4)
+        T_c3_r[:3, 3] = np.dot(np.linalg.inv(K3), t3)
 
         # Extract the transformation matrix for camera to rectified camera coordinates
-        Tr_cam2camrect = np.eye(4)
-        R_rect = np.reshape(calibs[4], [3, 3])
-        Tr_cam2camrect[:3, :3] = R_rect
+        T_r_c = np.eye(4)
+        R_r_c = np.reshape(calibs[4], [3, 3])
+        T_r_c[:3, :3] = R_r_c
 
         # Extract the transformation matrices for LiDAR to camera and IMU to LiDAR coordinates
-        Tr_velo2cam = np.concatenate([np.reshape(calibs[5], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
-        Tr_imu2velo = np.concatenate([np.reshape(calibs[6], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
+        T_c_l = np.concatenate([np.reshape(calibs[5], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
+        T_l_i = np.concatenate([np.reshape(calibs[6], [3, 4]), np.array([[0.0, 0.0, 0.0, 1.0]])], axis=0)
 
-        # Compute the rectified extrinsics from cam0 to camN
-        T1 = np.eye(4)
-        T1[0, 3] = P1[0, 3] / P1[0, 0]
-        T2 = np.eye(4)
-        T2[0, 3] = P2[0, 3] / P2[0, 0]
-        T3 = np.eye(4)
-        T3[0, 3] = P3[0, 3] / P3[0, 0]
-
-        T_c0_l = Tr_velo2cam
-        T_c1_l = T1.dot(T_c0_l)
-        T_c2_l = T2.dot(T_c0_l)
-        T_c3_l = T3.dot(T_c0_l)
+        T_c2_l = T_c2_r @ T_r_c @ T_c_l
+        T_c3_l = T_c3_r @ T_r_c @ T_c_l
 
         return {
             "K2": K2,
             "K3": K3,
             "T_c2_l": T_c2_l,
             "T_c3_l": T_c3_l,
-            "T_r_c": Tr_cam2camrect,
-            "T_l_i": Tr_imu2velo,
+            "T_r_c": T_r_c,
+            "T_l_i": T_l_i,
         }
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
         # points as np.numpy (N,4)
         points[:,3] = 1 # homo coordinate
+
+        points = self.intrinsic_correct(points) # FIXME: only for kitti
 
         # transfrom velodyne points to camera coordinate
         points_cam = np.matmul(T_c_l, points.T).T # N, 4
@@ -442,4 +454,15 @@ class KITTIMOTDataset:
         # Return the poses, calibrations, and focal length
         return poses, calibrations, focal
 
-    
+    # only for kitti
+    def intrinsic_correct(self, points, correct_deg=0.195):
+        corrected_points = np.copy(points)
+        dist = np.linalg.norm(points[:, :3], axis=1)
+        kitti_var_vertical_ang = correct_deg / 180.0 * np.pi
+        v_ang = np.arcsin(points[:, 2] / dist)
+        v_ang_c = v_ang + kitti_var_vertical_ang
+        hor_scale = np.cos(v_ang_c) / np.cos(v_ang)
+        corrected_points[:, 0] *= hor_scale
+        corrected_points[:, 1] *= hor_scale
+        corrected_points[:, 2] = dist * np.sin(v_ang_c)
+        return corrected_points

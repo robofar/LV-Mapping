@@ -1,19 +1,12 @@
 setting: 
-  name: "test_kitti_gs"
+  name: "test_vkitti_gs"
   output_root: "./experiments"
-  deskew: False
-  kitti_correct: True
-  correct_deg: 0.195
   color_channel: 3
-  color_map_on: True 
+  color_map_on: True
 process:
   max_range_m: 80.0 # 80.0
   vox_down_m: 0.05
   estimate_normal: False
-  # dynamic_filter_on: True
-  # dynamic_certainty_thre: 1.0
-  # dynamic_sdf_ratio_thre: 0.5
-  # dynamic_min_grad_norm_thre: 0.25
 sampler:
   surface_sample_range_m: 0.2 
   surface_sample_n: 4
@@ -21,28 +14,21 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.15 # 0.15 is a bit too small?
+  voxel_size_m: 0.15 # 0.5
   search_alpha: 0.8
-  query_nn_k: 8
-loss:
-  sigma_sigmoid_m: 0.08
-  # loss_weight_on: True
-  # dist_weight_scale: 0.8
-  ekional_loss_on: True
-  weight_e: 0.5
 gs:
-  monodepth_on: True
+  monodepth_on: False
   gs_iters: 10 # 20
   gs_bs: 5 # 5 # train more
   gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 2 # 2
   img_pool_size: 25 # 15
   img_test_pool_size: 15
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   init_opacity: 0.5
-  sh_degree: 2 # According to experiments, it seems to not play an important role, but why
-  inverse_depth_loss: True
+  sh_degree: 0 # According to experiments, it seems to not play an important role, but why
+  inverse_depth_loss: False
   lambda_depth: 10.0 # 10.0
   lambda_distort: 100.0 # 100.0
   # lambda_normal: 0.1 # not too big 0.05 
@@ -53,7 +39,7 @@ gs:
   lambda_sdf: 0.0
   gs_rotation_lr: 1e-2
 continual:
-  batch_size_new_sample: 3000
+  batch_size_new_sample: 2000
   pool_capacity: 1e7
   pool_filter_freq: 10
 # tracker:
@@ -68,8 +54,7 @@ pgo:
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
   batch_size: 16384
-  iters: 15 # i don't know how # TODO
+  adaptive_iters: True
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
-  sensor_cad_path: ./cad/kitti_car.ply
+  mesh_min_nn: 15

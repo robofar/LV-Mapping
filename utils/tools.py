@@ -730,12 +730,14 @@ def tranmat_close_to_identity(mats: np.ndarray, rot_thre: float, tran_thre: floa
 
 # borrow from marigold
 def colorize_depth_maps(
-    depth_map, min_depth, max_depth, cmap="Spectral", valid_mask=None, use_valid_depth_mask = True
-):
+    depth_map, min_depth, max_depth, cmap="inferno_r", valid_mask=None, use_valid_depth_mask = True
+):  
     """
     Colorize depth maps. computed in numpy
     """
     assert len(depth_map.shape) >= 2, "Invalid dimension"
+
+    # use other cmap such as inferno_r
 
     if isinstance(depth_map, torch.Tensor):
         depth = depth_map.detach().squeeze().numpy()

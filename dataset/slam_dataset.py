@@ -299,6 +299,7 @@ class SLAMDataset():
 
                     H, W = cur_img.shape[1], cur_img.shape[2]
                     sky_mask = None # optional sky mask (sky:1, non-sky:0)
+                    pred_normal = None # optional normal image 
 
                     # print(cur_img.shape) # for kitti: 376, 1241
 
@@ -311,7 +312,7 @@ class SLAMDataset():
 
                         mono_depth_input_rgb = cur_img[:3]
                         
-                        # down-sample input image to save computation
+                        # down-sample input image to save computation (otherwise it will take more than 100ms)
                         if H*W > 5e5: # 5e5
                             mono_depth_input_rgb = F.interpolate(mono_depth_input_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                             # For kitti, if downsized, computational time can be decrease to 20ms on my GPU
@@ -347,43 +348,23 @@ class SLAMDataset():
                         # pred_depth[invalid_mask] = 0 
                         pred_depth_np = pred_depth.permute(1,2,0).squeeze(-1).detach().cpu().numpy() # H, W
 
-                        pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
-                        pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
-                        pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
-                        cv2.imshow("Mono Depth", pred_depth_color)
-                
-
-                        # pred_normal[invalid_mask] = 0
-                        pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy() # 3, H, W
-                        pred_normal_vis_np = ((0.5 - pred_normal_np * 0.5) * 255.0).astype(np.uint8) # convert to the normal vis color # surf_normal
-                        pred_normal_vis_np = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR)
-                        cv2.imshow("Mono Normal", pred_normal_vis_np)
-
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
                         if cur_img_depth_np is not None:
                             valid_depth_mask = (cur_img_depth_np > self.config.min_range) & (pred_depth_np > self.config.min_range)
                             valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
+                            residual_before = pred_depth_with_gt - valid_depth_measurement
+                            rmse_before = np.sqrt((np.mean(residual_before**2)))
+                            print("mono depth rmse (m): ", rmse_before) # RMSE (m)
                             
                             # depth least square fitting with regards to the lidar measurement
                             coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
                             k, b = coefficients
-                            print("depth fitting residual (m): ", (residuals[0]/np.shape(valid_depth_measurement)[0])**(0.5)) # RMSE (m)
+                            rmse_after = np.sqrt((residuals[0]/np.shape(valid_depth_measurement)[0]))
+                            print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
                             pred_depth_np = k * pred_depth_np + b
-
-                        # why depthanything is so slow
-                        # tic_depthanything = get_time()
-                        # inputs = self.depth_anything_processor(images=cur_img, return_tensors="pt", do_rescale=False)
-                        # with torch.no_grad():
-                        #     outputs = self.depth_anything(**inputs)
-                        #     predicted_depth = outputs.predicted_depth
-                        # toc_depthanything = get_time()
-                        # if not self.config.silence:
-                        #     print("DepthAnything prediction time     (ms):", (toc_depthanything-tic_depthanything)*1e3)
                         
-                        # print(pred_depth_np)
-
                         # filter, clean depth
                         # filter the depth image, 1.5cm sigma, in 3 neighborhood 
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
@@ -395,8 +376,21 @@ class SLAMDataset():
                         # edges = cv2.Canny(cur_gray_img_np, threshold1=100, threshold2=200) # H, W
                         # pred_depth_np[edges>0] = 0.0
 
-                        # print(np.shape(edges))
-                        # print(edges)
+                        # visualize 
+                        cur_img_rgb_vis = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR) 
+                        cv2.imshow("Mono RGB", cur_img_rgb_vis)
+
+                        pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                        pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
+                        pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
+                        cv2.imshow("Mono Depth", pred_depth_color)
+                
+                        # pred_normal[invalid_mask] = 0
+                        pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy() # 3, H, W
+                        pred_normal_vis_np = ((0.5 - pred_normal_np * 0.5) * 255.0).astype(np.uint8) # convert to the normal vis color # surf_normal
+                        pred_normal_vis_np[sky_mask_np] = 0
+                        pred_normal_vis_np = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR)
+                        cv2.imshow("Mono Normal", pred_normal_vis_np)
 
                         # show sky mask
                         # cur_img_rgb_np[sky_mask_np] = 0  
@@ -447,20 +441,12 @@ class SLAMDataset():
 
                         self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
                         # points = np.concatenate((points, points_xyzrgb), axis=0) # concat 
-                        
-                        # TODO: note
-                        # better to have two point cloud, the lidar and the mono depth metric point cloud
-                        # mono depth ones only used to initialize neural points (gaussians)
                     
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.1,
                                                           cam_name, img_down_rate, pred_normal, sky_mask, self.device)
 
-        
-
-           
-         
         self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
 
         if self.config.deskew: 
