@@ -33,10 +33,12 @@ import open3d as o3d
 
 class AzureDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
-
+        
+        self.is_rgbd: bool = True
+        
         self.rgb_dir = os.path.join(data_dir, "color/")
         self.depth_dir = os.path.join(data_dir, "depth/")
-
+        
         # 1280 x 720
         self.rgb_frames = sorted(glob.glob(self.rgb_dir + '*.jpg'))
         self.depth_frames = sorted(glob.glob(self.depth_dir + '*.png'))
@@ -88,7 +90,15 @@ class AzureDataset:
         for pose_frame in self.pose_frames:
             cur_pose = np.loadtxt(pose_frame)
             gt_poses_list.append(cur_pose)
-        self.gt_poses = np.array(gt_poses_list) # N,4,4
+
+        self.T_w_m = np.zeros((4, 4))
+        self.T_w_m[0, 2] = 1
+        self.T_w_m[1, 0] = -1
+        self.T_w_m[2, 1] = -1
+        self.T_w_m[3, 3] = 1
+
+        self.gt_poses = np.array(gt_poses_list) # N,4,4 # T_mc
+        self.gt_poses = self.T_w_m @ self.gt_poses # T_wc
         
         self.max_depth_m = 8.0
         self.down_sample_on = False

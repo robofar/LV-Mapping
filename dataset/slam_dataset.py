@@ -63,6 +63,8 @@ class SLAMDataset():
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
         # "Tr" is used for KITTI, as the reference pose is not in LiDAR frame
 
+        self.is_rgbd: bool = False # by default, lidar dataset
+
         self.loader = None
         if config.use_dataloader: 
 
@@ -89,6 +91,9 @@ class SLAMDataset():
             if hasattr(self.loader, "T_c_l_mats"):
                 self.T_c_l_mats = self.loader.T_c_l_mats # as dictionary
                 # print(self.T_c_l_mats)
+            if hasattr(self.loader, "is_rgbd"):
+                self.is_rgbd = self.loader.is_rgbd
+
             if config.color_channel == 3:
                 self.loader.load_img = True
 
@@ -203,7 +208,8 @@ class SLAMDataset():
         self.cur_point_normals = None
 
         self.cur_point_cloud_mono_depth = None # point cloud results from image mono (metric) depth estimation
-
+        self.cur_point_normals_mono_depth = None
+        
         # source data for registration
         self.cur_source_points = None
         self.cur_source_normals = None
@@ -302,13 +308,12 @@ class SLAMDataset():
                     pred_normal = None # optional normal image 
 
                     # print(cur_img.shape) # for kitti: 376, 1241
-
-                    # TODO
                     
                     if self.monodepth_on and cam_name == self.loader.main_cam_name:
                         
-                        # cur_K = self.K_mats[cam_name]
-                        # rgb, pad_info = self.preprocess_img(cur_img_np, cur_K) # why getting slower here
+                        use_mono_depth_for_gs_init = True
+                        if self.is_rgbd:
+                            use_mono_depth_for_gs_init = False
 
                         mono_depth_input_rgb = cur_img[:3]
                         
@@ -350,21 +355,29 @@ class SLAMDataset():
 
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
-                        if cur_img_depth_np is not None:
+                        if use_mono_depth_for_gs_init and cur_img_depth_np is not None:
                             valid_depth_mask = (cur_img_depth_np > self.config.min_range) & (pred_depth_np > self.config.min_range)
                             valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
+                            valid_depth_count = np.shape(valid_depth_measurement)[0]
+                            # print(valid_depth_count)
+
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             residual_before = pred_depth_with_gt - valid_depth_measurement
                             rmse_before = np.sqrt((np.mean(residual_before**2)))
                             print("mono depth rmse (m): ", rmse_before) # RMSE (m)
                             
                             # depth least square fitting with regards to the lidar measurement
-                            coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
-                            k, b = coefficients
-                            rmse_after = np.sqrt((residuals[0]/np.shape(valid_depth_measurement)[0]))
-                            print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
-                            pred_depth_np = k * pred_depth_np + b
-                        
+                            if valid_depth_count > 100: # at least some valid measurements available
+                                coefficients, residuals, _, _, _  = np.polyfit(pred_depth_with_gt, valid_depth_measurement, 1, full=True)
+                                # sometimes this fitting would fail (TODO)
+                                k, b = coefficients
+                                rmse_after = np.sqrt((residuals[0]/valid_depth_count))
+                                print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
+                                pred_depth_np = k * pred_depth_np + b
+                            else:
+                                use_mono_depth_for_gs_init = False
+
+                      
                         # filter, clean depth
                         # filter the depth image, 1.5cm sigma, in 3 neighborhood 
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
@@ -398,6 +411,8 @@ class SLAMDataset():
                         # cur_img_rgb_cvshow = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR)
                         # # cv2.imshow(" Sky mask", cur_img_rgb_cvshow)
                         # cv2.imshow(" Invalid mask", cur_img_rgb_cvshow)
+
+                        pred_depth_np[pred_depth_np < self.config.min_range] = 0.0 # remove too close estimations
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
@@ -439,9 +454,12 @@ class SLAMDataset():
                         points_rgb = np.array(pred_pcd.colors, dtype=np.float64)
                         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-                        self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
-                        # points = np.concatenate((points, points_xyzrgb), axis=0) # concat 
-                    
+                        points_normals = np.array(pred_pcd.normals, dtype=np.float64)
+                        
+                        if use_mono_depth_for_gs_init:
+                            self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
+                            self.cur_point_normals_mono_depth = torch.tensor(points_normals, device=self.device, dtype=self.dtype)
+
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.max_range*1.1,
@@ -702,13 +720,7 @@ class SLAMDataset():
                 self.config.min_range,
                 crop_max_range,
             )
-        
-        if self.cur_point_cloud_mono_depth is not None:
-            self.cur_point_cloud_mono_depth, _ = crop_frame(
-                self.cur_point_cloud_mono_depth,
-                min_range=self.config.min_range*5.0 # we don't use the nearby part (FIXME)
-            )
-
+    
         if self.config.kitti_correction_on:
             self.cur_point_cloud_torch = intrinsic_correct(
                 self.cur_point_cloud_torch, self.config.correction_deg

@@ -128,13 +128,15 @@ class NeuralPoints(nn.Module):
         self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
 
         # Gaussian parameters
+        self.gs_dim_count: int = 3 #  2 or 3, 2D or 3D GS # FIXME
+
         self.active_sh_degree = self.config.sh_degree # TODO
         self.max_sh_degree = self.config.sh_degree
 
         self.xyz = torch.empty(0, dtype=self.dtype, device=self.device) # N, 3 # here, this represent the displacement from the neural point
         self.features_dc = torch.empty(0, dtype=self.dtype, device=self.device) # N,1,3 # basic color
         self.features_rest = torch.empty(0, dtype=self.dtype, device=self.device) # N,S-1,3 # additional color with SH
-        self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian
+        self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
         self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
         self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
@@ -212,20 +214,30 @@ class NeuralPoints(nn.Module):
         return torch.sum(self.local_free_gs_mask).int()
     
     @staticmethod
-    def build_covariance_from_scaling_rotation(center, scaling, scaling_modifier, rotation):
+    def build_covariance_from_scaling_rotation_2dgs(center, scaling, scaling_modifier, rotation):
         RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0,2,1)
         trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
         trans[:,:3,:3] = RS
         trans[:, 3,:3] = center
         trans[:, 3, 3] = 1
         return trans
+
+    def build_covariance_from_scaling_rotation_3dgs(center, scaling, scaling_modifier, rotation): # center not used
+        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+        actual_covariance = L @ L.transpose(1, 2)
+        symm = strip_symmetric(actual_covariance)
+        return symm
     
     # for GS
     def setup_functions(self):
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
 
-        self.covariance_activation = self.build_covariance_from_scaling_rotation
+        if self.gs_dim_count == 2:
+            self.covariance_activation = self.build_covariance_from_scaling_rotation_2dgs # FIXME
+        else: # by defult 3DGS
+            self.covariance_activation = self.build_covariance_from_scaling_rotation_3dgs
+
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
         self.rotation_activation = torch.nn.functional.normalize
@@ -537,16 +549,25 @@ class NeuralPoints(nn.Module):
         else: # initalize with a larger radius
             init_scale = mean_dist * 3.0
 
-        new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, 2) # only for two dim, 2D Gaussian
-        
+        new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, self.gs_dim_count) # only for two dim, 2D Gaussian
+        if self.gs_dim_count == 3: # gaussian surfel setting
+            new_scales[..., -1] -= 1e10 # squeeze z scaling
+
         self.scaling = torch.cat((self.scaling, new_scales), 0) 
 
         # print(self.scaling[:10])
         
         new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
+        
         if added_normals is not None: # initialize it with the valid surface normal 
             valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
             new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
+
+        added_ray = added_pt - sensor_position # N, 3
+        new_normals = rotation2normal(new_rots) # N, 3
+        dot_product = (added_ray * new_normals).sum(dim=1) # N
+        new_normals[dot_product>0] *= -1 # switch the normal direction if the normal is not pointing to the camera
+        new_rots = normal2rotation(new_normals)
         
         self.rotation = torch.cat((self.rotation, new_rots), 0)
 
@@ -904,7 +925,7 @@ class NeuralPoints(nn.Module):
         for i in range(self.features_rest.shape[1]*self.features_rest.shape[2]):
             l.append('f_rest_{}'.format(i))
         l.append('opacity')
-        for i in range(self.scaling.shape[1]+1): # 2D GS --> 3D GS
+        for i in range(3): # 2D GS --> 3D GS
             l.append('scale_{}'.format(i))
         for i in range(self.rotation.shape[1]):
             l.append('rot_{}'.format(i))
@@ -939,9 +960,12 @@ class NeuralPoints(nn.Module):
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         # should be a small value before the exp activation, because we want to have a scale close to 0 after activation
-        scale_3d = np.ones((xyz.shape[0], 1))*(-1e7) 
+        if self.gs_dim_count == 2: # for 2D GS
+            scale_3d = np.ones((xyz.shape[0], 1))*(-1e7) 
+            scale = np.concatenate((scale, scale_3d), axis=1) 
+
         # print(scale_z.shape)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, scale_3d, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(save_path)

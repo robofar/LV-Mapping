@@ -54,29 +54,53 @@ def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
     return np.float32(Rt)
 
 
-# transfrom from camera space to clipping space
-def getProjectionMatrix(znear, zfar, fovX, fovY):
-    tanHalfFovY = math.tan((fovY / 2))
-    tanHalfFovX = math.tan((fovX / 2))
+# # transfrom from camera space to clipping space
+# def getProjectionMatrix(znear, zfar, fovX, fovY, prcppoint):
+#     tanHalfFovY = math.tan((fovY / 2))
+#     tanHalfFovX = math.tan((fovX / 2))
 
-    top = tanHalfFovY * znear
-    bottom = -top
-    right = tanHalfFovX * znear
-    left = -right
+#     top = tanHalfFovY * znear
+#     bottom = -top
+#     right = tanHalfFovX * znear
+#     left = -right
 
-    P = torch.zeros(4, 4)
+#     P = torch.zeros(4, 4)
 
-    z_sign = 1.0
+#     z_sign = 1.0
 
-    P[0, 0] = 2.0 * znear / (right - left)
-    P[1, 1] = 2.0 * znear / (top - bottom)
-    P[0, 2] = (right + left) / (right - left) # A
-    P[1, 2] = (top + bottom) / (top - bottom) # B
-    P[3, 2] = z_sign
-    P[2, 2] = z_sign * zfar / (zfar - znear) # C
-    P[2, 3] = -(zfar * znear) / (zfar - znear) # D
-    return P
+#     P[0, 0] = 2.0 * znear / (right - left)
+#     P[1, 1] = 2.0 * znear / (top - bottom)
+#     P[0, 2] = (right + left) / (right - left) # A
+#     P[1, 2] = (top + bottom) / (top - bottom) # B
+#     P[3, 2] = z_sign
+#     P[2, 2] = z_sign * zfar / (zfar - znear) # C
+#     P[2, 3] = -(zfar * znear) / (zfar - znear) # D
+#     return P
 
+# general usage: can also deal with the cases when the optical center is not exactly at the center of the image
+def getProjectionMatrix(znear, zfar, fovX, fovY, W, H, prcp): 
+     fx = fov2focal(fovX, W)
+     fy = fov2focal(fovY, H)
+     # prcp as principle point
+     cx = prcp[0] * W 
+     cy = prcp[1] * H
+     top = znear * cy / fy 
+     bottom = -znear * (H - cy) / fy 
+     right = znear * (W - cx) / fx 
+     left = -znear * cx / fx 
+  
+     P = torch.zeros(4, 4) 
+     z_sign = 1.0 
+  
+     P[0, 0] = 2.0 * znear / (right - left) 
+     P[1, 1] = 2.0 * znear / (top - bottom) 
+     P[0, 2] = -(right + left) / (right - left) 
+     P[1, 2] = (top + bottom) / (top - bottom) 
+     P[3, 2] = z_sign 
+     P[2, 2] = z_sign * zfar / (zfar - znear) 
+     P[2, 3] = -(zfar * znear) / (zfar - znear) 
+  
+     return P
 
 # def getProjectionMatrix(znear, zfar, fovX, fovY):
 #     tanHalfFovY = math.tan((fovY / 2))

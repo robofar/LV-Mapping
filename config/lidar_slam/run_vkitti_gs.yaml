@@ -20,10 +20,10 @@ gs:
   monodepth_on: False
   gs_iters: 10 # 20
   gs_bs: 5 # 5 # train more
-  gaussian_bs_ratio: 4.0
-  gs_keyframe_interval: 2 # 2
-  img_pool_size: 25 # 15
-  img_test_pool_size: 15
+  gaussian_bs_ratio: 2.0
+  gs_keyframe_interval: 1 # 2
+  img_pool_size: 15 # 15
+  img_test_pool_size: 5
   gs_down_rate: 1
   gs_vis_down_rate: 1
   init_opacity: 0.5
@@ -58,3 +58,4 @@ optimizer: # mappers
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 15
+  sensor_cad_path: ./cad/kitti_car.ply

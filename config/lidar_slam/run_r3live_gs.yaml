@@ -2,8 +2,8 @@ setting:
   name: "test_r3live_gs"
   output_root: "./experiments"
   deskew: True
-  color_channel: 0
-  color_map_on: False # pin slam does not make use of color
+  color_channel: 3
+  color_map_on: True # pin slam does not make use of color
 process:
   min_range_m: 0.5
   max_range_m: 50.0
@@ -16,24 +16,24 @@ sampler:
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2 
 neuralpoints:
-  voxel_size_m: 0.4
+  voxel_size_m: 0.2
   search_alpha: 0.5
   # weighted_first: False
-# gs:
-#   gs_iters: 5
-#   gs_bs: 2
-#   gs_keyframe_interval: 4
-#   img_pool_size: 30
-#   gs_down_rate: 1
-#   gs_vis_down_rate: 1
-#   sh_degree: 1
-#   lambda_depth: 0.1
-#   lambda_distort: 100.0
-#   lambda_normal: 0.05 # not too big 0.05 
-#   lambda_isotropic: 1.0
-#   lambda_sdf_cons: 1.0
-#   lambda_sdf_normal_cons: 1.0
-#   lambda_sdf: 1.0
+gs:
+  gs_iters: 5
+  gs_bs: 2
+  gs_keyframe_interval: 4
+  img_pool_size: 30
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
+  sh_degree: 1
+  lambda_depth: 0.1
+  lambda_distort: 100.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_isotropic: 1.0
+  # lambda_sdf_cons: 1.0
+  # lambda_sdf_normal_cons: 1.0
+  # lambda_sdf: 1.0
 loss:
   sigma_sigmoid_m: 0.08
   loss_weight_on: True

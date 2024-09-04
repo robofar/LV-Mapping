@@ -35,6 +35,8 @@ import open3d as o3d
 class CKADataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
 
+        self.is_rgbd: bool = True
+
         self.rgb_dir = os.path.join(data_dir, "color/")
         self.depth_dir = os.path.join(data_dir, "depth/")
 
@@ -103,6 +105,7 @@ class CKADataset:
                                           fy=self.fy,
                                           cx=self.cx,
                                           cy=self.cy)
+            self.extrinsic = self.T_c_l 
         
         self.max_depth_m = 2.5
         self.down_sample_on = False
@@ -125,7 +128,7 @@ class CKADataset:
                                                                             convert_rgb_to_intensity=False)
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-            rgbd_image, self.intrinsic)
+            rgbd_image, self.intrinsic, self.extrinsic)
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)
         

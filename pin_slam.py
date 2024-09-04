@@ -289,7 +289,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if frame_id < 5 or (not dataset.lose_track and not dataset.stop_status):
             mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals,
                                  dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0),
-                                 dataset.cur_point_cloud_mono_depth)
+                                 dataset.cur_point_cloud_mono_depth, dataset.cur_point_normals_mono_depth)
         else:
             mapper.determine_used_pose()
             neural_points.reset_local_map(dataset.cur_pose_torch[:3,3], None, frame_id) # not efficient for large map
@@ -509,11 +509,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             gs_rendered_tsdf_mesh = mapper.gs_tsdf_fusion(vox_size=output_mc_res_m, depth_trunc=config.max_range*0.9, output_path=gs_tsdf_mesh_path)
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
-    neural_points.recreate_hash(None, None, False, False) # merge the final neural point map
+    neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map
     
-    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0, vis_normals=True)
+    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0, vis_normals=True, vis_free_gaussians=True)
     if config.save_map:
-        o3d.io.write_point_cloud(os.path.join(run_path, "map", "neural_points.ply"), neural_pcd) # write the neural point cloud
+        neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
+        o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
+        print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
         output_mc_res_m = config.mc_res_m*0.6
         chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 300) # reconstruct in chunks
@@ -522,9 +524,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, output_mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
     neural_points.clear_temp() # clear temp data for output
     if config.save_map:
-        save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
-        gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here
-        neural_points.save_gaussian_ply(gs_map)
+        if config.gs_on:
+            gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here
+            neural_points.save_gaussian_ply(gs_map)
+        else:
+            save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
     if config.save_merged_pc:
         dataset.write_merged_point_cloud() # replay: save merged point cloud map
     

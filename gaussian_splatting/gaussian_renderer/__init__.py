@@ -13,14 +13,23 @@ import math
 import numpy as np
 import torch
 
-from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+use_2d_gs = False 
+
+# 2DGS
+if use_2d_gs:
+    from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+# Gaussian Surfel
+else:
+    from diff_gaussian_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+
 from model.neural_gaussians import NeuralPoints
 from gaussian_splatting.utils.sh_utils import eval_sh
-from gaussian_splatting.utils.point_utils import depth_to_normal
+from gaussian_splatting.utils.point_utils import depth_to_normal, depth2normal
 from gaussian_splatting.utils.graphics_utils import getWorld2View
+from gaussian_splatting.scene.cameras import CamImage
 
 # the mian gaussain rendering function
-def render(viewpoint_camera, camera_pose: torch.Tensor,
+def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
            neural_gaussians: NeuralPoints, bg_color: torch.Tensor, 
            scaling_modifier = 1.0, override_color = None, down_rate=0):
     """
@@ -68,6 +77,9 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     projection_matrix = viewpoint_camera.projection_matrix.to(dtype=dtype, device=device) # P_mat.T
 
     cam_center = cam_world_view_tran.inverse()[3, :3]
+
+    # principle point
+    prcppoint = viewpoint_camera.prcppoint.to(dtype=dtype, device=device)
     
     full_proj_transform = cam_world_view_tran @ projection_matrix 
 
@@ -78,22 +90,47 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
     resolution_width = int(viewpoint_camera.image_width/img_scale)
     resolution_height = int(viewpoint_camera.image_height/img_scale)
 
+    # used by gaussian surfels
+    patch_size = [float('inf'), float('inf')]
+    gaussian_surfel_train_config = torch.tensor([True, True, True], dtype=dtype, device=device) # surface_on, normalize_depth_on, perpix_depth_on
+
     # print(resolution_height, resolution_width)
 
-    raster_settings = GaussianRasterizationSettings(
-        image_height=resolution_height,
-        image_width=resolution_width,
-        tanfovx=tanfovx,
-        tanfovy=tanfovy,
-        bg=bg_color,
-        scale_modifier=scaling_modifier,
-        viewmatrix=cam_world_view_tran, # from world frame to camera space 
-        projmatrix=full_proj_transform, 
-        sh_degree=neural_gaussians.active_sh_degree,
-        campos=cam_center,
-        prefiltered=False,
-        debug=False,
-    )
+    if use_2d_gs:
+        # 2D GS
+        raster_settings = GaussianRasterizationSettings(
+            image_height=resolution_height,
+            image_width=resolution_width,
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=cam_world_view_tran, # from world frame to camera space 
+            projmatrix=full_proj_transform, 
+            sh_degree=neural_gaussians.active_sh_degree,
+            campos=cam_center,
+            prefiltered=False,
+            debug=False,
+        )
+    else:
+        # Gaussian Surfel
+        raster_settings = GaussianRasterizationSettings(
+            image_height=resolution_height,
+            image_width=resolution_width,
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=cam_world_view_tran,
+            projmatrix=full_proj_transform,
+            patch_bbox=viewpoint_camera.random_patch(), # original image size
+            prcppoint=prcppoint,
+            sh_degree=neural_gaussians.active_sh_degree,
+            campos=cam_center,
+            prefiltered=False,
+            debug=False,
+            config=gaussian_surfel_train_config,
+        )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
@@ -143,79 +180,121 @@ def render(viewpoint_camera, camera_pose: torch.Tensor,
         colors_precomp = override_color
     
     # main function
-    rendered_image, radii, allmap = rasterizer(
-        means3D = means3D,
-        means2D = means2D,
-        shs = shs,
-        colors_precomp = colors_precomp,
-        opacities = opacity,
-        scales = scales,
-        rotations = rotations,
-        cov3D_precomp = cov3D_precomp # TODO, none
-    ) 
+    if use_2d_gs:
+        rendered_image, radii, allmap = rasterizer(
+            means3D = means3D,
+            means2D = means2D,
+            shs = shs,
+            colors_precomp = colors_precomp,
+            opacities = opacity,
+            scales = scales,
+            rotations = rotations,
+            cov3D_precomp = cov3D_precomp # none
+        ) 
 
-    rendered_image = torch.nan_to_num(rendered_image, 0, 0)
+        rendered_image = torch.nan_to_num(rendered_image, 0, 0)
+        
+        # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
+        # They will be excluded from value updates used in the splitting criteria.
+        rets =  {"render": rendered_image,
+                "viewspace_points": means2D,
+                "visibility_filter" : radii > 0,
+                "radii": radii,
+        }
+
+        # additional regularizations
+        render_alpha = allmap[1:2]
+
+        # print(render_alpha.shape)
+
+        # print(torch.max(render_alpha)) # not rendering anything
+
+        # get normal map
+        # transform normal from view space to world space
+        # this is the normal of the gaussian at the rendered surface
+        render_normal = allmap[2:5]
+        render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
+        
+        # get median depth map # what does this mean? # TODO
+        render_depth_median = allmap[5:6]
+        render_depth_median = torch.nan_to_num(render_depth_median, 0, 0) # gaussian depth (camera to ray-splat intersection) when aplha (most close to) = 0.5
+
+        # get expected depth map
+        render_depth_expected = allmap[0:1]
+        render_depth_expected = (render_depth_expected / render_alpha) # alpha blending of the gaussian depth (camera to ray-splat intersection)
+        render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
+        
+        # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)
+        render_dist = allmap[6:7]
+
+        # print(render_dist)
+
+        # pseudo surface attributes
+        # surf depth is either median or expected by setting depth_ratio to 1 or 0
+        # for bounded scene, use median depth, i.e., depth_ratio = 1; 
+        # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
+
+        # what's the depth_ratio? TODO
+        # TODO: read the paper again
+
+        depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected
+        # depth_ratio = 1 # bounded scene, in this case, just render_depth_median
+        surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
+        
+        # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
+        surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
+        surf_normal = surf_normal.permute(2,0,1)
+        # remember to multiply with accum_alpha since render_normal is unnormalized.
+        # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
+
+        # rendered result
+        rets.update({
+            'rend_alpha': render_alpha,
+            'rend_normal': render_normal,
+            'rend_dist': render_dist,
+            'surf_depth': surf_depth,
+            'surf_normal': surf_normal,
+        })
     
-    # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
-    # They will be excluded from value updates used in the splitting criteria.
-    rets =  {"render": rendered_image,
-            "viewspace_points": means2D,
-            "visibility_filter" : radii > 0,
-            "radii": radii,
-    }
+    else:
+        # gaussian surfels
+        # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+        rendered_image, rendered_normal, rendered_depth, rendered_opac, radii = rasterizer(
+            means3D = means3D,
+            means2D = means2D,
+            shs = shs,
+            colors_precomp = colors_precomp,
+            opacities = opacity,
+            scales = scales,
+            rotations = rotations,
+            cov3D_precomp = cov3D_precomp)
 
-    # additional regularizations
-    render_alpha = allmap[1:2]
+        # here the rendered_normal is already normalized?
 
-    # print(render_alpha.shape)
+        # this small part is from 2D GS
+        # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
+        mask_vis = (rendered_opac.detach() > 1e-5)
+        
+        surf_normal = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface
+        # surf_normal = surf_normal.permute(2,0,1)
+        # remember to multiply with accum_alpha since render_normal is unnormalized.
+        # surf_normal = surf_normal * (rendered_opac).detach()
+        
+        # normal_norm = rendered_normal.norm(2, dim=0) # 3,W,H
+        # print(normal_norm)
 
-    # print(torch.max(render_alpha)) # not rendering anything
+        # normal_norm = surf_normal.norm(2, dim=0) # 3,W,H
+        # print(normal_norm)
 
-    # get normal map
-    # transform normal from view space to world space
-    # this is the normal of the gaussian at the rendered surface
-    render_normal = allmap[2:5]
-    render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
-    
-    # get median depth map # what does this mean? # TODO
-    render_depth_median = allmap[5:6]
-    render_depth_median = torch.nan_to_num(render_depth_median, 0, 0) # gaussian depth (camera to ray-splat intersection) when aplha (most close to) = 0.5
+        # print(rendered_opac)
 
-    # get expected depth map
-    render_depth_expected = allmap[0:1]
-    render_depth_expected = (render_depth_expected / render_alpha) # alpha blending of the gaussian depth (camera to ray-splat intersection)
-    render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
-    
-    # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)
-    render_dist = allmap[6:7]
+        # surf_normal *= -1 # switch direction
 
-    # print(render_dist)
+        # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
+        # They will be excluded from value updates used in the splitting criteria.
+        return {"render": rendered_image, "rend_normal": rendered_normal, "surf_depth": rendered_depth,
+                "rend_alpha": rendered_opac, 'surf_normal': surf_normal,
+                "viewspace_points": screenspace_points, "visibility_filter" : radii > 1, "radii": radii}
 
-    # pseudo surface attributes
-    # surf depth is either median or expected by setting depth_ratio to 1 or 0
-    # for bounded scene, use median depth, i.e., depth_ratio = 1; 
-    # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
-
-    # what's the depth_ratio? TODO
-    # TODO: read the paper again
-
-    depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected
-    # depth_ratio = 1 # bounded scene, in this case, just render_depth_median
-    surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
-    
-    # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
-    surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
-    surf_normal = surf_normal.permute(2,0,1)
-    # remember to multiply with accum_alpha since render_normal is unnormalized.
-    surf_normal = surf_normal * (render_alpha).detach()
-
-    # rendered result
-    rets.update({
-        'rend_alpha': render_alpha,
-        'rend_normal': render_normal,
-        'rend_dist': render_dist,
-        'surf_depth': surf_depth,
-        'surf_normal': surf_normal,
-    })
 
     return rets

@@ -18,7 +18,8 @@ wandb==0.17.0
 # for gs
 opencv-python
 torchmetrics==1.4.1
--e submodules/diff-surfel-rasterization # editable install
+-e submodules/diff-surfel-rasterization # editable install # 2D GS
+-e submodules/diff-gaussian-surfel-rasterization # editable install # Gaussian Surfels
 # for metric3d
 mmcv
 timm

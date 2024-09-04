@@ -34,6 +34,8 @@ class TUMDataset:
  
         sequence_dir = os.path.join(data_dir, sequence)
 
+        self.is_rgbd: bool = True
+
         self.rgb_frames, self.depth_frames, self.gt_poses = self.loadtum(sequence_dir)
 
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
@@ -161,8 +163,9 @@ class TUMDataset:
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
             rgbd_image,
-            self.intrinsic
-        )
+            self.intrinsic,
+            self.extrinsic)
+
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)
 

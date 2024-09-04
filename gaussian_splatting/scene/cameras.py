@@ -9,6 +9,8 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import random
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -16,61 +18,6 @@ import torch.nn.functional as F
 import numpy as np
 from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View2, getProjectionMatrix, focal2fov
 
-
-# this is important
-class Camera(nn.Module):
-    def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
-                 image_name, uid,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
-                 ):
-        super(Camera, self).__init__()
-
-        self.uid = uid
-        self.colmap_id = colmap_id # this is not necessary
-        # extrinsic
-        self.R = R # rotation
-        self.T = T # translation
-
-        # you can use this two functions
-        # FovY = focal2fov(focal_length_x, height)
-        # FovX = focal2fov(focal_length_x, width)
-
-        self.FoVx = FoVx 
-        self.FoVy = FoVy
-        self.image_name = image_name
-
-        # we may need to handle the sky mask
-
-        try:
-            self.data_device = torch.device(data_device)
-        except Exception as e:
-            print(e)
-            print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
-            self.data_device = torch.device("cuda")
-
-        # image as 3,H,W
-        self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
-
-        if gt_alpha_mask is not None:
-            # self.original_image *= gt_alpha_mask.to(self.data_device)
-            self.gt_alpha_mask = gt_alpha_mask.to(self.data_device)
-        else:
-            self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
-            self.gt_alpha_mask = None
-        
-        self.zfar = 100.0
-        self.znear = 0.01
-
-        self.trans = trans
-        self.scale = scale
-
-        self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda() # T_wg
-        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda() # T_gi
-        
-        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0) # T_wi
-        self.camera_center = self.world_view_transform.inverse()[3, :3]
 
 # used by us
 class CamImage:
@@ -81,6 +28,8 @@ class CamImage:
         self.frame_id = frame_id
         self.cam_id = cam_id
         self.uid = f"{frame_id:05d}_{cam_id}"
+
+        self.device = device
 
         self.train_view = False # is used as train view or test view
 
@@ -94,15 +43,22 @@ class CamImage:
 
         self.fx = K_mat[0,0]
         self.fy = K_mat[1,1]
+        self.cx = K_mat[0,2]
+        self.cy = K_mat[1,2]
 
         self.FoVx = focal2fov(self.fx, self.image_width)
         self.FoVy = focal2fov(self.fy, self.image_height)
+
+        # principle point (not always at the center) as a ratio, like 0.5, 0.5
+        self.prcppoint = torch.tensor([self.cx / self.image_width, self.cy / self.image_height])
 
         self.zfar = z_max # 100.0
         self.znear = z_min # 0.1
 
         # GL
-        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).T # T_gi
+        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar,
+             fovX=self.FoVx, fovY=self.FoVy,
+              W=self.image_width, H=self.image_height, prcp=self.prcppoint).T # T_gi
 
         # pyramid of images
         self.original_image_list = []
@@ -110,7 +66,7 @@ class CamImage:
         self.normal_img_list = []
 
         if image is not None:
-            original_image = image.to(device)
+            original_image = image.to(self.device)
 
             self.channel_count = original_image.shape[0]
             if self.channel_count == 4:
@@ -185,6 +141,74 @@ class CamImage:
             self.original_image_list.append(down_level3_image)
             self.sky_mask_list.append(down_level3_sky_mask)
             self.normal_img_list.append(down_level3_normal)
+    
+    def random_patch(self, h_size=float('inf'), w_size=float('inf')):
+        # just use part (a random patch) of the image
+        h = self.image_height
+        w = self.image_width
+        h_size = min(h_size, h) # h
+        w_size = min(w_size, w) # w
+        h0 = random.randint(0, h - h_size) # 0
+        w0 = random.randint(0, w - w_size) # 0
+        h1 = h0 + h_size
+        w1 = w0 + w_size
+        return torch.tensor([h0, w0, h1, w1]).to(torch.float32).to(self.device)
+
+
+# this is important
+class Camera(nn.Module):
+    def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
+                 image_name, uid,
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
+                 ):
+        super(Camera, self).__init__()
+
+        self.uid = uid
+        self.colmap_id = colmap_id # this is not necessary
+        # extrinsic
+        self.R = R # rotation
+        self.T = T # translation
+
+        # you can use this two functions
+        # FovY = focal2fov(focal_length_x, height)
+        # FovX = focal2fov(focal_length_x, width)
+
+        self.FoVx = FoVx 
+        self.FoVy = FoVy
+        self.image_name = image_name
+
+        # we may need to handle the sky mask
+
+        try:
+            self.data_device = torch.device(data_device)
+        except Exception as e:
+            print(e)
+            print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
+            self.data_device = torch.device("cuda")
+
+        # image as 3,H,W
+        self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
+        self.image_width = self.original_image.shape[2]
+        self.image_height = self.original_image.shape[1]
+
+        if gt_alpha_mask is not None:
+            # self.original_image *= gt_alpha_mask.to(self.data_device)
+            self.gt_alpha_mask = gt_alpha_mask.to(self.data_device)
+        else:
+            self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
+            self.gt_alpha_mask = None
+        
+        self.zfar = 100.0
+        self.znear = 0.01
+
+        self.trans = trans
+        self.scale = scale
+
+        self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda() # T_wg
+        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda() # T_gi
+        
+        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0) # T_wi
+        self.camera_center = self.world_view_transform.inverse()[3, :3]
 
 
 # what does this mean?

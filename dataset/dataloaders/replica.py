@@ -39,6 +39,8 @@ class ReplicaDataset:
 
         sequence_dir = os.path.join(data_dir, sequence)
 
+        self.is_rgbd: bool = True
+
         self.img_dir = os.path.join(sequence_dir, "results/")
         self.rgb_frames = sorted(glob.glob(self.img_dir + '*.jpg'))
         self.depth_frames = sorted(glob.glob(self.img_dir + '*.png'))
@@ -105,7 +107,7 @@ class ReplicaDataset:
                                                                         convert_rgb_to_intensity=False)
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-            rgbd_image, self.intrinsic)
+            rgbd_image, self.intrinsic, self.extrinsic)
         if self.down_sample_on:
             pcd = pcd.random_down_sample(sampling_ratio=self.rand_down_rate)
         

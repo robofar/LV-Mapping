@@ -8,7 +8,9 @@ setting:
   color_map_on: True 
 process:
   max_range_m: 80.0 # 80.0
-  vox_down_m: 0.02
+  min_range_m: 3.0
+  min_z_m: -3.5
+  vox_down_m: 0.05
   estimate_normal: False
   # dynamic_filter_on: True
   # dynamic_certainty_thre: 1.0

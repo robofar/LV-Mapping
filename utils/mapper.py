@@ -221,6 +221,7 @@ class Mapper:
         frame_id: int,
         filter_dynamic: bool = False,
         mono_depth_point_cloud_torch: torch.tensor = None,
+        mono_depth_point_normals_torch: torch.tensor = None,
     ):
 
         # points_torch contains both the coordinate and the color (intensity)
@@ -338,13 +339,15 @@ class Mapper:
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
 
-        # update gaussians using mono depth predictions 
+        # update gaussians using mono depth predictions # TODO
         if mono_depth_point_cloud_torch is not None: 
             # use the mono depth estimation results to do the initialization
             mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
+
+            # also need to transform the normal
             
             # we currently use a easy fix for ground robot to use only the points with large height value
-            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.98) # TODO
+            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.9) # TODO # height ?
             mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
@@ -353,9 +356,17 @@ class Mapper:
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
+            if mono_depth_point_normals_torch is not None:
+                cur_rot_torch = torch.eye(4)
+                cur_rot_torch[:3,:3] = cur_pose_torch[:3,:3] # rotation part
+                mono_depth_point_normals_torch = transform_torch(mono_depth_point_normals_torch, cur_pose_torch)
+                mono_depth_point_normals_torch = mono_depth_point_normals_torch[mono_depth_point_used_mask]
+                mono_depth_point_normals_torch = mono_depth_point_normals_torch[idx]
+
             if mono_depth_point_cloud_torch.shape[0] > 0:
                 self.neural_points.update(
-                    mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:], None, frame_origin_torch, 
+                    mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:],
+                    mono_depth_point_normals_torch, frame_origin_torch, 
                     frame_orientation_torch, frame_id, is_reliable = False
                 )
 
@@ -991,6 +1002,9 @@ class Mapper:
 
             down_rate = self.config.gs_down_rate # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
 
+            eval_depth_max = self.config.max_range
+            eval_depth_min = self.config.min_range
+
             for iter in tqdm(range(iter_count), disable=self.silence):       
             # for iter in range(iter_count):
 
@@ -1044,21 +1058,14 @@ class Mapper:
                         gt_rgb_image = gt_image
                         gt_depth_image = None
 
+                    # print(gt_depth_image)
+
                     render_pkg = render(viewpoint_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
                     
                     # rendered results
                     renderd_rgb_image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
                     batch_visbility_mask = batch_visbility_mask | visibility_filter # update the gaussian visbility mask for this batch
-
-                    # print(viewspace_point_tensor.shape) # N, 3
-                    # print(viewspace_point_tensor) # 
-                    # print(visibility_filter.shape) # N
-                    # # print(visibility_filter) # bool for gaussians
-                    # # print(radii.shape) # N
-
-                    # invisible_count = torch.sum(~visibility_filter).item()
-                    # print(invisible_count)
 
                     loss_rgb_l1 = l1_loss(renderd_rgb_image, gt_rgb_image)
 
@@ -1071,20 +1078,32 @@ class Mapper:
                     # lambda_normal = self.config.lambda_normal if iter > 7000 else 0.0
                     # lambda_distort = self.config.lambda_distort if iter > 3000 else 0.0
 
-                    # TODO Figure out how they are calculated
-                    dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
+                    if "rend_dist" in list(render_pkg.keys()):
+                        dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
+                    else:
+                        dist_distortion = None
+                    
                     rend_normal = render_pkg['rend_normal'] # 3, H, W # what is this actually?
 
+                    # normal_norm = rend_normal.norm(2, dim=0) # 3,W,H 
+                    # print(normal_norm)
+                    # normal_norm is not normalized # norm not equal to 0
+
                     surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
-                    surf_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
+                    depth_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal)
 
                     rend_alpha = render_pkg["rend_alpha"] # 1, H, W accumulated opacity # TODO: add a BCE sky loss here
+
+                    # normalize the normals to norm == 1
+                    rend_normal = torch.nn.functional.normalize(rend_normal, dim=0) 
+                    depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
 
                     # depth rendering loss
                     valid_depth_mask = None
                     if gt_depth_image is not None and self.config.lambda_depth > 0:
-                        valid_depth_mask = (gt_depth_image > 0.0)  & (surf_depth > 0.0)
+                        valid_depth_mask = (gt_depth_image > eval_depth_min) & (surf_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (surf_depth < eval_depth_max)
                         gt_depth_image = gt_depth_image[valid_depth_mask]
+                        # print(gt_depth_image)
                         rend_dist_valid = surf_depth[valid_depth_mask]
                         if self.config.inverse_depth_loss:
                             depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rend_dist_valid) # use inverse depth (then we will care more about the close range part)
@@ -1102,37 +1121,45 @@ class Mapper:
                             sky_loss_batch += cur_sky_loss
 
                         rend_normal = rend_normal * non_sky_mask
-                        surf_normal = surf_normal * non_sky_mask
-                        dist_distortion = dist_distortion * non_sky_mask
+                        depth_normal = depth_normal * non_sky_mask
+                        if dist_distortion is not None:
+                            dist_distortion = dist_distortion * non_sky_mask
 
                     # regularization losses
                     # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
                     # if valid_depth_mask is not None:
                     #     rend_normal = rend_normal[:, valid_depth_mask]
-                    #     surf_normal = surf_normal[:, valid_depth_mask]
+                    #     depth_normal = depth_normal[:, valid_depth_mask]
                     #     dist_distortion = dist_distortion[:, valid_depth_mask]
                     
-                    # normal_error = (1.0 - (rend_normal * surf_normal).sum(dim=0))[None] # dot product 
-                    normal_error = (1.0 - torch.abs((rend_normal * surf_normal).sum(dim=0)))[None] # direction does not matters
-                    
-                    # print(normal_error)
+                    depth_normal_norm = depth_normal.norm(2, dim=0) 
+                    depth_normal_valid_mask = (depth_normal_norm > 0)
 
-                    normal_loss = normal_error.mean()
-                    distort_loss = dist_distortion.mean()
+                    dot_product = (rend_normal * depth_normal).sum(dim=0) # H, W
+                    # print(dot_product.shape)
 
+                    normal_error = 1.0 - dot_product # dot product 
+                    # normal_error = 1.0 - torch.abs(dot_product) 
+                    normal_error_valid = torch.masked_select(normal_error, depth_normal_valid_mask)
+
+                    normal_loss = normal_error_valid.mean()
                     normal_loss_batch += normal_loss
-                    distort_loss_batch += distort_loss
+
+                    if dist_distortion is not None:
+                        distort_loss = dist_distortion.mean()
+                        distort_loss_batch += distort_loss
 
                     T2 = get_time()
 
                     # print("Render iter time (ms):", (T2-T1)*1e3) # the forward rendering is fast (about 300Hz)
 
                 if not self.silence:
-                    if self.config.inverse_depth_loss:
-                        print(" Inverse depth rendering loss:", depth_loss_batch.item() / gs_bs)
-                    else:
-                        print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
-                    print(" Normal reg loss:", normal_loss_batch.item() / gs_bs, " Distortion reg loss:", distort_loss_batch.item() / gs_bs)
+                    if gt_depth_image is not None and self.config.lambda_depth > 0:
+                        if self.config.inverse_depth_loss:
+                            print(" Inverse depth rendering loss:", depth_loss_batch.item() / gs_bs)
+                        else:
+                            print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
+                    print(" Normal reg loss:", normal_loss_batch.item() / gs_bs)
                     # print(" Sky loss:", sky_loss_batch.item() / gs_bs)
 
                 depth_loss_batch *= self.config.lambda_depth
@@ -1146,9 +1173,6 @@ class Mapper:
 
                 # sky mask
                 sky_loss_batch *= self.config.lambda_sky
-
-                invisible_count = torch.sum(~batch_visbility_mask).item()
-                # print("# Invisible local gaussians in this batch:", invisible_count)
 
                 # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
                 # only these gaussians would be optimized
@@ -1164,10 +1188,11 @@ class Mapper:
 
                 # how to find those gaussians only in the training field of views?
 
+                # TODO: some issues here with gaussian surfels
                 isotropic_loss = 0.0
                 if self.config.lambda_isotropic > 0:
-                    scaling = self.neural_points.get_local_scaling[sampled_indices] # only use those ones for this iter
-                    # print(scaling)
+                    scaling = self.neural_points.get_local_scaling[sampled_indices] # after activation, the real scale
+                    scaling = scaling[:,:2] # do not use the last one for Gaussian surfels
                     isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
                     # if not self.silence:
                     #     print(" Gaussian isotropic loss:", isotropic_loss.item())
@@ -1178,7 +1203,7 @@ class Mapper:
                 if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                     sampled_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
                     # this might have some problem or maybe this is not in the world frame (TODO, figure it out)
-                    sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3
+                    sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3 # this is definitely normalized
 
                     sampled_guassians_xyz.requires_grad_(True)
 
@@ -1192,16 +1217,13 @@ class Mapper:
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
-                    sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame
+                    sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame # pointing out of the surface
 
                     # print(sampled_guassians_sdf_grad)                
 
-                    # this loss may have some issue here, sdf gradient is not good enough ...
                     # gaussian normals should better align with the sdf gradient direction
-                    # gaussian_normal_error = (1.0 - torch.abs((sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))) # direction does not matters 
-                    gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1)) # direction does not matters                             
+                    gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))                           
                     sdf_normal_consistency_loss = gaussian_normal_error.mean()
-                    # this definately have issue (it has value larger than 1)
 
                     if not self.silence:
                         print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
@@ -1253,6 +1275,9 @@ class Mapper:
 
                     sdf_loss *= self.config.lambda_sdf
 
+                visible_count = torch.sum(batch_visbility_mask).item()
+                print("# Visible local gaussians in this batch:", visible_count)
+
                 # total loss
                 # TODO: monitor losses by wandb
                 total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch + sky_loss_batch) / gs_bs \
@@ -1275,11 +1300,11 @@ class Mapper:
             
             self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             
-            print(torch.mean(self.neural_points.geo_features).item())
+            # print(torch.mean(self.neural_points.geo_features).item())
             
             self.neural_points.assign_local_to_global() # set back pin feature
 
-            print(torch.mean(self.neural_points.geo_features).item())
+            # print(torch.mean(self.neural_points.geo_features).item()) # it is actually updating
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)
 
@@ -1337,14 +1362,22 @@ class Mapper:
 
             self.T_w_c_cur_view = T_w_c.detach().cpu().numpy()
 
+            T1_r = get_time()
             render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, down_rate=vis_down_rate) # render gaussians
-            renderd_image, rend_normal, surf_depth, surf_normal, rend_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+            T2_r = get_time()
+            print("Render time per frame (ms):", (T2_r-T1_r)*1e3)
+            
+            renderd_image, rend_normal, surf_depth, depth_normal, rend_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+            
+            # normalize the normals to norm == 1
+            rend_normal = torch.nn.functional.normalize(rend_normal, dim=0) 
+            depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
 
             if cur_viewpoint_cam.sky_mask_on:
                 cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
                 non_sky_mask = ~ cur_sky_mask
                 surf_depth = surf_depth * non_sky_mask
-                surf_normal = surf_normal * non_sky_mask
+                depth_normal = depth_normal * non_sky_mask
                 rend_normal = rend_normal * non_sky_mask
 
             renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
@@ -1361,12 +1394,12 @@ class Mapper:
             rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
 
-            rend_normal_vis = rend_normal * 0.5 + 0.5 # convert to the normal vis color # surf_normal
+            rend_normal_vis = 0.5 - rend_normal * 0.5  # convert to the normal vis color # surf_normal
             rendered_normal_np = (rend_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
 
-            depth_normal_vis = surf_normal * 0.5 + 0.5 # convert to the normal vis color # depth_normal
+            depth_normal_vis = 0.5 - depth_normal * 0.5 # convert to the normal vis color # depth_normal
             depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
@@ -1414,34 +1447,37 @@ class Mapper:
 
             if cur_viewpoint_cam.train_view:
                 print("Eval (train view)") 
-            else:
-                self.val_psnr_list.append(cur_pnsr)
-                self.val_ssim_list.append(cur_ssim)
-                self.val_lpips_list.append(cur_lpips)
+            else: # we only eval the test views
                 print("Eval (test view)") 
 
             print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
             if cur_viewpoint_cam.depth_on:
                 # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                eval_depth_max = self.config.max_range
-                eval_depth_min = self.config.min_range
                 depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
                 diff_depth = np.abs(original_img_depth - rendered_depth_np) # already abs
                 diff_depth[~depth_valid_mask] = 0.0
                 diff_depth_masked = diff_depth[depth_valid_mask]
                 cur_depth_l1 = np.mean(diff_depth_masked)
                 cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
-                print("Depth L1 (m) ↓ :", cur_depth_l1, ", Depth RMSE (m) ↓ :", cur_depth_rmse)
                 if not cur_viewpoint_cam.train_view: # eval only on the test views
                     self.val_depthl1_list.append(cur_depth_l1)
                     self.val_depth_rmse_list.append(cur_depth_rmse)
 
-                
-                diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, 5.0)*255.0).astype(np.uint8) # 1, 3, H, W 
+                diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, self.config.max_range*0.05)*255.0).astype(np.uint8) # 1, 3, H, W 
                 diff_depth_color = np.transpose(diff_depth_color[0], (1, 2, 0)) # H, W, 3
                 diff_depth_color = cv2.cvtColor(diff_depth_color, cv2.COLOR_RGB2BGR)
                 cv2.imshow(cam_name + ": Rendered Depth Error", diff_depth_color)
+
+                print("Depth L1 (m) ↓ :", cur_depth_l1, ", Depth RMSE (m) ↓ :", cur_depth_rmse)
+
+            if not cur_viewpoint_cam.train_view or self.config.gs_keyframe_interval==1: # if only train view, we also eval the train views
+                self.val_psnr_list.append(cur_pnsr)
+                self.val_ssim_list.append(cur_ssim)
+                self.val_lpips_list.append(cur_lpips)
+                if cur_viewpoint_cam.depth_on:
+                    self.val_depthl1_list.append(cur_depth_l1)
+                    self.val_depth_rmse_list.append(cur_depth_rmse)
 
         return 
 

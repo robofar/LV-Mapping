@@ -50,12 +50,14 @@ class VirtualKITTIDataset:
 
         frame_count = len(self.depth_frames)
 
+        self.is_rgbd: bool = True
+
         # same for two cameras, fixed for this synthetic dataset
         H, W = 375, 1242
 
         self.fx = 725.0087
         self.fy = 725.0087 
-        self.cx = 620.5 
+        self.cx = 620.5 # not necessary at 0.5 ratio
         self.cy = 187.0
 
         self.K_mat = np.eye(3)
@@ -68,9 +70,14 @@ class VirtualKITTIDataset:
         self.extrinsics_file = os.path.join(self.meta_data_dir, "extrinsic.txt")
 
         self.depth_scale = 100.0 # 1 correspondong to 1cm
-        self.max_depth_m = 100.0
+        self.max_depth_m = 80.0
 
-        self.T_l_c = np.eye(4)
+        self.T_l_c = np.zeros((4, 4))
+        self.T_l_c[0, 2] = 1
+        self.T_l_c[1, 0] = -1
+        self.T_l_c[2, 1] = -1
+        self.T_l_c[3, 3] = 1
+
         self.T_c_l = np.linalg.inv(self.T_l_c)
 
         self.main_cam_name = self.used_cam_name 
@@ -88,10 +95,11 @@ class VirtualKITTIDataset:
                                       cx=self.cx,
                                       cy=self.cy)
 
-        self.extrinsic = self.T_c_l
+        self.extrinsic = self.T_c_l # we force to transform the point cloud to a virtual lidar frame 
 
         gt_poses_cam0, gt_poses_cam1 = self.load_poses(self.extrinsics_file)
-        self.gt_poses = gt_poses_cam0
+
+        self.gt_poses = np.linalg.inv(gt_poses_cam0[0]) @ gt_poses_cam0 # the virtual lidar pose
 
 
     def __getitem__(self, idx):
@@ -107,7 +115,7 @@ class VirtualKITTIDataset:
                                                                         convert_rgb_to_intensity=False)
 
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-            rgbd_image, self.intrinsic)
+            rgbd_image, self.intrinsic, self.extrinsic)
 
         points_xyz = np.array(pcd.points, dtype=np.float64)
         points_rgb = np.array(pcd.colors, dtype=np.float64)
@@ -116,6 +124,8 @@ class VirtualKITTIDataset:
         rgb_image = np.array(rgb_image)
 
         depth_image = np.array(depth_image)/self.depth_scale
+        depth_image[depth_image > self.max_depth_m] = 0.0
+
         rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 
         image_dict = {self.main_cam_name: rgbd_image}
@@ -133,8 +143,8 @@ class VirtualKITTIDataset:
         gt_poses_cam0 = poses[::2].reshape((-1, 4, 4))
         gt_poses_cam1 = poses[1::2].reshape((-1, 4, 4))
 
-        # inverse
-        gt_poses_cam0 = np.array([np.linalg.inv(matrix) for matrix in gt_poses_cam0])
-        gt_poses_cam1 = np.array([np.linalg.inv(matrix) for matrix in gt_poses_cam1])
+        # convert to the virtual lidar frame
+        gt_poses_cam0 = np.array([self.T_l_c @ np.linalg.inv(matrix) @ self.T_c_l for matrix in gt_poses_cam0])
+        gt_poses_cam1 = np.array([self.T_l_c @ np.linalg.inv(matrix) @ self.T_c_l for matrix in gt_poses_cam1])
 
         return gt_poses_cam0, gt_poses_cam1

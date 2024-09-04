@@ -20,7 +20,7 @@ neuralpoints:
 gs:
   monodepth_on: False
   gs_iters: 10
-  gs_bs: 5
+  gs_bs: 1
   gs_keyframe_interval: 5
   img_pool_size: 20 
   img_test_pool_size: 10
