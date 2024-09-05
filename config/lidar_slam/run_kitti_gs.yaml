@@ -23,8 +23,8 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.15 # 0.15 is a bit too small?
-  search_alpha: 0.8
+  voxel_size_m: 0.2 # 0.15 is a bit too small?
+  search_alpha: 0.5
   query_nn_k: 8
 loss:
   sigma_sigmoid_m: 0.08
@@ -46,9 +46,10 @@ gs:
   sh_degree: 2 # According to experiments, it seems to not play an important role, but why
   inverse_depth_loss: True
   lambda_depth: 10.0 # 10.0
-  lambda_distort: 100.0 # 100.0
-  lambda_normal: 0.1 # not too big 0.05 
-  # lambda_isotropic: 1.0 
+  lambda_distort: 1000.0 # 100.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_mono_normal: 0.05
+  # lambda_isotropic: 10.0 
   # lambda_sky: 0.01 # not much impact
   lambda_sdf_cons: 1.0
   lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
@@ -70,7 +71,7 @@ pgo:
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
   batch_size: 16384
-  iters: 15 # i don't know how # TODO
+  iters: 10 # i don't know how # TODO
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 12

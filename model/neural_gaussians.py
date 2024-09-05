@@ -128,7 +128,7 @@ class NeuralPoints(nn.Module):
         self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
 
         # Gaussian parameters
-        self.gs_dim_count: int = 3 #  2 or 3, 2D or 3D GS # FIXME
+        self.gs_dim_count: int = 2 #  2 or 3, 2D or 3D GS # FIXME
 
         self.active_sh_degree = self.config.sh_degree # TODO
         self.max_sh_degree = self.config.sh_degree
@@ -563,13 +563,14 @@ class NeuralPoints(nn.Module):
             valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
             new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
 
+        # switch the normal direction if the normal is not pointing to the camera
         added_ray = added_pt - sensor_position # N, 3
         new_normals = rotation2normal(new_rots) # N, 3
         dot_product = (added_ray * new_normals).sum(dim=1) # N
-        new_normals[dot_product>0] *= -1 # switch the normal direction if the normal is not pointing to the camera
+        new_normals[dot_product>0] *= -1 
         new_rots = normal2rotation(new_normals)
         
-        self.rotation = torch.cat((self.rotation, new_rots), 0)
+        self.rotation = torch.cat((self.rotation, new_rots), 0) # initialize the normals done
 
         # init_opacity = self.config.gs_init_opacity
 

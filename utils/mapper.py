@@ -352,7 +352,7 @@ class Mapper:
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.max_range*0.025 # add to config # TODO # 0.025
+            down_voxel_size = self.config.max_range*0.02 # add to config # TODO # 0.025
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
@@ -1027,6 +1027,7 @@ class Mapper:
                 # regularization losses
                 normal_loss_batch = 0
                 distort_loss_batch = 0
+                mono_normal_loss_batch = 0
 
                 sky_loss_batch = 0
                 
@@ -1082,6 +1083,8 @@ class Mapper:
                         dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W # figure out what does it mean?
                     else:
                         dist_distortion = None
+                        # distortion_loss = rendered_median_weight * torch.abs(rendered_depth - rendered_final_opacity.detach() * rendered_median_depth)
+                    
                     
                     rend_normal = render_pkg['rend_normal'] # 3, H, W # what is this actually?
 
@@ -1133,17 +1136,26 @@ class Mapper:
                     #     dist_distortion = dist_distortion[:, valid_depth_mask]
                     
                     depth_normal_norm = depth_normal.norm(2, dim=0) 
-                    depth_normal_valid_mask = (depth_normal_norm > 0)
+                    rend_normal_norm = rend_normal.norm(2, dim=0)
+                    normal_valid_mask = (depth_normal_norm > 0) & (rend_normal_norm > 0)
 
                     dot_product = (rend_normal * depth_normal).sum(dim=0) # H, W
                     # print(dot_product.shape)
 
                     normal_error = 1.0 - dot_product # dot product 
                     # normal_error = 1.0 - torch.abs(dot_product) 
-                    normal_error_valid = torch.masked_select(normal_error, depth_normal_valid_mask)
+                    normal_error_valid = torch.masked_select(normal_error, normal_valid_mask)
 
                     normal_loss = normal_error_valid.mean()
                     normal_loss_batch += normal_loss
+
+                    if viewpoint_cam.mono_normal_on and self.config.lambda_mono_normal > 0:
+                        mono_normal = viewpoint_cam.normal_img_list[down_rate]
+                        dot_product = (rend_normal * mono_normal).sum(dim=0) # H, W
+                        mono_normal_error = 1.0 - dot_product # dot product 
+                        mono_normal_error = torch.masked_select(mono_normal_error, normal_valid_mask)
+                        mono_normal_loss = mono_normal_error.mean()
+                        mono_normal_loss_batch += mono_normal_loss
 
                     if dist_distortion is not None:
                         distort_loss = dist_distortion.mean()
@@ -1161,6 +1173,8 @@ class Mapper:
                             print(" Depth rendering loss (m):", depth_loss_batch.item() / gs_bs)
                     print(" Normal reg loss:", normal_loss_batch.item() / gs_bs)
                     # print(" Sky loss:", sky_loss_batch.item() / gs_bs)
+                    if viewpoint_cam.mono_normal_on and self.config.lambda_mono_normal > 0:
+                        print(" Mono normal loss:", mono_normal_loss_batch.item() / gs_bs)
 
                 depth_loss_batch *= self.config.lambda_depth
                 
@@ -1168,6 +1182,9 @@ class Mapper:
                 lambda_normal = self.config.lambda_normal * lambda_normal_linear_ratio
                 normal_loss_batch *= lambda_normal # should increase from 0 to config.lambda_normal (ref: gaussian surfel)
                 
+                # mono normal loss
+                mono_normal_loss_batch *= self.config.lambda_mono_normal
+
                 # depth distortion loss
                 distort_loss_batch *= self.config.lambda_distort
 
@@ -1213,7 +1230,7 @@ class Mapper:
                     valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
                     valid_grad_mask = valid_grad_mask.detach()
                     valid_grad_count = torch.sum(valid_grad_mask).item()
-                    # print(" Valid count:", valid_grad_count, " from ", sample_bs)
+                    print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
@@ -1280,7 +1297,7 @@ class Mapper:
 
                 # total loss
                 # TODO: monitor losses by wandb
-                total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch + sky_loss_batch) / gs_bs \
+                total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch + mono_normal_loss_batch + sky_loss_batch) / gs_bs \
                     + isotropic_loss + sdf_consistency_loss + sdf_normal_consistency_loss \
                     + sdf_loss + eikonal_loss
 
@@ -1373,6 +1390,9 @@ class Mapper:
             rend_normal = torch.nn.functional.normalize(rend_normal, dim=0) 
             depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
 
+            # normal_norm = rend_normal.norm(2, dim=0) # 3,W,H 
+            # # print(normal_norm)
+
             if cur_viewpoint_cam.sky_mask_on:
                 cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
                 non_sky_mask = ~ cur_sky_mask
@@ -1403,6 +1423,16 @@ class Mapper:
             depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
             cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
+
+            if cur_viewpoint_cam.mono_normal_on:
+                img_mono_normal = cur_viewpoint_cam.normal_img_list[vis_down_rate]
+                if cur_viewpoint_cam.sky_mask_on:
+                    img_mono_normal = img_mono_normal * non_sky_mask
+                mono_normal_np = img_mono_normal.permute(1,2,0).detach().cpu().numpy()
+                mono_normal_np = 0.5 - mono_normal_np * 0.5 # convert to the normal vis color
+                mono_normal_vis_np = (mono_normal_np * 255.0).astype(np.uint8)  
+                mono_normal_vis_np = cv2.cvtColor(mono_normal_vis_np, cv2.COLOR_RGB2BGR)
+                cv2.imshow(cam_name + ": Mono Normal", mono_normal_vis_np)
 
             # print("Max alpha value:", torch.max(rend_alpha).item()) # <= 1
             # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 

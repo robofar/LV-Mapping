@@ -222,6 +222,7 @@ class Config:
         self.lambda_depth: float = 0.0 # weight for depth rendering
         self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
         self.lambda_normal: float = 0.0 # normal consistency regularization weight # 0.05
+        self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
         self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
@@ -555,6 +556,7 @@ class Config:
             self.lambda_depth = float(config_args["gs"].get("lambda_depth", self.lambda_depth))
             self.lambda_distort = float(config_args["gs"].get("lambda_distort", self.lambda_distort)) # weight for the distance distortion loss
             self.lambda_normal = float(config_args["gs"].get("lambda_normal", self.lambda_normal)) # weight for the distance/normal consistency loss
+            self.lambda_mono_normal = float(config_args["gs"].get("lambda_mono_normal", self.lambda_mono_normal))
             self.lambda_isotropic = float(config_args["gs"].get("lambda_isotropic", self.lambda_isotropic))
             self.lambda_sky = float(config_args["gs"].get("lambda_sky", self.lambda_sky))
             self.lambda_sdf_cons = float(config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons))

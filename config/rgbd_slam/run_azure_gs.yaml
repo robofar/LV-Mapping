@@ -30,10 +30,10 @@ gs:
   init_opacity: 0.5
   lambda_depth: 1.0
   lambda_distort: 1000.0
-  # lambda_normal: 0.1 # not too big 0.05 
-  # lambda_isotropic: 100.0
-  # lambda_sdf_cons: 1.0
-  # lambda_sdf_normal_cons: 1.0
+  lambda_normal: 0.05 # not too big 0.05 
+  lambda_isotropic: 100.0
+  lambda_sdf_cons: 1.0
+  lambda_sdf_normal_cons: 1.0
   # gs_rotation_lr: 1e-2
 decoder:
   mlp_level: 1

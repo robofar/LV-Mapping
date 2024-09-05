@@ -14,8 +14,12 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
 
-def l1_loss(network_output, gt):
-    return torch.abs((network_output - gt)).mean()
+def l1_loss(network_output, gt, weight=1):
+    return torch.abs((network_output - gt) * weight).mean()
+
+def cos_loss(output, gt, thrsh=0, weight=1):
+    cos = torch.sum(output * gt * weight, 0)
+    return (1 - cos[cos < np.cos(thrsh)]).mean()
 
 def l2_loss(network_output, gt):
     return ((network_output - gt) ** 2).mean()

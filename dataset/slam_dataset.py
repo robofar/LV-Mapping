@@ -399,11 +399,14 @@ class SLAMDataset():
                         cv2.imshow("Mono Depth", pred_depth_color)
                 
                         # pred_normal[invalid_mask] = 0
-                        pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy() # 3, H, W
+                        # print(pred_normal)
+                        pred_normal_np = pred_normal.permute(1,2,0).detach().cpu().numpy() # H, W, 3 # [-1, 1]
+                        # print(pred_normal_np)
                         pred_normal_vis_np = ((0.5 - pred_normal_np * 0.5) * 255.0).astype(np.uint8) # convert to the normal vis color # surf_normal
                         pred_normal_vis_np[sky_mask_np] = 0
-                        pred_normal_vis_np = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR)
-                        cv2.imshow("Mono Normal", pred_normal_vis_np)
+                        pred_normal_vis_np = np.ascontiguousarray(pred_normal_vis_np) 
+                        pred_normal_vis_cv2 = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR) # in current camera frame
+                        cv2.imshow("Mono Normal", pred_normal_vis_cv2)
 
                         # show sky mask
                         # cur_img_rgb_np[sky_mask_np] = 0  
@@ -416,12 +419,13 @@ class SLAMDataset():
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
-                        cur_normal_o3d = o3d.geometry.Image(cur_img_rgb_np)
+                        cur_normal_o3d = o3d.geometry.Image(pred_normal_vis_np)
 
                         # change the depth trunc here
+                        # rgb d
                         rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, 
                             depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
-
+                        # normal (as rgb) d
                         nd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_normal_o3d, pred_depth_o3d, 
                             depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
                                                                                 
@@ -429,26 +433,25 @@ class SLAMDataset():
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
 
                         normal_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-                            nd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+                            nd_image_o3d, self.loader.intrinsic, self.loader.extrinsic) # in current lidar frame
 
-                        points_normal = 1.0 - 2 * np.asarray(normal_pcd.colors)
+                        points_normal_c = 1.0 - 2 * np.asarray(normal_pcd.colors) # still under camera frame
+                        R_cl = self.loader.extrinsic[:3,:3]
+                        points_normal_l = points_normal_c @ R_cl # n,3 # convert to lidar frame now # R_cl = R_lc'
 
-                        # print(points_normal)
+                        # print(points_normal_c)
+                        # print(points_normal_l)
 
-                        pred_pcd.normals = o3d.utility.Vector3dVector(points_normal) # [-1, 1]
-
+                        pred_pcd.normals = o3d.utility.Vector3dVector(points_normal_l) # [-1, 1] 
                         pred_pcd.normalize_normals() # normals norm to 1
 
+                        # downsample and filtering noise
                         pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
-
-                        # print(len(pred_pcd.points))
-                        
-                        # how to set these threshold
-                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.2)
+                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5) # TODO: parameter settings
 
                         # print(len(pred_pcd.points))
                                                    
-                        self.cur_frame_mono_depth_o3d = pred_pcd
+                        self.cur_frame_mono_depth_o3d = pred_pcd # also may conatin normals
 
                         points_xyz = np.array(pred_pcd.points, dtype=np.float64)
                         points_rgb = np.array(pred_pcd.colors, dtype=np.float64)

@@ -98,7 +98,7 @@ class KITTIOdometryDataset:
                                         cx=calib_data["K_cam2"][0,2],
                                         cy=calib_data["K_cam2"][1,2])
 
-            self.extrinsic = calib_data['T_cam2_velo']
+            self.extrinsic = calib_data['T_cam2_velo'] # T_c_l
 
         ###
 

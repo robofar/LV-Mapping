@@ -13,7 +13,7 @@ import math
 import numpy as np
 import torch
 
-use_2d_gs = False 
+use_2d_gs = True 
 
 # 2DGS
 if use_2d_gs:
@@ -179,7 +179,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     else:
         colors_precomp = override_color
     
-    # main function
+    # main rasterization function
     if use_2d_gs:
         rendered_image, radii, allmap = rasterizer(
             means3D = means3D,
@@ -242,18 +242,21 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
         
         # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
-        surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
-        surf_normal = surf_normal.permute(2,0,1)
+        # surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
+        # surf_normal = surf_normal.permute(2,0,1)
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
+
+        mask_vis = (render_alpha.detach() > 1e-5)
+        surf_normal = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth
 
         # rendered result
         rets.update({
             'rend_alpha': render_alpha,
             'rend_normal': render_normal,
-            'rend_dist': render_dist,
-            'surf_depth': surf_depth,
-            'surf_normal': surf_normal,
+            'rend_dist': render_dist, # distortion
+            'surf_depth': surf_depth, # rendered depth
+            'surf_normal': surf_normal, # normal calculated from rendered depth
         })
     
     else:
