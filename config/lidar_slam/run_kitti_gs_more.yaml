@@ -1,5 +1,5 @@
 setting: 
-  name: "test_kitti_gs"
+  name: "test_kitti_gs_more"
   output_root: "./experiments"
   deskew: False
   kitti_correct: True
@@ -23,8 +23,8 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 4
 neuralpoints:
-  voxel_size_m: 0.2 # 0.15 is a bit too small?
-  search_alpha: 0.5
+  voxel_size_m: 0.15 # 0.15 is a bit too small?
+  search_alpha: 0.8
   query_nn_k: 8
 loss:
   sigma_sigmoid_m: 0.08
@@ -34,21 +34,21 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True
-  gs_iters: 10 # 20
+  gs_iters: 20 # 20
   gs_bs: 5 # 5 # train more
   gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 2 # 2
   img_pool_size: 25 # 15
   img_test_pool_size: 15
   gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_vis_down_rate: 0 
   init_opacity: 0.5
   sh_degree: 2 # According to experiments, it seems to not play an important role, but why
   inverse_depth_loss: True
-  lambda_depth: 10.0 # 10.0
+  lambda_depth: 1.0 # 10.0
   lambda_distort: 100.0 # 100.0
   lambda_normal: 0.05 # not too big 0.05 
-  lambda_mono_normal: 0.1
+  lambda_mono_normal: 0.05
   # lambda_isotropic: 10.0 
   # lambda_sky: 0.01 # not much impact
   lambda_sdf_cons: 1.0
@@ -70,8 +70,8 @@ pgo:
   virtual_side_count: 10
   local_loop_dist_thre: 15.0
 optimizer: # mappers 
-  batch_size: 8192
-  iters: 10
+  batch_size: 16384
+  iters: 15
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 12

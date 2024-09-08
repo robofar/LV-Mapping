@@ -49,7 +49,7 @@ class IPBCarDataset:
         self.cam_rear_topic_name = "cam_rear"   # "camera_rear"
 
         self.main_cam_name = self.cam_front_topic_name
-        self.main_cam_only: bool = True
+        self.main_cam_only: bool = False
 
         self.K_mats = {}
         self.T_c_l_mats = {}

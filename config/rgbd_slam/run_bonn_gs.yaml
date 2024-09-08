@@ -1,0 +1,69 @@
+setting:
+  name: "test_bonn_gs"
+  output_root: "./experiments"
+  color_channel: 3
+process:
+  min_range_m: 0.05
+  max_range_m: 5.0  # distance filter for each frame
+  min_z_m: -10.0 
+  vox_down_m: 0.005 # TODO
+  estimate_normal: False
+sampler:
+  surface_sample_range_m: 0.04
+  surface_sample_n: 4 # 4
+  free_sample_begin_ratio: 0.5
+  free_front_sample_n: 1
+  free_behind_sample_n: 0
+neuralpoints:
+  voxel_size_m: 0.04
+gs:
+  gs_iters: 1
+  gs_bs: 1
+  gs_keyframe_interval: 2
+  img_pool_size: 30
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
+  sh_degree: 0
+  lambda_depth: 10.0
+  lambda_distort: 1000.0
+  lambda_normal: 0.0 # not too big 0.05 
+  lambda_isotropic: 0.0
+  lambda_sdf_cons: 0.0
+  lambda_sdf_normal_cons: 0.0
+  lambda_sdf: 0.0
+decoder:
+  mlp_level: 1
+  mlp_hidden_dim: 64
+  freeze_after_frame: 40
+loss:
+  sigma_sigmoid_m: 0.05
+  loss_weight_on: True # False
+  dist_weight_scale: 0.6
+  ekional_loss_on: True
+  weight_e: 1.0 # TODO 0.5
+continual: # the data sample pool
+  batch_size_new_sample: 3000 # don't split current and history
+  pool_capacity: 2e7
+# tracker:
+#   uniform_motion_on: True
+#   photo_loss: True
+#   photo_weight: 0.1
+#   source_vox_down_m: 0.02
+#   iter_n: 50
+#   min_grad_norm: 0.5 # 0.5
+#   max_grad_norm: 2.0 # 2.0
+#   GM_grad: 0.4 # TODO
+#   GM_dist: 0.05
+#   eigenvalue_check: False
+optimizer:
+  mapping_freq_frame: 5
+  iters: 5  # iterations per frame
+  batch_size: 16384 # 16384 # 16384 # 8192
+  # ba_freq_frame: 20
+  # lr_pose_ba: 1e-3
+  # you need to train more iterations, lots of the samples are not even learned --> this cause the roughness of the reconstruction
+eval:
+  mesh_freq_frame: 10 # reconstruct the mesh every x frames
+  mesh_min_nn: 9
+  sensor_cad_path: ./cad/camera.ply
+  skip_top_voxel: 5

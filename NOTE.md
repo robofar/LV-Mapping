@@ -160,6 +160,13 @@ python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1
 
 **pass**
 
+## Run on Bonn RGBD dataset
+```
+python pin_slam.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgbd_bonn_static/ -dvl
+```
+
+**pass**
+
 ## Run on Replica RGBD dataset
 
 ```
@@ -243,6 +250,9 @@ Or maybe we can use MOS results, how to save the MOS results using Ben's MapMOS?
 Now we can use the visual (image) data for place recognition. We can even use those rendered views.
 
 We may consider some visual place recognition methods such as NetVLAD or pyBoW. Try these later.
+
+### Notes
+Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have the distortion loss directlt implemented.
 
 
 ## GS Visualizer

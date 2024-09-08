@@ -347,12 +347,12 @@ class Mapper:
             # also need to transform the normal
             
             # we currently use a easy fix for ground robot to use only the points with large height value
-            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.9) # TODO # height ?
+            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.98) # TODO # height ?
             mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.max_range*0.02 # add to config # TODO # 0.025
+            down_voxel_size = self.config.max_range*0.025 # add to config # TODO # 0.025
             idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
@@ -1033,7 +1033,7 @@ class Mapper:
                 
                 gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
-                batch_visbility_mask = torch.zeros(self.neural_points.local_count(), dtype=torch.bool, device=self.device)
+                batch_visbility_mask = torch.zeros(self.neural_points.local_count(valid_gs_only=True), dtype=torch.bool, device=self.device)
 
                 for rand_idx in torch.randperm(cur_img_pool_size)[:gs_bs]:
 
@@ -1193,7 +1193,21 @@ class Mapper:
 
                 # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
                 # only these gaussians would be optimized
-                constraint_mask = (~self.neural_points.local_free_gs_mask) & batch_visbility_mask # & self.neural_points.local_valid_color_mask 
+                # also with the visible gaussians
+                # batch_visbility_mask is only for the valid gs
+                local_valid_gs_mask = self.neural_points.local_valid_gs_mask
+
+                batch_visbility_mask_in_all_local_gs = local_valid_gs_mask.clone()
+                batch_visbility_mask_in_all_local_gs[batch_visbility_mask_in_all_local_gs>0] = batch_visbility_mask
+
+                if self.neural_points.gs_dim_count == 2:
+                    constraint_mask = (~self.neural_points.local_free_gs_mask) & batch_visbility_mask_in_all_local_gs # & self.neural_points.local_valid_color_mask 
+                # for gaussian surfels, gaussains with opposite directional normal will not be regarded as visible, thus not optimized (this can be set with the new config[4] to disable the back face culling)
+                else:
+                    constraint_mask = (~self.neural_points.local_free_gs_mask) & local_valid_gs_mask
+
+                # constraint_mask = (~self.neural_points.local_free_gs_mask) & batch_visbility_mask_in_all_local_gs
+                
                 true_count = torch.sum(constraint_mask).item()
                 true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
                 gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
@@ -1201,7 +1215,7 @@ class Mapper:
                 sample_bs = min(true_count, gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
                 # print("Sampled neural point count: " , sample_bs)
                 # don't use all the points here (random sample some of them as a batch)
-                sampled_indices = true_indices[torch.randperm(true_count)[:sample_bs]]
+                sampled_indices = true_indices[torch.randperm(true_count)[:sample_bs]] # this is already the idx in all the local gaussians
 
                 # how to find those gaussians only in the training field of views?
 
@@ -1219,7 +1233,6 @@ class Mapper:
                 sdf_normal_consistency_loss = 0.0
                 if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                     sampled_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
-                    # this might have some problem or maybe this is not in the world frame (TODO, figure it out)
                     sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3 # this is definitely normalized
 
                     sampled_guassians_xyz.requires_grad_(True)
@@ -1315,6 +1328,16 @@ class Mapper:
 
                 # print("Optimization iter time (ms):", (T3-T2)*1e3) # still, this backpropagation is slow, but better to do this in batch
             
+            # # filter dynamic gaussains (TODO)
+            # local_gaussian_position = self.neural_points.get_local_gaussian_xyz
+            # nonfree_local_gaussian_position = local_gaussian_position[~self.neural_points.local_free_gs_mask]
+            # nonfree_local_gaussians_static_mask = self.dynamic_filter(nonfree_local_gaussian_position)
+            # local_gaussians_static_mask = self.neural_points.local_free_gs_mask.clone()
+            # local_gaussians_static_mask[local_gaussians_static_mask==0] = nonfree_local_gaussians_static_mask # non free part according to this static mask, free part all static
+
+            # # TODO: or may have some problem 
+            # self.neural_points.local_valid_gs_mask = self.neural_points.local_valid_gs_mask & local_gaussians_static_mask # TODO
+
             self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             
             # print(torch.mean(self.neural_points.geo_features).item())

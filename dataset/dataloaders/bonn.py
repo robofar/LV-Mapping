@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 
-class TUMDataset:
+class BonnRGBDDataset:
     def __init__(self, data_dir: Path, sequence: str, *_, **__):
  
         sequence_dir = os.path.join(data_dir, sequence)
@@ -37,27 +37,43 @@ class TUMDataset:
 
         self.rgb_frames, self.depth_frames, self.gt_poses = self.loadtum(sequence_dir)
 
-        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
-        H, W = 480, 640
+        init_pose = self.gt_poses[0]
 
-        if "freiburg1" in sequence:
-            self.fx, self.fy, self.cx, self.cy = 517.3, 516.5, 318.6, 255.3
-        elif "freiburg2" in sequence:
-            self.fx, self.fy, self.cx, self.cy  = 520.9, 521.0, 325.1, 249.7
-        elif "freiburg3" in sequence:
-            self.fx, self.fy, self.cx, self.cy  = 535.4, 539.2, 320.1, 247.6        
-        else: # default
-            self.fx, self.fy, self.cx, self.cy  = 525.0, 525.0, 319.5, 239.5
+        # apply the transform to the TLS's reference frame
+        T_ros = np.array([[-1, 0, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 1, 0, 0],
+                        [0, 0, 0, 1]])
+
+        T_m = np.array([[1.0157, 0.1828, -0.2389, 0.0113],
+                        [0.0009, -0.8431, -0.6413, -0.0098],
+                        [-0.3009, 0.6147, -0.8085, 0.0111],
+                        [0, 0, 0, 1]])
+
+        self.gt_poses = T_ros @ self.gt_poses @ T_ros @ T_m
         
+        # self.gt_poses = T_g @ self.gt_poses
 
-        self.depth_scale = 5000.0
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        
+        self.H, self.W = 480, 640
+        self.fx, self.fy, self.cx, self.cy = 542.822841, 542.576870, 315.593520, 237.756098
 
-        self.intrinsic.set_intrinsics(height=H,
-                                     width=W,
-                                     fx=self.fx,
-                                     fy=self.fy,
-                                     cx=self.cx,
-                                     cy=self.cy)
+        # distortion coefficients (not applied yet)
+        d0 = 0.039903
+        d1 = -0.099343
+        d2 = -0.000730
+        d3 = -0.000144
+        d4 = 0.000000
+                
+        self.depth_scale = 5000.0 # 5000.0
+
+        self.intrinsic.set_intrinsics(height=self.H,
+                                    width=self.W,
+                                    fx=self.fx,
+                                    fy=self.fy,
+                                    cx=self.cx,
+                                    cy=self.cy)
         
         self.K_mat = np.eye(3)
         self.K_mat[0,0]=self.fx
@@ -76,8 +92,8 @@ class TUMDataset:
 
         self.T_c_l_mats = {self.main_cam_name: self.T_c_l}
 
-        self.cam_heights = {self.main_cam_name: H}
-        self.cam_widths = {self.main_cam_name: W}
+        self.cam_heights = {self.main_cam_name: self.H}
+        self.cam_widths = {self.main_cam_name: self.W}
         
         self.down_sample_on = False
         self.rand_down_rate = 0.1
@@ -85,6 +101,7 @@ class TUMDataset:
     def __len__(self):
         return len(self.depth_frames)
 
+    # Bonn RGBD shares the same data format and sturcture as TUM RGBD
     def loadtum(self, datapath, frame_rate=-1):
         """ read video data in tum-rgbd format """
         if os.path.isfile(os.path.join(datapath, 'groundtruth.txt')):
@@ -178,6 +195,9 @@ class TUMDataset:
         im_color = np.array(im_color)
 
         depth_image = np.array(im_depth)/self.depth_scale
+
+        # print(np.array(im_depth))
+
         # depth_image = np.array(im_depth)
         rgbd_image = np.concatenate((im_color, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
 

@@ -1,9 +1,6 @@
 [submodule "submodules/diff-surfel-rasterization"]
 	path = submodules/diff-surfel-rasterization
 	url = https://github.com/hbb1/diff-surfel-rasterization
-[submodule "submodules/diff-gaussian-rasterization_2d"]
-	path = submodules/diff-gaussian-rasterization_2d
-	url = https://github.com/liren-jin/diff-gaussian-rasterization_2d.git
 [submodule "submodules/diff-gaussian-surfel-rasterization"]
 	path = submodules/diff-gaussian-surfel-rasterization
 	url = https://github.com/YuePanEdward/diff-gaussian-surfel-rasterization.git

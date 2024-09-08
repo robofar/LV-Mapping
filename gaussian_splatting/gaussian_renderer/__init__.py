@@ -13,7 +13,7 @@ import math
 import numpy as np
 import torch
 
-use_2d_gs = True 
+use_2d_gs = False 
 
 # 2DGS
 if use_2d_gs:
@@ -50,9 +50,10 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     means3D = neural_gaussians.get_local_gaussian_xyz
     opacity = neural_gaussians.get_local_opacity
 
-    # print(means3D)
-
-    # print(opacity)
+    # only use those valid ones
+    valid_gs_mask = neural_gaussians.local_valid_gs_mask
+    means3D = means3D[valid_gs_mask]
+    opacity = opacity[valid_gs_mask]
 
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     # here we need to use neural_point coordinate + (optimizable) displacement 
@@ -92,7 +93,13 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
 
     # used by gaussian surfels
     patch_size = [float('inf'), float('inf')]
-    gaussian_surfel_train_config = torch.tensor([True, True, True], dtype=dtype, device=device) # surface_on, normalize_depth_on, perpix_depth_on
+    surface_on = True
+    normalize_depth_on = True
+    perpix_depth_on = True
+    default_on = True
+    front_only_on = False # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
+
+    gaussian_surfel_train_config = torch.tensor([surface_on, normalize_depth_on, perpix_depth_on, default_on, front_only_on], dtype=dtype, device=device) # surface_on, normalize_depth_on, perpix_depth_on
 
     # print(resolution_height, resolution_width)
 
@@ -159,6 +166,9 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         scales = neural_gaussians.get_local_scaling 
         rotations = neural_gaussians.get_local_rotation
 
+        scales = scales[valid_gs_mask]
+        rotations = rotations[valid_gs_mask]
+
     # print(scales)
     
     # TODO
@@ -176,6 +186,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
             shs = neural_gaussians.get_local_gaussian_sh_features # this is used currently
+            shs = shs[valid_gs_mask]
     else:
         colors_precomp = override_color
     
@@ -214,6 +225,8 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         # this is the normal of the gaussian at the rendered surface
         render_normal = allmap[2:5]
         render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
+        # render_normal = render_normal / render_alpha
+        # render_normal = torch.nan_to_num(render_normal, 0, 0)
         
         # get median depth map # what does this mean? # TODO
         render_depth_median = allmap[5:6]
