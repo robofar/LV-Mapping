@@ -271,7 +271,7 @@ Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have th
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
-- [ ] Make use of the mono normal clue in training, also use mono normal as the initialization of the gaussians
+- [x] Make use of the mono normal clue in training, also use mono normal as the initialization of the gaussians
 - [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
@@ -292,11 +292,11 @@ Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have th
 - [ ] Level of details, especially for the closer range
 - [ ] Evaluate Chamfer distance and PSNR
 - [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
-- [ ] Prune dynamic Gaussians using the PIN Map
+- [x] Prune dynamic Gaussians using the PIN Map
 - [ ] Add BoW python for image place recognition (loop detection)
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
-- [ ] Try GaussianSurfel instead of 2D GS
+- [x] Try GaussianSurfel instead of 2D GS
 - [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.), would be very useful and important
 - [ ] The goal is RAL or ISPRS Journal
 

@@ -206,6 +206,9 @@ class Config:
         self.gs_on: bool = False
         self.monodepth_on: bool = False
 
+        # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
+        self.bg_color = [1.0, 1.0, 1.0] # white 
+        
         self.gs_iters: int = 0
         self.gs_bs: int = 5
         self.gaussian_bs_ratio: float = 4.0 # gaussian_bs = bs * gaussian_bs_ratio
@@ -238,6 +241,8 @@ class Config:
 
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1
+
+        self.gaussian_vis_scale: float = 1.0
 
         # tracking (odometry estimation)
         self.track_on: bool = True
@@ -565,6 +570,8 @@ class Config:
 
             self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
             self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
+
+            self.gaussian_vis_scale = float(config_args["gs"].get("gaussian_vis_scale", self.gaussian_vis_scale)) # only for vis
 
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)

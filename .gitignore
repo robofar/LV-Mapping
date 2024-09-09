@@ -166,3 +166,12 @@ experiments/
 
 .json
 # NOTE.md
+
+tmp*/
+tmp*
+
+*artifacts/
+*artifacts
+
+*media/
+*media

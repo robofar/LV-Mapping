@@ -391,12 +391,14 @@ class SLAMDataset():
 
                         # visualize 
                         cur_img_rgb_vis = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR) 
-                        cv2.imshow("Mono RGB", cur_img_rgb_vis)
+                        if self.config.o3d_vis_on:
+                            cv2.imshow("Mono RGB", cur_img_rgb_vis)
 
                         pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
                         pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
                         pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
-                        cv2.imshow("Mono Depth", pred_depth_color)
+                        if self.config.o3d_vis_on:
+                            cv2.imshow("Mono Depth", pred_depth_color)
                 
                         # pred_normal[invalid_mask] = 0
                         # print(pred_normal)
@@ -406,7 +408,8 @@ class SLAMDataset():
                         pred_normal_vis_np[sky_mask_np] = 0
                         pred_normal_vis_np = np.ascontiguousarray(pred_normal_vis_np) 
                         pred_normal_vis_cv2 = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR) # in current camera frame
-                        cv2.imshow("Mono Normal", pred_normal_vis_cv2)
+                        if self.config.o3d_vis_on:
+                            cv2.imshow("Mono Normal", pred_normal_vis_cv2)
 
                         # show sky mask
                         # cur_img_rgb_np[sky_mask_np] = 0  

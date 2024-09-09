@@ -36,6 +36,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
+    scaling_modifier: You can use the Scaling Modifier to control the size of the displayed Gaussians, or show the initial point cloud. (suggested value, 0.001 to 1.0)
     """
 
     # pipeline_params:
@@ -73,20 +74,15 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
     # TODO: document this part, figure out why
-    cam_world_view_tran = camera_pose.to(dtype=dtype, device=device).inverse().T # first inverse, then transpose
+    if camera_pose is not None and viewpoint_camera.world_view_transform is None:
+        cam_world_view_tran = camera_pose.to(dtype=dtype, device=device).inverse().T # first inverse, then transpose
+        projection_matrix = viewpoint_camera.projection_matrix # P_mat.T
+        cam_center = cam_world_view_tran.inverse()[3, :3]
+        full_proj_transform = cam_world_view_tran @ projection_matrix 
 
-    projection_matrix = viewpoint_camera.projection_matrix.to(dtype=dtype, device=device) # P_mat.T
-
-    cam_center = cam_world_view_tran.inverse()[3, :3]
-
-    # principle point
-    prcppoint = viewpoint_camera.prcppoint.to(dtype=dtype, device=device)
-    
-    full_proj_transform = cam_world_view_tran @ projection_matrix 
-
-    viewpoint_camera.world_view_transform = cam_world_view_tran
-    viewpoint_camera.full_proj_transform = full_proj_transform
-    viewpoint_camera.camera_center = cam_center
+        viewpoint_camera.world_view_transform = cam_world_view_tran
+        viewpoint_camera.full_proj_transform = full_proj_transform
+        viewpoint_camera.camera_center = cam_center
 
     resolution_width = int(viewpoint_camera.image_width/img_scale)
     resolution_height = int(viewpoint_camera.image_height/img_scale)
@@ -103,6 +99,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
 
     # print(resolution_height, resolution_width)
 
+
     if use_2d_gs:
         # 2D GS
         raster_settings = GaussianRasterizationSettings(
@@ -111,11 +108,11 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
             tanfovx=tanfovx,
             tanfovy=tanfovy,
             bg=bg_color,
-            scale_modifier=scaling_modifier,
-            viewmatrix=cam_world_view_tran, # from world frame to camera space 
-            projmatrix=full_proj_transform, 
+            scale_modifier=scaling_modifier, # Scaling Modifier to control the size of the displayed Gaussians
+            viewmatrix=viewpoint_camera.world_view_transform, # from world frame to camera space 
+            projmatrix=viewpoint_camera.full_proj_transform, 
             sh_degree=neural_gaussians.active_sh_degree,
-            campos=cam_center,
+            campos=viewpoint_camera.camera_center,
             prefiltered=False,
             debug=False,
         )
@@ -128,12 +125,12 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
             tanfovy=tanfovy,
             bg=bg_color,
             scale_modifier=scaling_modifier,
-            viewmatrix=cam_world_view_tran,
-            projmatrix=full_proj_transform,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
             patch_bbox=viewpoint_camera.random_patch(), # original image size
-            prcppoint=prcppoint,
+            prcppoint=viewpoint_camera.prcppoint, # principle point
             sh_degree=neural_gaussians.active_sh_degree,
-            campos=cam_center,
+            campos=viewpoint_camera.camera_center,
             prefiltered=False,
             debug=False,
             config=gaussian_surfel_train_config,
@@ -224,7 +221,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         # transform normal from view space to world space
         # this is the normal of the gaussian at the rendered surface
         render_normal = allmap[2:5]
-        render_normal = (render_normal.permute(1,2,0) @ (cam_world_view_tran[:3,:3].T)).permute(2,0,1)
+        render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
         # render_normal = render_normal / render_alpha
         # render_normal = torch.nan_to_num(render_normal, 0, 0)
         

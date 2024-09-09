@@ -20,6 +20,11 @@ opencv-python
 torchmetrics==1.4.1
 -e submodules/diff-surfel-rasterization # editable install # 2D GS
 -e submodules/diff-gaussian-surfel-rasterization # editable install # Gaussian Surfels
+# for gs visualizer
+PyOpenGL
+glfw
+PyGLM
+imgviz
 # for metric3d
 mmcv
 timm

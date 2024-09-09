@@ -34,9 +34,9 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True
-  gs_iters: 10 # 20
+  gs_iters: 20 # 20
   gs_bs: 5 # 5 # train more
-  gaussian_bs_ratio: 4.0
+  gaussian_bs_ratio: 8.0
   gs_keyframe_interval: 2 # 2
   img_pool_size: 25 # 15
   img_test_pool_size: 15
@@ -55,6 +55,7 @@ gs:
   lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
   # lambda_sdf: 0.0
   gs_rotation_lr: 1e-2
+  gaussian_vis_scale: 0.5 # for visualization only
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7

@@ -4,14 +4,16 @@
 # Copyright (c) 2024 Yue Pan, all rights reserved
 
 import argparse
+import csv
 import os
 import sys
-import csv
+import time
 
 import rerun as rr
 import numpy as np
 import open3d as o3d
 import torch
+import torch.multiprocessing as mp
 import wandb
 from rich import print
 from tqdm import tqdm
@@ -39,6 +41,8 @@ from utils.tools import (
 )
 from utils.tracker import Tracker
 from utils.visualizer import MapVisualizer
+
+from gs_gui import gui_utils, slam_gui
 
 '''
     📍PIN-SLAM: LiDAR SLAM Using a Point-Based Implicit Neural Representation for Achieving Global Map Consistency
@@ -101,13 +105,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         run_path = setup_experiment(config, argv)
         print("[bold green]PIN-SLAM starts[/bold green]","📍" )
 
-    # non-blocking visualizer
-    if config.o3d_vis_on:
-        o3d_vis = MapVisualizer(config) 
-
-    if config.rerun_vis_on:
-        rr.init("pin_slam_rerun_viewer", spawn=True)
-
     # initialize the mlp decoder
     geo_mlp = Decoder(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
     sem_mlp = Decoder(config, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
@@ -119,6 +116,30 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # Load the decoder model
     if config.load_model: # not used
         load_decoder(config, geo_mlp, sem_mlp, color_mlp)
+
+    # non-blocking visualizer
+    if config.o3d_vis_on:
+        o3d_vis = MapVisualizer(config) 
+
+
+    # q_main2vis = mp.Queue() 
+    # q_vis2main = mp.Queue()
+
+    # params_gui = gui_utils.ParamsGUI(
+    #     pipe=self.pipeline_params,
+    #     background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
+    #     gaussians=neural_points,
+    #     q_main2vis=q_main2vis,
+    #     q_vis2main=q_vis2main,
+    # )
+
+    # gui_process = mp.Process(target=slam_gui.run)
+    # gui_process.start()
+    # time.sleep(2) # second
+
+
+    if config.rerun_vis_on:
+        rr.init("pin_slam_rerun_viewer", spawn=True)
 
     # dataset
     dataset = SLAMDataset(config)
@@ -444,6 +465,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         dataset.processed_frame += 1
     
     # VI. Save results
+    pose_eval_results = None
     if config.track_on:
         pose_eval_results = dataset.write_results()
     if config.pgo_on and pgm.pgo_count>0:

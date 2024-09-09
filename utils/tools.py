@@ -43,6 +43,7 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
 
     warnings.filterwarnings("ignore", category=FutureWarning) 
+    o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
     run_name = config.name + "_" + ts  # modified to a name that is easier to index
 

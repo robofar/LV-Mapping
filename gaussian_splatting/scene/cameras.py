@@ -21,15 +21,16 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min, z_max,
+    def __init__(self, frame_id: int, image, K_mat, z_min=0.01, z_max=100.0,
         cam_id: str = "cam", img_down_rate = 0, normal_img = None, sky_mask = None, 
-        device = "cuda", img_width = None, img_height = None):
+        device = "cuda", cam_pose = None, img_width = None, img_height = None):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
         self.uid = f"{frame_id:05d}_{cam_id}"
 
         self.device = device
+        self.dtype = torch.float32
 
         self.train_view = False # is used as train view or test view
 
@@ -50,15 +51,21 @@ class CamImage:
         self.FoVy = focal2fov(self.fy, self.image_height)
 
         # principle point (not always at the center) as a ratio, like 0.5, 0.5
-        self.prcppoint = torch.tensor([self.cx / self.image_width, self.cy / self.image_height])
+        self.prcppoint = torch.tensor([self.cx / self.image_width, self.cy / self.image_height]).to(dtype=self.dtype, device=self.device)
 
         self.zfar = z_max # 100.0
         self.znear = z_min # 0.1
 
         # GL
-        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar,
+        self.projection_matrix = (getProjectionMatrix(znear=self.znear, zfar=self.zfar,
              fovX=self.FoVx, fovY=self.FoVy,
-              W=self.image_width, H=self.image_height, prcp=self.prcppoint).T # T_gi
+              W=self.image_width, H=self.image_height, prcp=self.prcppoint).T).to(dtype=self.dtype, device=self.device) # T_gi        
+        
+        self.world_view_transform = None
+        if cam_pose is not None: # we also directly load the camera pose here
+            self.world_view_transform = (camera_pose.inverse().T).to(dtype=self.dtype, device=self.device) 
+            self.camera_center = self.world_view_transform.inverse()[3, :3]
+            self.full_proj_transform = self.world_view_transform @ self.projection_matrix 
 
         # pyramid of images
         self.original_image_list = []
@@ -153,6 +160,16 @@ class CamImage:
         h1 = h0 + h_size
         w1 = w0 + w_size
         return torch.tensor([h0, w0, h1, w1]).to(torch.float32).to(self.device)
+    
+    # @staticmethod
+    # def init_from_gui(uid, T, FoVx, FoVy, fx, fy, cx, cy, H, W):
+    #     projection_matrix = getProjectionMatrix2(
+    #         znear=0.01, zfar=100.0, fx=fx, fy=fy, cx=cx, cy=cy, W=W, H=H
+    #     ).transpose(0, 1)
+    #     return Camera(
+    #         uid, None, None, T, projection_matrix, fx, fy, cx, cy, FoVx, FoVy, H, W
+    #     )
+
 
 
 # this is important
