@@ -49,7 +49,7 @@ class ColmapDataParser(DataParser):
         """
         a = a / torch.linalg.norm(a)
         b = b / torch.linalg.norm(b)
-        v = torch.cross(a, b)
+        v = torch.linalg.cross(a, b)
         c = torch.dot(a, b)
         # If vectors are exactly opposite, we add a little noise to one of them
         if c < -1 + 1e-8:

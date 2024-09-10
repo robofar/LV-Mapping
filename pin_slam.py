@@ -39,6 +39,7 @@ from utils.tools import (
     split_chunks,
     transform_torch,
 )
+from utils.multiprocessing_utils import clone_obj
 from utils.tracker import Tracker
 from utils.visualizer import MapVisualizer
 
@@ -105,6 +106,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         run_path = setup_experiment(config, argv)
         print("[bold green]PIN-SLAM starts[/bold green]","📍" )
 
+    mp.set_start_method("spawn")
+
     # initialize the mlp decoder
     geo_mlp = Decoder(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
     sem_mlp = Decoder(config, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
@@ -121,22 +124,22 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     if config.o3d_vis_on:
         o3d_vis = MapVisualizer(config) 
 
+    if config.gs_vis_on:
+        q_main2vis = mp.Queue() 
+        q_vis2main = mp.Queue()
 
-    # q_main2vis = mp.Queue() 
-    # q_vis2main = mp.Queue()
+        params_gui = gui_utils.ParamsGUI(
+            pipe=None,
+            background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
+            gaussians=neural_points,
+            q_main2vis=q_main2vis,
+            q_vis2main=q_vis2main,
+            config=config
+        )
 
-    # params_gui = gui_utils.ParamsGUI(
-    #     pipe=self.pipeline_params,
-    #     background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
-    #     gaussians=neural_points,
-    #     q_main2vis=q_main2vis,
-    #     q_vis2main=q_vis2main,
-    # )
-
-    # gui_process = mp.Process(target=slam_gui.run)
-    # gui_process.start()
-    # time.sleep(2) # second
-
+        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
+        gui_process.start()
+        time.sleep(2) # second
 
     if config.rerun_vis_on:
         rr.init("pin_slam_rerun_viewer", spawn=True)
@@ -344,7 +347,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # mapper.gs_mapping(gs_iter_num) 
             # sdf_train_loss_on=frame_id>10
             mapper.joint_gsdf_mapping(gs_iter_num, render_pcd=config.monodepth_on) # only when sdf field is learned well 
-        
+            
+            if config.gs_vis_on:
+                q_main2vis.put(gui_utils.GaussianPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1]))  
+
         T6 = get_time()
 
         # regular saving logs

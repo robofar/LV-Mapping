@@ -55,7 +55,9 @@ gs:
   lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
   # lambda_sdf: 0.0
   gs_rotation_lr: 1e-2
-  gaussian_vis_scale: 0.5 # for visualization only
+  # gs_position_lr: 1.6e-5 # 1.6e-4
+  # gs_scaling_lr: 1e-3 # 5e-3 # set to be smaller than default
+  gaussian_vis_scale: 1.0 # for visualization only # ellipsoid size
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7

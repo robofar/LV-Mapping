@@ -29,6 +29,8 @@ from gs_gui.gui_utils import (
 from gaussian_splatting.scene.cameras import CamImage
 # from utils.logging_utils import Log
 
+from utils.tools import colorize_depth_maps
+
 o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
 
@@ -45,8 +47,9 @@ class SLAM_GUI:
 
         self.q_main2vis = None
         self.gaussian_cur = None
-        self.pipe = None
+        self.pipe = None # not used
         self.background = None
+        self.config = None
 
         self.init = False
         self.kf_window = None
@@ -54,11 +57,12 @@ class SLAM_GUI:
 
         if params_gui is not None:
             self.background = params_gui.background
-            self.gaussian_cur = params_gui.gaussians
+            self.gaussian_cur = params_gui.gaussians # actually as neural gaussians
             self.init = True
             self.q_main2vis = params_gui.q_main2vis
             self.q_vis2main = params_gui.q_vis2main
             self.pipe = params_gui.pipe
+            self.config = params_gui.config
 
         self.gaussian_nums = []
 
@@ -81,8 +85,8 @@ class SLAM_GUI:
         self.window_w, self.window_h = 1600, 900
 
         self.window = gui.Application.instance.create_window(
-            "MonoGS", self.window_w, self.window_h
-        )
+            "GS Viewer", self.window_w, self.window_h
+        ) # open3d gui
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
         self.widget3d = gui.SceneWidget()
@@ -401,11 +405,11 @@ class SLAM_GUI:
         if gaussian_packet.has_gaussians:
             self.gaussian_cur = gaussian_packet
             self.output_info.text = "Number of Gaussians: {}".format(
-                self.gaussian_cur.get_xyz.shape[0]
+                self.gaussian_cur.get_xyz.shape[0] # valid_only (TODO)
             )
             self.init = True
 
-        if gaussian_packet.current_frame is not None:
+        if gaussian_packet.current_frame is not None: # as Camera class
             frustum = self.add_camera(
                 gaussian_packet.current_frame, name="current", color=[0, 1, 0]
             )
@@ -417,7 +421,7 @@ class SLAM_GUI:
                 )
                 self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-        if gaussian_packet.keyframe is not None:
+        if gaussian_packet.keyframe is not None: # as Camera class
             name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
             frustum = self.add_camera(
                 gaussian_packet.keyframe, name=name, color=[0, 0, 1]
@@ -439,15 +443,21 @@ class SLAM_GUI:
             self.in_rgb_widget.update_image(rgb)
 
         if gaussian_packet.gtdepth is not None:
-            depth = gaussian_packet.gtdepth
-            depth = imgviz.depth2rgb(
-                depth, min_value=0.1, max_value=5.0, colormap="jet"
-            )
-            depth = torch.from_numpy(depth)
-            depth = torch.permute(depth, (2, 0, 1)).float()
-            depth = (depth).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            rgb = o3d.geometry.Image(depth)
-            self.in_depth_widget.update_image(rgb)
+            depth = gaussian_packet.gtdepth.cpu().numpy() 
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
+            depth_color = np.transpose(depth_color[0], (1, 2, 0))
+            depth_color_o3d = o3d.geometry.Image(depth_color)
+            self.in_depth_widget.update_image(depth_color_o3d)
+
+            # depth = gaussian_packet.gtdepth.squeeze(0).cpu().numpy() # torch to numpy
+            # depth = imgviz.depth2rgb(
+            #     depth, min_value=0.1, max_value=self.config.max_range*0.9, colormap="inferno_r"
+            # )
+            # depth = torch.from_numpy(depth)
+            # depth = torch.permute(depth, (2, 0, 1)).float()
+            # depth = (depth).byte().permute(1, 2, 0).contiguous().cpu().numpy()
+            # rgb = o3d.geometry.Image(depth)
+            # self.in_depth_widget.update_image(rgb)
 
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -514,6 +524,8 @@ class SLAM_GUI:
     def get_current_cam(self):
         w2c = cv_gl @ self.widget3d.scene.camera.get_view_matrix()
 
+        # print(w2c)
+
         image_gui = torch.zeros(
             (1, int(self.window.size.height), int(self.widget3d_width))
         )
@@ -535,13 +547,20 @@ class SLAM_GUI:
         K_mat[0,2] = cx
         K_mat[1,2] = cy
 
-        current_cam = CamImage(frame_id, None, K_mat, 0.01, 100.0, img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
+        current_cam = CamImage(-1, None, K_mat, 0.01, 100.0, 
+            img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
+
+        # current_cam = CamImage(-1, None, K_mat, 0.01, 100.0, 
+        #     img_width=W, img_height=H, cam_pose=T)
+
+        # print(current_cam.camera_center)
                                                         
         return current_cam
 
+    # TODO: change gaussians functions here
     def rasterise(self, current_cam):
         if (
-            self.time_shader_chbox.checked
+            self.time_shader_chbox.checked # what does this mean?
             and self.gaussian_cur is not None
             and type(self.gaussian_cur) == GaussianPacket
         ):
@@ -564,14 +583,9 @@ class SLAM_GUI:
                 self.scaling_slider.double_value,
             )
 
-
-        #      viewpoint_camera: CamImage, camera_pose: torch.Tensor,
-        #    neural_gaussians: NeuralPoints, bg_color: torch.Tensor, 
-        #    scaling_modifier = 1.0, override_color = None, down_rate=0 # need the cam_pose, 
-
-
             self.gaussian_cur.get_features = features
-        else:
+        else: # this is for the visualizer camera view
+            # print("Render visualizer cam view")
             rendering_data = render(
                 current_cam,
                 None,
@@ -579,16 +593,18 @@ class SLAM_GUI:
                 # self.pipe,
                 self.background,
                 self.scaling_slider.double_value,
+                verbose=True
             )
         return rendering_data
 
+    # main rendering function for the 3D visualizer
     def render_o3d_image(self, results, current_cam):
         if self.depth_chbox.checked:
-            depth = results["depth"]
+            depth = results["surf_depth"]
             depth = depth[0, :, :].detach().cpu().numpy()
             max_depth = np.max(depth)
             depth = imgviz.depth2rgb(
-                depth, min_value=0.1, max_value=max_depth, colormap="jet"
+                depth, min_value=0.1, max_value=self.config.max_range*0.9, colormap="inferno_r"
             )
             depth = torch.from_numpy(depth)
             depth = torch.permute(depth, (2, 0, 1)).float()
@@ -596,7 +612,7 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(depth)
 
         elif self.opacity_chbox.checked:
-            opacity = results["opacity"]
+            opacity = results["rend_alpha"]
             opacity = opacity[0, :, :].detach().cpu().numpy()
             max_opacity = np.max(opacity)
             opacity = imgviz.depth2rgb(
@@ -645,7 +661,7 @@ class SLAM_GUI:
                 0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE
             )
             img = np.frombuffer(bufferdata, np.uint8, -1).reshape(height, width, 3)
-            cv2.flip(img, 0, img)
+            img = cv2.flip(img, 0)
             render_img = o3d.geometry.Image(img)
             glfw.swap_buffers(self.window_gl)
         else:
@@ -657,6 +673,9 @@ class SLAM_GUI:
                 .cpu()
                 .numpy()
             )
+
+            # print(rgb)
+
             render_img = o3d.geometry.Image(rgb)
         return render_img
 
@@ -668,6 +687,7 @@ class SLAM_GUI:
         results = self.rasterise(current_cam)
         if results is None:
             return
+        # print("Results get")
         self.render_img = self.render_o3d_image(results, current_cam)
         self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
 
@@ -685,7 +705,9 @@ class SLAM_GUI:
                 break
 
             def update():
+                # print("UPDATE scene")
                 if self.step % 3 == 0:
+                    # print("UPDATE scene happens")
                     self.scene_update()
 
                 if self.step >= 1e9:

@@ -177,7 +177,7 @@ def compute_normal(vertex_map):
     H, W, C = vertex_map.shape
     img_dx, img_dy = feature_gradient(vertex_map, normalize_gradient=False)  # [h, w, 3]
 
-    normal = torch.cross(img_dx.view(-1, 3), img_dy.view(-1, 3))
+    normal = torch.linalg.cross(img_dx.view(-1, 3), img_dy.view(-1, 3))
     normal = normal.view(H, W, 3)  # [h, w, 3]
 
     mag = torch.norm(normal, p=2, dim=-1, keepdim=True)

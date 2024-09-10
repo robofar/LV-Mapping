@@ -234,7 +234,7 @@ class Config:
 
         self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM)
         
-        self.gs_position_lr: float = 0.00016 # # the original value in 3D GS is 0.00016
+        self.gs_position_lr: float = 0.00016 # 1.6e4 # the original value in 3D GS is 0.00016
         self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
         self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
         self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
@@ -243,6 +243,7 @@ class Config:
         self.gs_batch_frame: int = -1
 
         self.gaussian_vis_scale: float = 1.0
+        self.gs_vis_on: bool = True # gs visualizer
 
         # tracking (odometry estimation)
         self.track_on: bool = True
@@ -325,6 +326,8 @@ class Config:
         self.vis_point_size: int = 2 # point size for visualization in o3d
         self.sensor_cad_path = None # the path to the sensor cad file, "./cad/ipb_car.ply" for visualization
         self.cam_cad_path = "./cad/camera.ply"
+
+        self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
 
         # result saving settings
         self.save_map: bool = False # save the neural point map model and decoders or not
@@ -570,7 +573,9 @@ class Config:
 
             self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
             self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
-
+            self.gs_scaling_lr = float(config_args["gs"].get("gs_scaling_lr", self.gs_scaling_lr))
+            self.gs_opacity_lr = float(config_args["gs"].get("gs_opacity_lr", self.gs_opacity_lr))
+            
             self.gaussian_vis_scale = float(config_args["gs"].get("gaussian_vis_scale", self.gaussian_vis_scale)) # only for vis
 
 

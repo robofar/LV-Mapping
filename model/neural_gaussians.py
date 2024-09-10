@@ -149,6 +149,9 @@ class NeuralPoints(nn.Module):
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = self.config.max_range # scene size
+
+        self.unique_kfIDs = None # should be similar to point_ts_create
+
         self.setup_functions()
 
         # the local map
@@ -218,6 +221,10 @@ class NeuralPoints(nn.Module):
 
     def free_local_count(self):
         return torch.sum(self.local_free_gs_mask).int()
+
+    @property
+    def has_gaussians(self):
+        return (self.count() > 0)
     
     @staticmethod
     def build_covariance_from_scaling_rotation_2dgs(center, scaling, scaling_modifier, rotation):
@@ -250,22 +257,22 @@ class NeuralPoints(nn.Module):
 
     
     @property
-    def get_local_gaussian_xyz(self):
+    def get_local_xyz(self):
         # print(self.local_xyz)
         return self.local_neural_points + self.local_xyz
     
     @property
-    def get_gaussian_xyz(self):
+    def get_xyz(self):
         return self.neural_points + self.xyz
     
     @property
-    def get_local_gaussian_sh_features(self):
+    def get_local_features(self):
         features_dc = self.local_features_dc
         features_rest = self.local_features_rest
         return torch.cat((features_dc, features_rest), dim=1)
     
     @property
-    def get_gaussian_sh_features(self):
+    def get_features(self):
         return torch.cat((self.features_dc, self.features_rest), dim=1)
     
     # they all need the activation
@@ -295,10 +302,10 @@ class NeuralPoints(nn.Module):
 
 
     def get_local_covariance(self, scaling_modifier = 1):
-        return self.covariance_activation(self.get_local_gaussian_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
+        return self.covariance_activation(self.get_local_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
 
     def get_covariance(self, scaling_modifier = 1):
-        return self.covariance_activation(self.get_gaussian_xyz, self.get_scaling, scaling_modifier, self.rotation)
+        return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self.rotation)
     
 
     # for GS
@@ -335,8 +342,8 @@ class NeuralPoints(nn.Module):
         # TODO: it's also necessary to duplicate, clone, split the gaussians
 
 
-        # self.xyz_gradient_accum = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
-        # self.denom = torch.zeros((self.get_local_gaussian_xyz.shape[0], 1), device=self.device)
+        # self.xyz_gradient_accum = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
+        # self.denom = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
 
         # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
         # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
@@ -948,7 +955,7 @@ class NeuralPoints(nn.Module):
 
         if query_global:
             valid_mask = self.valid_gs_mask
-            xyz = self.get_gaussian_xyz[valid_mask].detach().cpu().numpy()
+            xyz = self.get_xyz[valid_mask].detach().cpu().numpy()
             normals = np.zeros_like(xyz)
             f_dc = self.features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
             f_rest = self.features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
@@ -959,7 +966,7 @@ class NeuralPoints(nn.Module):
 
         else:
             valid_mask = self.local_valid_gs_mask
-            xyz = self.get_local_gaussian_xyz[valid_mask].detach().cpu().numpy()
+            xyz = self.get_local_xyz[valid_mask].detach().cpu().numpy()
             normals = np.zeros_like(xyz)
             f_dc = self.local_features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
             f_rest = self.local_features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
@@ -1011,7 +1018,7 @@ class NeuralPoints(nn.Module):
                 
                 if color_mode == 0:
                     neural_points_np = (
-                        self.get_gaussian_xyz[shown_gaussian_mask]
+                        self.get_xyz[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()
@@ -1061,7 +1068,7 @@ class NeuralPoints(nn.Module):
 
                 if color_mode == 0:
                     neural_points_np = (
-                        self.get_local_gaussian_xyz[shown_gaussian_mask]
+                        self.get_local_xyz[shown_gaussian_mask]
                         .cpu()
                         .detach()
                         .numpy()

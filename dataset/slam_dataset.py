@@ -364,7 +364,8 @@ class SLAMDataset():
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             residual_before = pred_depth_with_gt - valid_depth_measurement
                             rmse_before = np.sqrt((np.mean(residual_before**2)))
-                            print("mono depth rmse (m): ", rmse_before) # RMSE (m)
+                            if not self.silence:
+                                print("mono depth rmse (m): ", rmse_before) # RMSE (m)
                             
                             # depth least square fitting with regards to the lidar measurement
                             if valid_depth_count > 100: # at least some valid measurements available
@@ -372,7 +373,8 @@ class SLAMDataset():
                                 # sometimes this fitting would fail (TODO)
                                 k, b = coefficients
                                 rmse_after = np.sqrt((residuals[0]/valid_depth_count))
-                                print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
+                                if not self.silence:
+                                    print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
                                 pred_depth_np = k * pred_depth_np + b
                             else:
                                 use_mono_depth_for_gs_init = False
@@ -391,13 +393,13 @@ class SLAMDataset():
 
                         # visualize 
                         cur_img_rgb_vis = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR) 
-                        if self.config.o3d_vis_on:
+                        if self.config.o3d_vis_on and self.config.vis_in_cv2:
                             cv2.imshow("Mono RGB", cur_img_rgb_vis)
 
                         pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
                         pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
                         pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
-                        if self.config.o3d_vis_on:
+                        if self.config.o3d_vis_on and self.config.vis_in_cv2:
                             cv2.imshow("Mono Depth", pred_depth_color)
                 
                         # pred_normal[invalid_mask] = 0
@@ -408,7 +410,7 @@ class SLAMDataset():
                         pred_normal_vis_np[sky_mask_np] = 0
                         pred_normal_vis_np = np.ascontiguousarray(pred_normal_vis_np) 
                         pred_normal_vis_cv2 = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR) # in current camera frame
-                        if self.config.o3d_vis_on:
+                        if self.config.o3d_vis_on and self.config.vis_in_cv2:
                             cv2.imshow("Mono Normal", pred_normal_vis_cv2)
 
                         # show sky mask

@@ -29,9 +29,10 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View
 from gaussian_splatting.scene.cameras import CamImage
 
 # the mian gaussain rendering function
-def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
+def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
            neural_gaussians: NeuralPoints, bg_color: torch.Tensor, 
-           scaling_modifier = 1.0, override_color = None, down_rate=0):
+           scaling_modifier = 1.0, override_color = None, 
+           down_rate=0, verbose: bool = False):
     """
     Render the scene. 
     
@@ -48,7 +49,10 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     dtype = neural_gaussians.dtype
     device = neural_gaussians.device
 
-    means3D = neural_gaussians.get_local_gaussian_xyz
+    if neural_gaussians.get_opacity.shape[0] == 0: # not yet started
+        return None
+
+    means3D = neural_gaussians.get_local_xyz
     opacity = neural_gaussians.get_local_opacity
 
     # only use those valid ones
@@ -74,8 +78,9 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
     # TODO: document this part, figure out why
-    if camera_pose is not None and viewpoint_camera.world_view_transform is None:
-        cam_world_view_tran = camera_pose.to(dtype=dtype, device=device).inverse().T # first inverse, then transpose
+    if cam_pose is not None and viewpoint_camera.world_view_transform is None:
+        cam_pose = cam_pose.to(dtype=dtype, device=device)
+        cam_world_view_tran = cam_pose.inverse().T # first inverse, then transpose
         projection_matrix = viewpoint_camera.projection_matrix # P_mat.T
         cam_center = cam_world_view_tran.inverse()[3, :3]
         full_proj_transform = cam_world_view_tran @ projection_matrix 
@@ -83,6 +88,10 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         viewpoint_camera.world_view_transform = cam_world_view_tran
         viewpoint_camera.full_proj_transform = full_proj_transform
         viewpoint_camera.camera_center = cam_center
+
+        T_cw = cam_pose.inverse()
+        viewpoint_camera.R = T_cw[:3, :3] # rotation part
+        viewpoint_camera.T = T_cw[:3, 3] # translation part
 
     resolution_width = int(viewpoint_camera.image_width/img_scale)
     resolution_height = int(viewpoint_camera.image_height/img_scale)
@@ -166,7 +175,9 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
         scales = scales[valid_gs_mask]
         rotations = rotations[valid_gs_mask]
 
-    # print(scales)
+    # if verbose:
+    #     print(means3D)
+    #     print(scales)
     
     # TODO
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
@@ -176,13 +187,13 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     colors_precomp = None
     if override_color is None:
         if convert_SHs_python: # what's the difference, python or cuda?
-            shs_view = neural_gaussians.get_local_gaussian_sh_features.transpose(1, 2).view(-1, 3, (neural_gaussians.max_sh_degree+1)**2)
-            dir_pp = (neural_gaussians.get_local_gaussian_xyz - viewpoint_camera.camera_center.repeat(neural_gaussians.local_count(), 1))
+            shs_view = neural_gaussians.get_local_features.transpose(1, 2).view(-1, 3, (neural_gaussians.max_sh_degree+1)**2)
+            dir_pp = (neural_gaussians.get_local_xyz - viewpoint_camera.camera_center.repeat(neural_gaussians.local_count(), 1))
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(neural_gaussians.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
-            shs = neural_gaussians.get_local_gaussian_sh_features # this is used currently
+            shs = neural_gaussians.get_local_features # this is used currently
             shs = shs[valid_gs_mask]
     else:
         colors_precomp = override_color
@@ -271,7 +282,7 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
     
     else:
         # gaussian surfels
-        # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+        # Rasterize visible Gaussians to image, obtain their radii (on screen [unit: pixel]). 
         rendered_image, rendered_normal, rendered_depth, rendered_opac, radii = rasterizer(
             means3D = means3D,
             means2D = means2D,
@@ -305,9 +316,14 @@ def render(viewpoint_camera: CamImage, camera_pose: torch.Tensor,
 
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
+        
+        # if verbose:
+        #     print(screenspace_points)
+        #     print(radii)
+        
         return {"render": rendered_image, "rend_normal": rendered_normal, "surf_depth": rendered_depth,
                 "rend_alpha": rendered_opac, 'surf_normal': surf_normal,
-                "viewspace_points": screenspace_points, "visibility_filter" : radii > 1, "radii": radii}
+                "viewspace_points": screenspace_points, "visibility_filter" : radii > 1, "radii": radii} # > 1 or > 0
 
 
     return rets

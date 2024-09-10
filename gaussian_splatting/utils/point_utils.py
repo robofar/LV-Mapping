@@ -43,7 +43,7 @@ def depth_to_normal(camera, depth):
     output = torch.zeros_like(points)
     dx = torch.cat([points[2:, 1:-1] - points[:-2, 1:-1]], dim=0)
     dy = torch.cat([points[1:-1, 2:] - points[1:-1, :-2]], dim=1)
-    normal_map = torch.nn.functional.normalize(torch.cross(dx, dy, dim=-1), dim=-1)
+    normal_map = torch.nn.functional.normalize(torch.linalg.cross(dx, dy, dim=-1), dim=-1)
     output[1:-1, 1:-1, :] = normal_map
     # as the gradient of depth 
     # pointing towards the surface
@@ -85,20 +85,20 @@ def depth2normal(depth, mask, camera):
     p_b = (p[:, 2:  , 1:-1, :] - p_c) * mask[:, 2:  , 1:-1, :]
     p_r = (p[:, 1:-1, 2:  , :] - p_c) * mask[:, 1:-1, 2:  , :]
 
-    n_ul = torch.cross(p_u, p_l)
-    n_ur = torch.cross(p_r, p_u)
-    n_br = torch.cross(p_b, p_r)
-    n_bl = torch.cross(p_l, p_b)
+    n_ul = torch.linalg.cross(p_u, p_l) # changed for torch.cross [FIXME](yue)
+    n_ur = torch.linalg.cross(p_r, p_u)
+    n_br = torch.linalg.cross(p_b, p_r)
+    n_bl = torch.linalg.cross(p_l, p_b)
 
-    # n_ul = torch.nn.functional.normalize(torch.cross(p_u, p_l), dim=-1)
-    # n_ur = torch.nn.functional.normalize(torch.cross(p_r, p_u), dim=-1)
-    # n_br = torch.nn.functional.normalize(torch.cross(p_b, p_r), dim=-1)
-    # n_bl = torch.nn.functional.normalize(torch.cross(p_l, p_b), dim=-1)
+    # n_ul = torch.nn.functional.normalize(torch.linalg.cross(p_u, p_l), dim=-1)
+    # n_ur = torch.nn.functional.normalize(torch.linalg.cross(p_r, p_u), dim=-1)
+    # n_br = torch.nn.functional.normalize(torch.linalg.cross(p_b, p_r), dim=-1)
+    # n_bl = torch.nn.functional.normalize(torch.linalg.cross(p_l, p_b), dim=-1)
 
-    # n_ul = torch.nn.functional.normalize(torch.cross(p_l, p_u), dim=-1)
-    # n_ur = torch.nn.functional.normalize(torch.cross(p_u, p_r), dim=-1)
-    # n_br = torch.nn.functional.normalize(torch.cross(p_r, p_b), dim=-1)
-    # n_bl = torch.nn.functional.normalize(torch.cross(p_b, p_l), dim=-1)
+    # n_ul = torch.nn.functional.normalize(torch.linalg.cross(p_l, p_u), dim=-1)
+    # n_ur = torch.nn.functional.normalize(torch.linalg.cross(p_u, p_r), dim=-1)
+    # n_br = torch.nn.functional.normalize(torch.linalg.cross(p_r, p_b), dim=-1)
+    # n_bl = torch.nn.functional.normalize(torch.linalg.cross(p_b, p_l), dim=-1)
     
     n = n_ul + n_ur + n_br + n_bl
     n = n[0]

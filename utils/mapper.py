@@ -986,7 +986,7 @@ class Mapper:
         
         if iter_count > 0:
 
-            print("GS fitting on ")
+            # print("GS fitting on ")
         
             # TODO 
             # fastest speed: 20 ms / iter (bs=1) including the gaussian parameter loss
@@ -1230,7 +1230,7 @@ class Mapper:
                 sdf_consistency_loss = 0.0
                 sdf_normal_consistency_loss = 0.0
                 if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
-                    sampled_guassians_xyz = self.neural_points.get_local_gaussian_xyz[sampled_indices]
+                    sampled_guassians_xyz = self.neural_points.get_local_xyz[sampled_indices]
                     sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3 # this is definitely normalized
 
                     sampled_guassians_xyz.requires_grad_(True)
@@ -1241,7 +1241,8 @@ class Mapper:
                     valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
                     valid_grad_mask = valid_grad_mask.detach()
                     valid_grad_count = torch.sum(valid_grad_mask).item()
-                    print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                    if not self.silence:
+                        print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
@@ -1303,8 +1304,9 @@ class Mapper:
 
                     sdf_loss *= self.config.lambda_sdf
 
-                visible_count = torch.sum(batch_visbility_mask).item()
-                print("# Visible local gaussians in this batch:", visible_count)
+                if not self.silence:
+                    visible_count = torch.sum(batch_visbility_mask).item()
+                    print("# Visible local gaussians in this batch:", visible_count)
 
                 # total loss
                 # TODO: monitor losses by wandb
@@ -1327,7 +1329,7 @@ class Mapper:
                 # print("Optimization iter time (ms):", (T3-T2)*1e3) # still, this backpropagation is slow, but better to do this in batch
             
             # # filter dynamic gaussains (TODO)
-            # local_gaussian_position = self.neural_points.get_local_gaussian_xyz
+            # local_gaussian_position = self.neural_points.get_local_xyz
             # nonfree_local_gaussian_position = local_gaussian_position[~self.neural_points.local_free_gs_mask]
             # nonfree_local_gaussians_static_mask = self.dynamic_filter(nonfree_local_gaussian_position)
             # local_gaussians_static_mask = self.neural_points.local_free_gs_mask.clone()
@@ -1382,7 +1384,7 @@ class Mapper:
             original_img_int8 = (np.transpose(original_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
             original_img_int8 = np.ascontiguousarray(original_img_int8) 
             original_img_rgb = cv2.cvtColor(original_img_int8, cv2.COLOR_RGB2BGR)
-            if self.config.o3d_vis_on:
+            if self.config.o3d_vis_on and self.config.vis_in_cv2:
                 cv2.imshow(cam_name + ": Observed RGB", original_img_rgb)
 
             if cur_viewpoint_cam.depth_on: # how to convert a depth map # TODO
@@ -1394,7 +1396,7 @@ class Mapper:
                 # print(np.shape(original_img_depth))
                 original_img_depth_color = np.transpose(original_img_depth_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
                 original_img_depth_color = cv2.cvtColor(original_img_depth_color, cv2.COLOR_RGB2BGR)
-                if self.config.o3d_vis_on:
+                if self.config.o3d_vis_on and self.config.vis_in_cv2:
                     cv2.imshow(cam_name + ": Observed Depth", original_img_depth_color)
 
             # for this validation render frame
@@ -1407,7 +1409,8 @@ class Mapper:
             T1_r = get_time()
             render_pkg = render(cur_viewpoint_cam, T_w_c, self.neural_points, background, scaling_modifier=gaussian_vis_scale, down_rate=vis_down_rate) # render gaussians
             T2_r = get_time()
-            print("Render time per frame (ms):", (T2_r-T1_r)*1e3)
+            if not self.silence:
+                print("Render time per frame (ms):", (T2_r-T1_r)*1e3, " [", 1.0/(T2_r-T1_r), " Hz ]")
             
             renderd_image, rend_normal, surf_depth, depth_normal, rend_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
             
@@ -1429,7 +1432,7 @@ class Mapper:
             renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
             renderd_image_np = np.ascontiguousarray(renderd_image_np) 
             renderd_image_rgb_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
-            if self.config.o3d_vis_on:
+            if self.config.o3d_vis_on and self.config.vis_in_cv2:
                 cv2.imshow(cam_name + ": Rendered RGB", renderd_image_rgb_np)
 
             rendered_depth_np = surf_depth.detach().cpu().numpy()
@@ -1438,19 +1441,19 @@ class Mapper:
             rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
             rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
             rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
-            if self.config.o3d_vis_on:
+            if self.config.o3d_vis_on and self.config.vis_in_cv2:
                 cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
 
             rend_normal_vis = 0.5 - rend_normal * 0.5  # convert to the normal vis color # surf_normal
             rendered_normal_np = (rend_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
-            if self.config.o3d_vis_on:
+            if self.config.o3d_vis_on and self.config.vis_in_cv2:
                 cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
 
             depth_normal_vis = 0.5 - depth_normal * 0.5 # convert to the normal vis color # depth_normal
             depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
-            if self.config.o3d_vis_on:
+            if self.config.o3d_vis_on and self.config.vis_in_cv2:
                 cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
 
             if cur_viewpoint_cam.mono_normal_on:
@@ -1461,7 +1464,7 @@ class Mapper:
                 mono_normal_np = 0.5 - mono_normal_np * 0.5 # convert to the normal vis color
                 mono_normal_vis_np = (mono_normal_np * 255.0).astype(np.uint8)  
                 mono_normal_vis_np = cv2.cvtColor(mono_normal_vis_np, cv2.COLOR_RGB2BGR)
-                if self.config.o3d_vis_on:
+                if self.config.o3d_vis_on and self.config.vis_in_cv2:
                     cv2.imshow(cam_name + ": Mono Normal", mono_normal_vis_np)
 
             # print("Max alpha value:", torch.max(rend_alpha).item()) # <= 1
@@ -1505,12 +1508,11 @@ class Mapper:
             cur_ssim = ssim(renderd_image, original_rgb).item()
             cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
 
-            if cur_viewpoint_cam.train_view:
-                print("Eval (train view)") 
-            else: # we only eval the test views
-                print("Eval (test view)") 
-
             if not self.silence:
+                if cur_viewpoint_cam.train_view:
+                    print("Eval (train view)") 
+                else: # we only eval the test views
+                    print("Eval (test view)") 
                 print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
             if cur_viewpoint_cam.depth_on:
@@ -1528,7 +1530,7 @@ class Mapper:
                 diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, self.config.max_range*0.05)*255.0).astype(np.uint8) # 1, 3, H, W 
                 diff_depth_color = np.transpose(diff_depth_color[0], (1, 2, 0)) # H, W, 3
                 diff_depth_color = cv2.cvtColor(diff_depth_color, cv2.COLOR_RGB2BGR)
-                if self.config.o3d_vis_on:
+                if self.config.o3d_vis_on and self.config.vis_in_cv2:
                     cv2.imshow(cam_name + ": Rendered Depth Error", diff_depth_color)
 
                 if not self.silence:

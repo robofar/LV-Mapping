@@ -63,9 +63,13 @@ class CamImage:
         
         self.world_view_transform = None
         if cam_pose is not None: # we also directly load the camera pose here
-            self.world_view_transform = (camera_pose.inverse().T).to(dtype=self.dtype, device=self.device) 
+            self.world_view_transform = (cam_pose.inverse().T).to(dtype=self.dtype, device=self.device) 
             self.camera_center = self.world_view_transform.inverse()[3, :3]
             self.full_proj_transform = self.world_view_transform @ self.projection_matrix 
+
+            T_cw = cam_pose.inverse()
+            self.R = T_cw[:3, :3] # rotation part
+            self.T = T_cw[:3, 3] # translation part
 
         # pyramid of images
         self.original_image_list = []
@@ -160,19 +164,10 @@ class CamImage:
         h1 = h0 + h_size
         w1 = w0 + w_size
         return torch.tensor([h0, w0, h1, w1]).to(torch.float32).to(self.device)
-    
-    # @staticmethod
-    # def init_from_gui(uid, T, FoVx, FoVy, fx, fy, cx, cy, H, W):
-    #     projection_matrix = getProjectionMatrix2(
-    #         znear=0.01, zfar=100.0, fx=fx, fy=fy, cx=cx, cy=cy, W=W, H=H
-    #     ).transpose(0, 1)
-    #     return Camera(
-    #         uid, None, None, T, projection_matrix, fx, fy, cx, cy, FoVx, FoVy, H, W
-    #     )
 
 
 
-# this is important
+# this is not used
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
                  image_name, uid,

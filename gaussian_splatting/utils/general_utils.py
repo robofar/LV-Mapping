@@ -142,10 +142,10 @@ def create_rotation_matrix_from_direction_vector_batch(direction_vectors):
     v1[is_collinear] = torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32).to(direction_vectors.device)
 
     # Calculate the first orthogonal vectors
-    v1 = torch.cross(direction_vectors, v1)
+    v1 = torch.linalg.cross(direction_vectors, v1)
     v1 = v1 / (torch.norm(v1, dim=-1, keepdim=True))
     # Calculate the second orthogonal vectors by taking the cross product
-    v2 = torch.cross(direction_vectors, v1)
+    v2 = torch.linalg.cross(direction_vectors, v1)
     v2 = v2 / (torch.norm(v2, dim=-1, keepdim=True))
     # Create the batch of rotation matrices with the direction vectors as the last columns
     rotation_matrices = torch.stack((v1, v2, direction_vectors), dim=-1)
