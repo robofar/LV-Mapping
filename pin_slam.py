@@ -43,7 +43,8 @@ from utils.multiprocessing_utils import clone_obj
 from utils.tracker import Tracker
 from utils.visualizer import MapVisualizer
 
-from gs_gui import gui_utils, slam_gui
+from gs_gui import slam_gui
+from gs_gui.gui_utils import VisPacket, ParamsGUI
 
 '''
     📍PIN-SLAM: LiDAR SLAM Using a Point-Based Implicit Neural Representation for Achieving Global Map Consistency
@@ -125,16 +126,17 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         o3d_vis = MapVisualizer(config) 
 
     if config.gs_vis_on:
+        # communicator between the processes
         q_main2vis = mp.Queue() 
         q_vis2main = mp.Queue()
 
-        params_gui = gui_utils.ParamsGUI(
+        params_gui = ParamsGUI(
             pipe=None,
             background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
             gaussians=neural_points,
             q_main2vis=q_main2vis,
             q_vis2main=q_vis2main,
-            config=config
+            config=config,
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
@@ -182,6 +184,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
+        
+        # judge pause
+        if not q_vis2main.empty():
+            while q_vis2main.get().flag_pause:
+                continue
 
         # I. Load data and preprocessing
         T0 = get_time()
@@ -348,9 +355,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # sdf_train_loss_on=frame_id>10
             mapper.joint_gsdf_mapping(gs_iter_num, render_pcd=config.monodepth_on) # only when sdf field is learned well 
             
-            if config.gs_vis_on:
-                q_main2vis.put(gui_utils.GaussianPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1]))  
-
         T6 = get_time()
 
         # regular saving logs
@@ -445,6 +449,18 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                     frame_point_cloud_for_vis += dataset.cur_frame_o3d 
                 
             o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
+
+            if config.gs_vis_on:
+    
+                packet_to_vis: VisPacket = VisPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1])
+
+                if frame_point_cloud_for_vis is not None:
+                    packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
+
+                if cur_mesh is not None:
+                    packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
+
+                q_main2vis.put(packet_to_vis)
 
             if config.rerun_vis_on:
                 if neural_pcd is not None:

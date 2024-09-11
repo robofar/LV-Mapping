@@ -40,7 +40,7 @@ gs:
   gs_keyframe_interval: 2 # 2
   img_pool_size: 25 # 15
   img_test_pool_size: 15
-  gs_down_rate: 0
+  gs_down_rate: 1
   gs_vis_down_rate: 0
   init_opacity: 0.5
   sh_degree: 2 # According to experiments, it seems to not play an important role, but why

@@ -31,7 +31,7 @@ class Frustum:
         cameraeye = cameraeye[0:3, :].transpose()
         eye = cameraeye[0, :]
 
-        base_behind = np.array([[0.0, -2.5, -30.0]]) * self.size
+        base_behind = np.array([[0.0, -2.5, -20.0]]) * self.size # original z -30.0
         base_behind_hmg = np.hstack([base_behind, np.ones((base_behind.shape[0], 1))])
         cameraeye_behind = pose @ base_behind_hmg.transpose()
         cameraeye_behind = cameraeye_behind[0:3, :].transpose()
@@ -47,8 +47,8 @@ class Frustum:
         self.eye = eye
         self.up = up
 
-
-def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02):
+# camera frustum
+def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02): 
     points = (
         np.array(
             [
@@ -59,7 +59,7 @@ def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02):
                 [-1.0, 0.5, 2],
             ]
         )
-        * size
+        * size # too small
     )
 
     lines = [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [2, 4], [3, 4]]
@@ -73,8 +73,8 @@ def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02):
     frustum.update_pose(pose)
     return frustum
 
-
-class GaussianPacket:
+# actually not only gaussians, we also send the cameras, point cloud and mesh data
+class VisPacket:
     def __init__(
         self,
         gaussians=None,
@@ -86,6 +86,11 @@ class GaussianPacket:
         keyframes=None,
         finish=False,
         kf_window=None,
+        current_pointcloud_xyz=None,
+        current_pointcloud_rgb=None,
+        mesh_verts=None,
+        mesh_faces=None,
+        mesh_verts_rgb=None,
         img_down_rate=0,
     ):
         self.has_gaussians = False
@@ -141,9 +146,27 @@ class GaussianPacket:
         self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
         self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)
         self.gtnormal = self.resize_img(gtnormal, self.img_resize_width)
+
         self.keyframes = keyframes
         self.finish = finish
         self.kf_window = kf_window
+
+        self.current_pointcloud_xyz = current_pointcloud_xyz
+        self.current_pointcloud_rgb = current_pointcloud_rgb
+
+        self.mesh_verts = mesh_verts
+        self.mesh_faces = mesh_faces
+        self.mesh_verts_rgb = mesh_verts_rgb
+
+    def add_scan(self, current_pointcloud_xyz=None, current_pointcloud_rgb=None):
+        self.current_pointcloud_xyz = current_pointcloud_xyz
+        self.current_pointcloud_rgb = current_pointcloud_rgb
+        # TODO: add normal later
+
+    def add_mesh(self, mesh_verts=None, mesh_faces=None, mesh_verts_rgb=None):
+        self.mesh_verts = mesh_verts
+        self.mesh_faces = mesh_faces
+        self.mesh_verts_rgb = mesh_verts_rgb
 
     def resize_img(self, img, width):
         if img is None:
@@ -202,7 +225,7 @@ class ParamsGUI:
         gaussians=None,
         q_main2vis=None,
         q_vis2main=None,
-        config=None
+        config=None,
     ):
         self.pipe = pipe
         self.background = background

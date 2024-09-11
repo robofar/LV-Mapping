@@ -24,7 +24,6 @@ torchmetrics==1.4.1
 PyOpenGL
 glfw
 PyGLM
-imgviz
 # for metric3d
 mmcv
 timm

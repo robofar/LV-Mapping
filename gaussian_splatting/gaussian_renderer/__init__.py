@@ -39,12 +39,6 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
     Background tensor (bg_color) must be on GPU!
     scaling_modifier: You can use the Scaling Modifier to control the size of the displayed Gaussians, or show the initial point cloud. (suggested value, 0.001 to 1.0)
     """
-
-    # pipeline_params:
-    # convert_SHs_python: False
-    # compute_cov3D_python: False
-
-    # pipe is something like the config (TODO)
     
     dtype = neural_gaussians.dtype
     device = neural_gaussians.device

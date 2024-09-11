@@ -5,7 +5,6 @@ from datetime import datetime
 
 import cv2
 import glfw
-import imgviz
 import numpy as np
 import open3d as o3d
 import open3d.visualization.gui as gui
@@ -19,7 +18,7 @@ from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gs_gui.gl_render import util, util_gau
 from gs_gui.gl_render.render_ogl import OpenGLRenderer
 from gs_gui.gui_utils import (
-    GaussianPacket,
+    VisPacket,
     Packet_vis2main,
     create_frustum,
     cv_gl,
@@ -82,10 +81,11 @@ class SLAM_GUI:
         threading.Thread(target=self._update_thread).start()
 
     def init_widget(self):
-        self.window_w, self.window_h = 1600, 900
+        # self.window_w, self.window_h = 1600, 900
+        self.window_w, self.window_h = 2560, 1600
 
         self.window = gui.Application.instance.create_window(
-            "GS Viewer", self.window_w, self.window_h
+           "PINGS Viewer", self.window_w, self.window_h
         ) # open3d gui
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
@@ -112,6 +112,15 @@ class SLAM_GUI:
         self.axis = o3d.geometry.TriangleMesh.create_coordinate_frame(
             size=0.5, origin=[0, 0, 0]
         )
+
+        # other geometry entities
+        self.mesh = o3d.geometry.TriangleMesh()
+        self.scan = o3d.geometry.PointCloud()
+        self.sensor_cad = o3d.geometry.TriangleMesh()
+
+        self.odom_traj = o3d.geometry.LineSet()
+        self.pgo_traj = o3d.geometry.LineSet()
+        self.gt_traj = o3d.geometry.LineSet()
 
         bounds = self.widget3d.scene.bounding_box
         self.widget3d.setup_camera(60.0, bounds, bounds.get_center())
@@ -156,21 +165,43 @@ class SLAM_GUI:
         self.panel.add_child(viewpoint_tile)
 
         self.panel.add_child(gui.Label("3D Objects"))
+
         chbox_tile_3dobj = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        self.gs_chbox = gui.Checkbox("Gaussian Splatting")
+        self.gs_chbox.checked = True
+        # self.gs_chbox.set_on_checked(self._on_gs_chbox)
+        chbox_tile_3dobj.add_child(self.gs_chbox)
+
         self.cameras_chbox = gui.Checkbox("Cameras")
         self.cameras_chbox.checked = True
         self.cameras_chbox.set_on_checked(self._on_cameras_chbox)
         chbox_tile_3dobj.add_child(self.cameras_chbox)
 
-        self.kf_window_chbox = gui.Checkbox("Active window")
-        self.kf_window_chbox.set_on_checked(self._on_kf_window_chbox)
-        chbox_tile_3dobj.add_child(self.kf_window_chbox)
-        self.panel.add_child(chbox_tile_3dobj)
+        # disable this for now
+        # self.kf_window_chbox = gui.Checkbox("Active window")
+        # self.kf_window_chbox.set_on_checked(self._on_kf_window_chbox)
+        # chbox_tile_3dobj.add_child(self.kf_window_chbox)
 
-        self.axis_chbox = gui.Checkbox("Axis")
-        self.axis_chbox.checked = False
-        self.axis_chbox.set_on_checked(self._on_axis_chbox)
-        chbox_tile_3dobj.add_child(self.axis_chbox)
+        # disable this for now
+        # self.axis_chbox = gui.Checkbox("Axis")
+        # self.axis_chbox.checked = False
+        # self.axis_chbox.set_on_checked(self._on_axis_chbox)
+        # chbox_tile_3dobj.add_child(self.axis_chbox)
+
+        self.mesh_chbox = gui.Checkbox("PIN Mesh")
+        self.mesh_chbox.checked = False
+        self.mesh_chbox.set_on_checked(self._on_mesh_chbox)
+        chbox_tile_3dobj.add_child(self.mesh_chbox)
+        self.mesh_name = "pin_mesh"
+
+        self.scan_chbox = gui.Checkbox("Scan")
+        self.scan_chbox.checked = False
+        self.scan_chbox.set_on_checked(self._on_scan_chbox)
+        chbox_tile_3dobj.add_child(self.scan_chbox)
+        self.scan_name = "cur_scan"
+
+        self.panel.add_child(chbox_tile_3dobj)
 
         self.panel.add_child(gui.Label("Rendering options"))
         chbox_tile_geometry = gui.Horiz(0.5 * em, gui.Margins(margin))
@@ -178,6 +209,14 @@ class SLAM_GUI:
         self.depth_chbox = gui.Checkbox("Depth")
         self.depth_chbox.checked = False
         chbox_tile_geometry.add_child(self.depth_chbox)
+
+        self.normal_chbox = gui.Checkbox("Normal")
+        self.normal_chbox.checked = False
+        chbox_tile_geometry.add_child(self.normal_chbox)
+
+        self.d2n_chbox = gui.Checkbox("D2N")
+        self.d2n_chbox.checked = False
+        chbox_tile_geometry.add_child(self.d2n_chbox)
 
         self.opacity_chbox = gui.Checkbox("Opacity")
         self.opacity_chbox.checked = False
@@ -265,10 +304,10 @@ class SLAM_GUI:
         C2W = np.linalg.inv(W2C)
         frustum = create_frustum(C2W, color, size=size)
         if name not in self.frustum_dict.keys():
-            frustum = create_frustum(C2W, color)
+            frustum = create_frustum(C2W, color, size=size)
             self.combo_kf.add_item(name)
             self.frustum_dict[name] = frustum
-            self.widget3d.scene.add_geometry(name, frustum.line_set, self.lit)
+            self.widget3d.scene.add_geometry(name, frustum.line_set, self.lit) # add camera frame to visualizer
         frustum = self.frustum_dict[name]
         frustum.update_pose(C2W)
         self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
@@ -305,6 +344,11 @@ class SLAM_GUI:
 
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
+    # def _on_gs_chbox(self, is_checked, name=None):
+    #     names = self.frustum_dict.keys() if name is None else [name]
+    #     for name in names:
+    #         self.widget3d.scene.show_geometry(name, is_checked)
+
     def _on_cameras_chbox(self, is_checked, name=None):
         names = self.frustum_dict.keys() if name is None else [name]
         for name in names:
@@ -317,6 +361,21 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(name, self.axis, self.lit_geo)
         else:
             self.widget3d.scene.remove_geometry(name)
+    
+    # TODO
+    def _on_mesh_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.mesh_name)
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo) # TODO: add pin-slam mesh
+        else:
+            self.widget3d.scene.remove_geometry(self.mesh_name)
+
+    def _on_scan_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.scan_name)
+            self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
+        else:
+            self.widget3d.scene.remove_geometry(self.scan_name)
 
     def _on_kf_window_chbox(self, is_checked):
         if self.kf_window is None:
@@ -332,7 +391,7 @@ class SLAM_GUI:
                 kf = self.frustum_dict["keyframe_{}".format(kf_idx)].view_dir[1]
                 points = [test1, kf]
                 lines = [[0, 1]]
-                colors = [[0, 1, 0]]
+                colors = [[0, 1, 0]] # green camera frame
 
                 line_set = o3d.geometry.LineSet()
                 line_set.points = o3d.utility.Vector3dVector(points)
@@ -409,9 +468,11 @@ class SLAM_GUI:
             )
             self.init = True
 
+        frustum_size = self.config.max_range*0.005
+
         if gaussian_packet.current_frame is not None: # as Camera class
             frustum = self.add_camera(
-                gaussian_packet.current_frame, name="current", color=[0, 1, 0]
+                gaussian_packet.current_frame, name="current", color=[0, 1, 0], size=frustum_size
             )
             if self.followcam_chbox.checked:
                 viewpoint = (
@@ -424,17 +485,17 @@ class SLAM_GUI:
         if gaussian_packet.keyframe is not None: # as Camera class
             name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
             frustum = self.add_camera(
-                gaussian_packet.keyframe, name=name, color=[0, 0, 1]
+                gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
             )
 
         if gaussian_packet.keyframes is not None:
             for keyframe in gaussian_packet.keyframes:
                 name = "keyframe_{}".format(keyframe.uid)
-                frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1])
+                frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
 
-        if gaussian_packet.kf_window is not None:
-            self.kf_window = gaussian_packet.kf_window
-            self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
+        # if gaussian_packet.kf_window is not None:
+        #     self.kf_window = gaussian_packet.kf_window
+        #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
 
         if gaussian_packet.gtcolor is not None:
             rgb = torch.clamp(gaussian_packet.gtcolor, min=0, max=1.0) * 255
@@ -449,15 +510,34 @@ class SLAM_GUI:
             depth_color_o3d = o3d.geometry.Image(depth_color)
             self.in_depth_widget.update_image(depth_color_o3d)
 
-            # depth = gaussian_packet.gtdepth.squeeze(0).cpu().numpy() # torch to numpy
-            # depth = imgviz.depth2rgb(
-            #     depth, min_value=0.1, max_value=self.config.max_range*0.9, colormap="inferno_r"
-            # )
-            # depth = torch.from_numpy(depth)
-            # depth = torch.permute(depth, (2, 0, 1)).float()
-            # depth = (depth).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            # rgb = o3d.geometry.Image(depth)
-            # self.in_depth_widget.update_image(rgb)
+        # TODO
+        # if gaussian_packet.gtnormal is not None:
+        #     depth = gaussian_packet.gtdepth.cpu().numpy() 
+        #     depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
+        #     normal_color = np.transpose(depth_color[0], (1, 2, 0))
+        #     normal_color_o3d = o3d.geometry.Image(normal_color)
+        #     self.in_normal_widget.update_image(normal_color_o3d)
+
+        if gaussian_packet.current_pointcloud_xyz is not None:
+            self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
+            if gaussian_packet.current_pointcloud_rgb is not None:
+                self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
+            if self.scan_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.scan_name)
+                self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
+
+        if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
+            self.mesh = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(gaussian_packet.mesh_verts),
+                o3d.utility.Vector3iVector(gaussian_packet.mesh_faces),
+            )
+            if gaussian_packet.mesh_verts_rgb is not None:    
+                self.mesh.vertex_colors = o3d.utility.Vector3dVector(gaussian_packet.mesh_verts_rgb)
+            self.mesh.compute_vertex_normals()
+
+            if self.mesh_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.mesh_name)
+                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo)
 
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -550,9 +630,6 @@ class SLAM_GUI:
         current_cam = CamImage(-1, None, K_mat, 0.01, 100.0, 
             img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
 
-        # current_cam = CamImage(-1, None, K_mat, 0.01, 100.0, 
-        #     img_width=W, img_height=H, cam_pose=T)
-
         # print(current_cam.camera_center)
                                                         
         return current_cam
@@ -560,68 +637,89 @@ class SLAM_GUI:
     # TODO: change gaussians functions here
     def rasterise(self, current_cam):
         if (
-            self.time_shader_chbox.checked # what does this mean?
+            self.time_shader_chbox.checked # what does this mean? # no idea (FIXME)
             and self.gaussian_cur is not None
-            and type(self.gaussian_cur) == GaussianPacket
+            and type(self.gaussian_cur) == VisPacket
         ):
             features = self.gaussian_cur.get_features.clone()
             kf_ids = self.gaussian_cur.unique_kfIDs.float()
-            rgb_kf = imgviz.depth2rgb(
-                kf_ids.view(-1, 1).cpu().numpy(), colormap="jet", dtype=np.float32
-            )
             alpha = 0.1
-            self.gaussian_cur.get_features = alpha * features + (
-                1 - alpha
-            ) * torch.from_numpy(rgb_kf).to(features.device)
+
+            # rgb_kf = imgviz.depth2rgb(
+            #     kf_ids.view(-1, 1).cpu().numpy(), colormap="jet", dtype=np.float32
+            # )
+            
+            # self.gaussian_cur.get_features = alpha * features + (
+            #     1 - alpha
+            # ) * torch.from_numpy(rgb_kf).to(features.device)
+
+            self.gaussian_cur.get_features = alpha * features
+
             # FIXME: the rendering function is here
-            rendering_data = render(
-                current_cam,
-                None,
-                self.gaussian_cur,
-                # self.pipe,
-                self.background,
-                self.scaling_slider.double_value,
-            )
+            with torch.no_grad():
+                rendering_data = render(
+                    current_cam,
+                    None,
+                    self.gaussian_cur,
+                    # self.pipe,
+                    self.background,
+                    self.scaling_slider.double_value,
+                ) # not used currently
 
             self.gaussian_cur.get_features = features
         else: # this is for the visualizer camera view
             # print("Render visualizer cam view")
-            rendering_data = render(
-                current_cam,
-                None,
-                self.gaussian_cur,
-                # self.pipe,
-                self.background,
-                self.scaling_slider.double_value,
-                verbose=True
-            )
+            with torch.no_grad():
+                rendering_data = render(
+                    current_cam,
+                    None,
+                    self.gaussian_cur,
+                    # self.pipe,
+                    self.background,
+                    self.scaling_slider.double_value,
+                    verbose=True
+                )
         return rendering_data
 
     # main rendering function for the 3D visualizer
     def render_o3d_image(self, results, current_cam):
+
+        if not self.gs_chbox.checked:
+            return None # don't show gs rendering results
+
         if self.depth_chbox.checked:
-            depth = results["surf_depth"]
-            depth = depth[0, :, :].detach().cpu().numpy()
-            max_depth = np.max(depth)
-            depth = imgviz.depth2rgb(
-                depth, min_value=0.1, max_value=self.config.max_range*0.9, colormap="inferno_r"
-            )
-            depth = torch.from_numpy(depth)
-            depth = torch.permute(depth, (2, 0, 1)).float()
-            depth = (depth).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            render_img = o3d.geometry.Image(depth)
+            depth = results["surf_depth"].detach().cpu().numpy()
+            # max_depth = np.max(depth)
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+            depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
+            depth_color = np.ascontiguousarray(depth_color)
+            render_img = o3d.geometry.Image(depth_color)
+
+        elif self.normal_chbox.checked:
+            normal = results["rend_normal"]
+            normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1
+            normal_color = 0.5 - normal * 0.5  # convert to the normal vis color
+            normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+            normal_color = np.ascontiguousarray(normal_color)
+            render_img = o3d.geometry.Image(normal_color)
+
+        elif self.d2n_chbox.checked:
+            d2n = results["surf_normal"]
+            d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
+            d2n_color = 0.5 - d2n * 0.5  # convert to the normal vis color
+            d2n_color = (d2n_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+            d2n_color = np.ascontiguousarray(d2n_color)
+            render_img = o3d.geometry.Image(d2n_color)
 
         elif self.opacity_chbox.checked:
-            opacity = results["rend_alpha"]
-            opacity = opacity[0, :, :].detach().cpu().numpy()
-            max_opacity = np.max(opacity)
-            opacity = imgviz.depth2rgb(
-                opacity, min_value=0.0, max_value=max_opacity, colormap="jet"
-            )
-            opacity = torch.from_numpy(opacity)
-            opacity = torch.permute(opacity, (2, 0, 1)).float()
-            opacity = (opacity).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            render_img = o3d.geometry.Image(opacity)
+            opacity = results["rend_alpha"].detach().cpu().numpy()
+
+            opacity_color = (colorize_depth_maps(opacity, 0.0, 1.0, cmap="jet")[0]*255.0).astype(np.uint8)
+
+            opacity_color = np.transpose(opacity_color, (1, 2, 0)) # H, W, 3
+            opacity_color = np.ascontiguousarray(opacity_color)
+            
+            render_img = o3d.geometry.Image(opacity_color)
 
         elif self.elipsoid_chbox.checked:
             if self.gaussian_cur is None:
@@ -679,7 +777,7 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(rgb)
         return render_img
 
-    # main function here
+    # main function here for render gs
     def render_gui(self):
         if not self.init:
             return
@@ -689,7 +787,8 @@ class SLAM_GUI:
             return
         # print("Results get")
         self.render_img = self.render_o3d_image(results, current_cam)
-        self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
+        # self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
+        self.widget3d.scene.set_background([1, 1, 1, 1], self.render_img)
 
     def scene_update(self):
         self.receive_data(self.q_main2vis)
