@@ -32,6 +32,15 @@ from utils.tools import colorize_depth_maps
 
 o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
+YELLOW = np.array([1, 0.706, 0])
+RED = np.array([255, 0, 0]) / 255.0
+PURPLE = np.array([238, 130, 238]) / 255.0
+BLACK = np.array([0, 0, 0]) / 255.0
+GOLDEN = np.array([1.0, 0.843, 0.0])
+GREEN = np.array([0, 128, 0]) / 255.0
+BLUE = np.array([0, 0, 128]) / 255.0
+LIGHTBLUE = np.array([0.00, 0.65, 0.93])
+
 
 class SLAM_GUI:
     def __init__(self, params_gui=None):
@@ -102,12 +111,21 @@ class SLAM_GUI:
 
         self.lit = rendering.MaterialRecord()
         self.lit.shader = "unlitLine"
+        self.lit.line_width = 5  # note that this is scaled with respect to pixels,
 
         self.lit_geo = rendering.MaterialRecord()
         self.lit_geo.shader = "defaultUnlit"
 
         self.specular_geo = rendering.MaterialRecord()
         self.specular_geo.shader = "defaultLit"
+
+        # how to apply different materials (TODO)
+        self.clay_geo = rendering.MaterialRecord()
+        self.clay_geo.shader = "defaultLit"
+
+        # self.line_mat = rendering.MaterialRecord()
+        # self.line_mat.shader = "unlitLine"
+        # self.line_mat.line_width = 5  # note that this is scaled with respect to pixels,
 
         self.axis = o3d.geometry.TriangleMesh.create_coordinate_frame(
             size=0.5, origin=[0, 0, 0]
@@ -201,6 +219,12 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
 
+        self.traj_chbox = gui.Checkbox("Trajectory")
+        self.traj_chbox.checked = False
+        self.traj_chbox.set_on_checked(self._on_traj_chbox)
+        chbox_tile_3dobj.add_child(self.traj_chbox)
+        self.traj_name = "gt_trajectory"
+
         self.panel.add_child(chbox_tile_3dobj)
 
         self.panel.add_child(gui.Label("Rendering options"))
@@ -259,9 +283,11 @@ class SLAM_GUI:
 
         self.in_rgb_widget = gui.ImageWidget()
         self.in_depth_widget = gui.ImageWidget()
-        tab_info.add_child(gui.Label("Input Color/Depth"))
+        self.in_normal_widget = gui.ImageWidget()
+        tab_info.add_child(gui.Label("Input Color/Depth/Normal"))
         tab_info.add_child(self.in_rgb_widget)
         tab_info.add_child(self.in_depth_widget)
+        tab_info.add_child(self.in_normal_widget)
 
         tabs.add_tab("Info", tab_info)
         self.panel.add_child(tabs)
@@ -362,11 +388,11 @@ class SLAM_GUI:
         else:
             self.widget3d.scene.remove_geometry(name)
     
-    # TODO
+    # TODO: rendering shader is not good
     def _on_mesh_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.specular_geo) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
 
@@ -376,6 +402,13 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
         else:
             self.widget3d.scene.remove_geometry(self.scan_name)
+
+    def _on_traj_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.traj_name)
+            self.widget3d.scene.add_geometry(self.traj_name, self.gt_traj, self.lit)
+        else:
+            self.widget3d.scene.remove_geometry(self.traj_name)
 
     def _on_kf_window_chbox(self, is_checked):
         if self.kf_window is None:
@@ -504,19 +537,21 @@ class SLAM_GUI:
             self.in_rgb_widget.update_image(rgb)
 
         if gaussian_packet.gtdepth is not None:
-            depth = gaussian_packet.gtdepth.cpu().numpy() 
+            depth = gaussian_packet.gtdepth.contiguous().cpu().numpy() 
             depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
             depth_color = np.transpose(depth_color[0], (1, 2, 0))
+            depth_color = np.ascontiguousarray(depth_color)
             depth_color_o3d = o3d.geometry.Image(depth_color)
             self.in_depth_widget.update_image(depth_color_o3d)
 
         # TODO
-        # if gaussian_packet.gtnormal is not None:
-        #     depth = gaussian_packet.gtdepth.cpu().numpy() 
-        #     depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
-        #     normal_color = np.transpose(depth_color[0], (1, 2, 0))
-        #     normal_color_o3d = o3d.geometry.Image(normal_color)
-        #     self.in_normal_widget.update_image(normal_color_o3d)
+        if gaussian_packet.gtnormal is not None:
+            normal = gaussian_packet.gtnormal.contiguous().cpu().numpy() 
+            normal_color = 0.5 - normal * 0.5
+            normal_color = np.transpose(normal_color, (1, 2, 0))
+            normal_color = np.ascontiguousarray(normal_color)
+            normal_color_o3d = o3d.geometry.Image(normal_color)
+            self.in_normal_widget.update_image(normal_color_o3d)
 
         if gaussian_packet.current_pointcloud_xyz is not None:
             self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
@@ -537,7 +572,18 @@ class SLAM_GUI:
 
             if self.mesh_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.mesh_name)
-                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo)
+                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.specular_geo)
+
+        if gaussian_packet.gt_poses is not None:
+            gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
+            self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
+            gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
+            self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
+            self.gt_traj.paint_uniform_color(BLACK)
+            # print(self.gt_traj)
+            if self.traj_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.traj_name)
+                self.widget3d.scene.add_geometry(self.traj_name, self.gt_traj, self.lit)
 
         if gaussian_packet.finish:
             print("Received terminate signal")

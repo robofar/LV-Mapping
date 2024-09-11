@@ -175,3 +175,8 @@ tmp*
 
 *media/
 *media
+
+# screenshots
+screenshots/
+screenshots
+*png

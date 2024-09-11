@@ -460,6 +460,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 if cur_mesh is not None:
                     packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
 
+                packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
+
                 q_main2vis.put(packet_to_vis)
 
             if config.rerun_vis_on:

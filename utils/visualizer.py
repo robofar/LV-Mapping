@@ -250,6 +250,7 @@ class MapVisualizer:
             "\t    [Z] to save the currently visualized entities in the log folder\n"
         )
 
+    # not used
     def _on_layout(self, layout_context):
         contentRect = self.window.content_rect
         panel_width = 15 * layout_context.theme.font_size  # 15 ems wide
@@ -701,6 +702,7 @@ class MapVisualizer:
                 self.odom_traj.lines = o3d.utility.Vector2iVector(odom_edges)
 
                 if pgo_poses_np is None or self.before_pgo:
+                    
                     self.odom_traj.paint_uniform_color(RED)
                 else:
                     self.odom_traj.paint_uniform_color(BLUE)
