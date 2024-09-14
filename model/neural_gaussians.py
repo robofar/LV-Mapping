@@ -582,6 +582,8 @@ class NeuralPoints(nn.Module):
         dot_product = (added_ray * new_normals).sum(dim=1) # N
         new_normals[dot_product>0] *= -1 
         new_rots = normal2rotation(new_normals)
+
+        new_rots = torch.nan_to_num(new_rots, 0, 0) # no NaN is allowed, otherwise CUDA has error
         
         self.rotation = torch.cat((self.rotation, new_rots), 0) # initialize the normals done
 

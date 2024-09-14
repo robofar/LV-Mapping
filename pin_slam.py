@@ -60,7 +60,7 @@ parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to 
 parser.add_argument('--output_path', '-o', type=str, default=None, help='Path to the result output directory (this will override the output_root in config file)')
 parser.add_argument('--range', nargs=3, type=int, metavar=('START', 'END', 'STEP'), default=None, help='Specify the start, end and step of the processed frame, for example: --range 10 1000 1')
 parser.add_argument('--data_loader_on', '-d', action='store_true', help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
-parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the visualizer')
+parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
 parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
 parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
 parser.add_argument('--rerun_on', '-r', action='store_true', help='Turn on the rerun logging')
@@ -90,7 +90,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         config.silence = not args.log_on
         config.wandb_vis_on = args.wandb_on
         config.rerun_vis_on = args.rerun_on
-        config.o3d_vis_on = args.visualize
+        config.gs_vis_on = args.visualize
         config.save_map = args.save_map
         config.save_mesh = args.save_mesh
         config.save_merged_pc = args.save_merged_pc
@@ -186,9 +186,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
         
         # judge pause
-        if not q_vis2main.empty():
-            while q_vis2main.get().flag_pause:
-                continue
+        if config.gs_vis_on:
+            if not q_vis2main.empty():
+                while q_vis2main.get().flag_pause:
+                    continue
 
         # I. Load data and preprocessing
         T0 = get_time()
@@ -353,7 +354,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             
             # mapper.gs_mapping(gs_iter_num) 
             # sdf_train_loss_on=frame_id>10
-            mapper.joint_gsdf_mapping(gs_iter_num, render_pcd=config.monodepth_on) # only when sdf field is learned well 
+            mapper.joint_gsdf_mapping(gs_iter_num, eval_on=config.gs_eval_on, render_pcd=config.monodepth_on) # only when sdf field is learned well 
             
         T6 = get_time()
 
@@ -376,10 +377,17 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # V: Mesh reconstruction and visualization
         cur_mesh = None
+
+        dataset.update_o3d_map()
+        frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
+
+        odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis()
+        loop_edges = pgm.loop_edges_vis if config.pgo_on else None
+
         if config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
 
             o3d_vis.cur_frame_id = frame_id # frame id in the data folder
-            dataset.update_o3d_map()
+            
             if config.track_on and frame_id > 0 and (not o3d_vis.vis_pc_color) and (weight_pc_o3d is not None): 
                 dataset.cur_frame_o3d = weight_pc_o3d
 
@@ -436,11 +444,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                         cur_sdf_slice = cur_sdf_slice_h
                                 
             pool_pcd = mapper.get_data_pool_o3d(down_rate=17, only_cur_data=o3d_vis.vis_only_cur_samples) if o3d_vis.render_data_pool else None # down rate should be a prime number
-            odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis()
-            loop_edges = pgm.loop_edges_vis if config.pgo_on else None
-            o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
             
-            frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
+            o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
 
             if o3d_vis.vis_mono_depth_frame:
                 frame_point_cloud_for_vis = dataset.cur_frame_mono_depth_o3d 
@@ -450,20 +455,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 
             o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
 
-            if config.gs_vis_on:
-    
-                packet_to_vis: VisPacket = VisPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1])
-
-                if frame_point_cloud_for_vis is not None:
-                    packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
-
-                if cur_mesh is not None:
-                    packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
-
-                packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
-
-                q_main2vis.put(packet_to_vis)
-
             if config.rerun_vis_on:
                 if neural_pcd is not None:
                     rr.log("world/neural_points", rr.Points3D(neural_pcd.points, colors=neural_pcd.colors, radii=0.05))
@@ -471,12 +462,31 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                     rr.log("world/input_scan", rr.Points3D(dataset.cur_frame_o3d.points, colors=dataset.cur_frame_o3d.colors, radii=0.03))
                 if cur_mesh is not None:
                     rr.log("world/mesh_map", rr.Mesh3D(vertex_positions=cur_mesh.vertices, triangle_indices=cur_mesh.triangles, vertex_normals=cur_mesh.vertex_normals, vertex_colors=cur_mesh.vertex_colors))
-            
+
             T8 = get_time()
 
             if not config.silence:
                 print("time for o3d update             (ms):", (T7-T6)*1e3)
                 print("time for visualization          (ms):", (T8-T7)*1e3)
+
+        if config.gs_vis_on:
+        
+            T9 = get_time()
+            packet_to_vis: VisPacket = VisPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
+
+            if frame_point_cloud_for_vis is not None:
+                packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
+
+            if cur_mesh is not None:
+                packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
+
+            packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
+
+            q_main2vis.put(packet_to_vis)
+
+            T10 = get_time()
+            if not config.silence:
+                print("time for gs visualizer update   (ms):", (T10-T9)*1e3)
 
         cur_frame_process_time = np.array([T2-T1, T3-T2, T5-T4, T6-T5, T4-T3]) # loop & pgo in the end, visualization and I/O time excluded
         dataset.time_table.append(cur_frame_process_time) # in s
@@ -500,7 +510,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
     
     # gs eval 
-    if config.gs_on: # TODO: add to a function inside mapper or dataset 
+    if config.gs_on and config.gs_eval_on: # TODO: add to a function inside mapper or dataset 
         if len(mapper.val_psnr_list) > 0:
             val_pnsr_np = np.mean(np.array(mapper.val_psnr_list))
             val_ssim_np = np.mean(np.array(mapper.val_ssim_list))

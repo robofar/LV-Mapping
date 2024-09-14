@@ -496,8 +496,8 @@ class SLAM_GUI:
 
         if gaussian_packet.has_gaussians:
             self.gaussian_cur = gaussian_packet
-            self.output_info.text = "Number of Gaussians: {}".format(
-                self.gaussian_cur.get_xyz.shape[0] # valid_only (TODO)
+            self.output_info.text = "Number of Gaussians in the local map: {}".format(
+                self.gaussian_cur.get_local_xyz.shape[0] # valid_only (TODO)
             )
             self.init = True
 
@@ -791,11 +791,19 @@ class SLAM_GUI:
             self.g_camera.target = frustum.center.astype(np.float32)
             self.g_camera.up = frustum.up.astype(np.float32)
 
-            self.gaussians_gl.xyz = self.gaussian_cur.get_xyz.cpu().numpy()
-            self.gaussians_gl.opacity = self.gaussian_cur.get_opacity.cpu().numpy()
-            self.gaussians_gl.scale = self.gaussian_cur.get_scaling.cpu().numpy()
-            self.gaussians_gl.rot = self.gaussian_cur.get_rotation.cpu().numpy()
-            self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
+            # here all the gaussians in the global map
+            # self.gaussians_gl.xyz = self.gaussian_cur.get_xyz.cpu().numpy()
+            # self.gaussians_gl.opacity = self.gaussian_cur.get_opacity.cpu().numpy()
+            # self.gaussians_gl.scale = self.gaussian_cur.get_scaling.cpu().numpy()
+            # self.gaussians_gl.rot = self.gaussian_cur.get_rotation.cpu().numpy()
+            # self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
+
+            # local map only
+            self.gaussians_gl.xyz = self.gaussian_cur.get_local_xyz.cpu().numpy()
+            self.gaussians_gl.opacity = self.gaussian_cur.get_local_opacity.cpu().numpy()
+            self.gaussians_gl.scale = self.gaussian_cur.get_local_scaling.cpu().numpy()
+            self.gaussians_gl.rot = self.gaussian_cur.get_local_rotation.cpu().numpy()
+            self.gaussians_gl.sh = self.gaussian_cur.get_local_features.cpu().numpy()[:, 0, :]
 
             self.update_activated_renderer_state(self.gaussians_gl)
             self.g_renderer.sort_and_update(self.g_camera)

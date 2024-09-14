@@ -16,7 +16,11 @@ def depths_to_points(camera, depth):
         depth: depthmap 
     """
     # device = view.device
-    c2w = (camera.world_view_transform.T).inverse()
+
+    # print(camera.world_view_transform)
+    assert camera.world_view_transform is not None, "camera.world_view_transform is None"
+
+    c2w = torch.linalg.inv(camera.world_view_transform.T)
     W, H = depth.shape[2], depth.shape[1]
     ndc2pix = torch.tensor([
         [W / 2, 0, 0, (W) / 2],
@@ -27,7 +31,7 @@ def depths_to_points(camera, depth):
     
     grid_x, grid_y = torch.meshgrid(torch.arange(W, device='cuda').float(), torch.arange(H, device='cuda').float(), indexing='xy')
     points = torch.stack([grid_x, grid_y, torch.ones_like(grid_x)], dim=-1).reshape(-1, 3)
-    rays_d = points @ intrins.inverse().T @ c2w[:3,:3].T
+    rays_d = points @ torch.linalg.inv(intrins).T @ c2w[:3,:3].T
     rays_o = c2w[:3,3]
     points = depth.reshape(-1, 1) * rays_d + rays_o
     return points
@@ -54,8 +58,8 @@ def depth2normal(depth, mask, camera):
     # conver to camera position
     camD = depth.permute([1, 2, 0])
     mask = mask.permute([1, 2, 0])
-    shape = camD.shape
-    device = camD.device
+    shape = camD.shape # H, W, 1
+    device = camD.device 
     h, w, _ = torch.meshgrid(torch.arange(0, shape[0]), torch.arange(0, shape[1]), torch.arange(0, shape[2]), indexing='ij')
     # print(h)
     h = h.to(torch.float32).to(device)

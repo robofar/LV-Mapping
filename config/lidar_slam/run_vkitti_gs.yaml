@@ -14,21 +14,21 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.15 # 0.5
+  voxel_size_m: 0.2 # 0.5
   search_alpha: 0.8
 gs:
   monodepth_on: False
   gs_iters: 10 # 20
   gs_bs: 5 # 5 # train more
-  gaussian_bs_ratio: 2.0
+  gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 1 # 2
   img_pool_size: 15 # 15
-  img_test_pool_size: 5
+  img_test_pool_size: 10
   gs_down_rate: 1
-  gs_vis_down_rate: 1
+  gs_vis_down_rate: 0
   init_opacity: 0.5
   sh_degree: 0 # According to experiments, it seems to not play an important role, but why
-  inverse_depth_loss: False
+  inverse_depth_loss: True
   lambda_depth: 10.0 # 10.0
   lambda_distort: 100.0 # 100.0
   # lambda_normal: 0.1 # not too big 0.05 

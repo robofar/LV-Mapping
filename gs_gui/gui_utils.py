@@ -31,7 +31,7 @@ class Frustum:
         cameraeye = cameraeye[0:3, :].transpose()
         eye = cameraeye[0, :]
 
-        base_behind = np.array([[0.0, -2.5, -20.0]]) * self.size # original z -30.0
+        base_behind = np.array([[0.0, -2.5, -15.0]]) * self.size # original z -30.0
         base_behind_hmg = np.hstack([base_behind, np.ones((base_behind.shape[0], 1))])
         cameraeye_behind = pose @ base_behind_hmg.transpose()
         cameraeye_behind = cameraeye_behind[0:3, :].transpose()
@@ -94,45 +94,49 @@ class VisPacket:
         odom_poses=None,
         gt_poses=None,
         pgo_poses=None,
+        local_only=True,
         img_down_rate=0,
     ):
         self.has_gaussians = False
         if gaussians is not None:
             self.has_gaussians = True
 
+            self.dtype = gaussians.dtype
+            self.device = gaussians.device
+
             self.max_sh_degree = gaussians.max_sh_degree
             self.active_sh_degree = gaussians.active_sh_degree
 
-            self.get_xyz = gaussians.get_xyz.clone()
-            self.get_opacity = gaussians.get_opacity.clone()
-            self.get_scaling = gaussians.get_scaling.clone()
-            self.get_rotation = gaussians.get_rotation.clone()
-            self.get_features = gaussians.get_features.clone()
+            if not local_only:
+                self.get_xyz = gaussians.get_xyz.clone()
+                self.get_opacity = gaussians.get_opacity.clone()
+                self.get_scaling = gaussians.get_scaling.clone()
+                self.get_rotation = gaussians.get_rotation.clone()
+                self.get_features = gaussians.get_features.clone()
+                self.valid_gs_mask = gaussians.valid_gs_mask.clone()
 
-            self.count = gaussians.get_xyz.shape[0]
-    
-            self.get_local_xyz = gaussians.get_local_xyz.detach().clone()
-            self.get_local_opacity = gaussians.get_local_opacity.detach().clone()
-            self.get_local_scaling = gaussians.get_local_scaling.detach().clone()
-            self.get_local_rotation = gaussians.get_local_rotation.detach().clone()
-            self.get_local_features = gaussians.get_local_features.detach().clone()
+                self.count = self.get_xyz.shape[0]
+
+            # originally with detach and clone
+            self.get_local_xyz = gaussians.get_local_xyz.detach()
+            self.get_local_opacity = gaussians.get_local_opacity.detach()
+            self.get_local_scaling = gaussians.get_local_scaling.detach()
+            self.get_local_rotation = gaussians.get_local_rotation.detach()
+            self.get_local_features = gaussians.get_local_features.detach()
+            self.local_valid_gs_mask = gaussians.local_valid_gs_mask
 
             self.local_count = self.get_local_xyz.shape[0]
 
-            self.local_valid_gs_mask = gaussians.local_valid_gs_mask
-
-            self._rotation = gaussians.rotation.clone()
-            self.rotation_activation = torch.nn.functional.normalize
+            # self._rotation = gaussians.rotation.clone()
+            # self.rotation_activation = torch.nn.functional.normalize
 
             if gaussians.unique_kfIDs is None:
-                self.unique_kfIDs = torch.ones(gaussians.count()).to(self._rotation)
+                self.unique_kfIDs = torch.ones(gaussians.count(), device=self.device, dtype=self.dtype)
             else:
                 self.unique_kfIDs = gaussians.unique_kfIDs.clone()
             # self.n_obs = gaussians.n_obs.clone()
 
-            self.dtype = gaussians.dtype
-            self.device = gaussians.device
-
+            
         self.keyframe = keyframe
         self.current_frame = current_frame
         if current_frame is not None:
@@ -144,7 +148,7 @@ class VisPacket:
                 if current_frame.mono_normal_on:
                     gtnormal = current_frame.normal_img_list[img_down_rate]
         
-        self.img_resize_width = 480
+        self.img_resize_width = 640
 
         self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
         self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)

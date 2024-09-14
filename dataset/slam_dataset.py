@@ -333,14 +333,14 @@ class SLAMDataset():
                             print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)  
 
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models  # 1, 3, H, W
-                        normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details  # 1, H, W
+                        # normal_confidence = output_dict['prediction_normal'][:, 3, :, :] # see https://arxiv.org/abs/2109.09881 for details  # 1, H, W
 
                         # interpolate to the original image size
                         pred_depth = F.interpolate(pred_depth, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
-                        confidence = F.interpolate(confidence, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
+                        # confidence = F.interpolate(confidence, size=(H, W), mode='bilinear', align_corners=False).squeeze(0) # 1, H, W
 
                         pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 3, H, W
-                        normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
+                        # normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
 
                         sky_mask = pred_depth > self.config.max_range * 1.5 # mask out the sky # 1, H, W
                         sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
@@ -379,7 +379,8 @@ class SLAMDataset():
                             else:
                                 use_mono_depth_for_gs_init = False
 
-                      
+                        toc_lidar_align = get_time()
+
                         # filter, clean depth
                         # filter the depth image, 1.5cm sigma, in 3 neighborhood 
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
@@ -392,14 +393,14 @@ class SLAMDataset():
                         # pred_depth_np[edges>0] = 0.0
 
                         # visualize 
-                        cur_img_rgb_vis = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR) 
                         if self.config.o3d_vis_on and self.config.vis_in_cv2:
+                            cur_img_rgb_vis = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR) 
                             cv2.imshow("Mono RGB", cur_img_rgb_vis)
 
-                        pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
-                        pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
-                        pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
                         if self.config.o3d_vis_on and self.config.vis_in_cv2:
+                            pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                            pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
+                            pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
                             cv2.imshow("Mono Depth", pred_depth_color)
                 
                         # pred_normal[invalid_mask] = 0
@@ -409,8 +410,8 @@ class SLAMDataset():
                         pred_normal_vis_np = ((0.5 - pred_normal_np * 0.5) * 255.0).astype(np.uint8) # convert to the normal vis color # surf_normal
                         pred_normal_vis_np[sky_mask_np] = 0
                         pred_normal_vis_np = np.ascontiguousarray(pred_normal_vis_np) 
-                        pred_normal_vis_cv2 = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR) # in current camera frame
                         if self.config.o3d_vis_on and self.config.vis_in_cv2:
+                            pred_normal_vis_cv2 = cv2.cvtColor(pred_normal_vis_np, cv2.COLOR_RGB2BGR) # in current camera frame
                             cv2.imshow("Mono Normal", pred_normal_vis_cv2)
 
                         # show sky mask
@@ -443,17 +444,19 @@ class SLAMDataset():
                         points_normal_c = 1.0 - 2 * np.asarray(normal_pcd.colors) # still under camera frame
                         R_cl = self.loader.extrinsic[:3,:3]
                         points_normal_l = points_normal_c @ R_cl # n,3 # convert to lidar frame now # R_cl = R_lc'
-
                         # print(points_normal_c)
                         # print(points_normal_l)
 
                         pred_pcd.normals = o3d.utility.Vector3dVector(points_normal_l) # [-1, 1] 
                         pred_pcd.normalize_normals() # normals norm to 1
 
-                        # downsample and filtering noise
-                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m)
-                        pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5) # TODO: parameter settings
+                        toc_rgbd2pcd = get_time()
 
+                        # downsample and filtering noise
+                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m*4)
+                        # pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5) # TODO: parameter settings
+
+                        toc_pcd_filtering = get_time()
                         # print(len(pred_pcd.points))
                                                    
                         self.cur_frame_mono_depth_o3d = pred_pcd # also may conatin normals
@@ -467,6 +470,13 @@ class SLAMDataset():
                         if use_mono_depth_for_gs_init:
                             self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
                             self.cur_point_normals_mono_depth = torch.tensor(points_normals, device=self.device, dtype=self.dtype)
+
+                        toc_tocuda = get_time()
+
+                        # print("LiDAR align time            (ms):", (toc_lidar_align-toc_metric3d)*1e3)  # ||
+                        # print("Point cloud generation time (ms):", (toc_rgbd2pcd-toc_lidar_align)*1e3)  # ||||
+                        # print("Points filtering time       (ms):", (toc_pcd_filtering-toc_rgbd2pcd)*1e3)# ||| 
+                        # print("To CUDA time                (ms):", (toc_tocuda-toc_pcd_filtering)*1e3)  # |
 
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 

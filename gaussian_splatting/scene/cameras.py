@@ -62,14 +62,11 @@ class CamImage:
               W=self.image_width, H=self.image_height, prcp=self.prcppoint).T).to(dtype=self.dtype, device=self.device) # T_gi        
         
         self.world_view_transform = None
-        if cam_pose is not None: # we also directly load the camera pose here
-            self.world_view_transform = (cam_pose.inverse().T).to(dtype=self.dtype, device=self.device) 
-            self.camera_center = self.world_view_transform.inverse()[3, :3]
-            self.full_proj_transform = self.world_view_transform @ self.projection_matrix 
-
-            T_cw = cam_pose.inverse()
-            self.R = T_cw[:3, :3] # rotation part
-            self.T = T_cw[:3, 3] # translation part
+        self.camera_center = None
+        self.full_proj_transform = None 
+        
+        # set the poses related transformations
+        self.set_pose(cam_pose)
 
         # pyramid of images
         self.original_image_list = []
@@ -109,6 +106,7 @@ class CamImage:
 
             if sky_mask is not None: # sky_mask 1, H, W
                 self.sky_mask_on = True
+                sky_mask = sky_mask.to(self.device)
                 down_level1_sky_mask = F.interpolate(sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
                 down_level2_sky_mask = F.interpolate(down_level1_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
                 down_level3_sky_mask = F.interpolate(down_level2_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
@@ -118,6 +116,7 @@ class CamImage:
 
             if normal_img is not None: # normal already in device
                 self.mono_normal_on = True
+                normal_img = normal_img.to(self.device)
                 down_level1_normal = F.interpolate(normal_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                 down_level2_normal = F.interpolate(down_level1_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                 down_level3_normal = F.interpolate(down_level2_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
@@ -163,8 +162,19 @@ class CamImage:
         w0 = random.randint(0, w - w_size) # 0
         h1 = h0 + h_size
         w1 = w0 + w_size
-        return torch.tensor([h0, w0, h1, w1]).to(torch.float32).to(self.device)
+        return torch.tensor([h0, w0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
+    def set_pose(self, cam_pose):
+        if cam_pose is not None: # we also directly load the camera pose here
+
+            T_cw = torch.linalg.inv(cam_pose).to(dtype=self.dtype, device=self.device) 
+
+            self.world_view_transform = (T_cw.T)
+            self.camera_center = torch.linalg.inv(self.world_view_transform)[3, :3]
+            self.full_proj_transform = self.world_view_transform @ self.projection_matrix 
+            
+            self.R = T_cw[:3, :3] # rotation part
+            self.T = T_cw[:3, 3] # translation part
 
 
 # this is not used

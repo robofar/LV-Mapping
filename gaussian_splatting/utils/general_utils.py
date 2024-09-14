@@ -176,6 +176,7 @@ def colormap(img, cmap='jet'):
 
 # reference: https://github.com/turandai/gaussian_surfels
 # High-quality Surface Reconstruction using Gaussian Surfels
+# This function might have NaN issue (FIXME)
 def normal2rotation(n):
     # construct a random rotation matrix from normal
     # it would better be positive definite and orthogonal
@@ -187,20 +188,12 @@ def normal2rotation(n):
     R0 = torch.nn.functional.normalize(R0)
     R1 = torch.linalg.cross(n, R0)
     
-    # i = 7859
-    # print(R1[i])
     R1 *= torch.sign(R1[:, 1:2]) * torch.sign(n[:, 2:])
     # print(R1[i])
     R = torch.stack([R0, R1, n], -1)
     # print(R[i], torch.det(R).sum(), torch.trace(R[i]))
     q = rotmat2quaternion(R)
-    # print(q[i], torch.norm(q[i]))
-    # R = quaternion2rotmat(q)
-    # print(R[i])
-    # for i in range(len(q)):
-    #     if torch.isnan(q[i].sum()):
-    #         print(i)
-    # exit()
+  
     return q
 
 def rotation2normal(q):

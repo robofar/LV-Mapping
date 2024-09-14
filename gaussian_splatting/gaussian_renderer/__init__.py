@@ -40,14 +40,14 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
     scaling_modifier: You can use the Scaling Modifier to control the size of the displayed Gaussians, or show the initial point cloud. (suggested value, 0.001 to 1.0)
     """
     
-    dtype = neural_gaussians.dtype
+    dtype = torch.float32
     device = neural_gaussians.device
 
-    if neural_gaussians.get_opacity.shape[0] == 0: # not yet started
+    if neural_gaussians.get_local_opacity.shape[0] == 0: # not yet started
         return None
 
-    means3D = neural_gaussians.get_local_xyz
-    opacity = neural_gaussians.get_local_opacity
+    means3D = neural_gaussians.get_local_xyz.to(dtype)
+    opacity = neural_gaussians.get_local_opacity.to(dtype)
 
     # only use those valid ones
     valid_gs_mask = neural_gaussians.local_valid_gs_mask
@@ -67,23 +67,23 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
 
     img_scale = 2**down_rate
 
-    # Set up rasterization configuration
+    # Set up rasterization configuration (scalar value)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
     # TODO: document this part, figure out why
-    if cam_pose is not None and viewpoint_camera.world_view_transform is None:
+    if cam_pose is not None:
         cam_pose = cam_pose.to(dtype=dtype, device=device)
-        cam_world_view_tran = cam_pose.inverse().T # first inverse, then transpose
+        T_cw = torch.linalg.inv(cam_pose)
+        cam_world_view_tran = T_cw.T # first inverse, then transpose
         projection_matrix = viewpoint_camera.projection_matrix # P_mat.T
-        cam_center = cam_world_view_tran.inverse()[3, :3]
+        cam_center = torch.linalg.inv(cam_world_view_tran)[3, :3]
         full_proj_transform = cam_world_view_tran @ projection_matrix 
 
         viewpoint_camera.world_view_transform = cam_world_view_tran
         viewpoint_camera.full_proj_transform = full_proj_transform
         viewpoint_camera.camera_center = cam_center
 
-        T_cw = cam_pose.inverse()
         viewpoint_camera.R = T_cw[:3, :3] # rotation part
         viewpoint_camera.T = T_cw[:3, 3] # translation part
 
@@ -163,11 +163,14 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         world2pix =  viewpoint_camera.full_proj_transform @ ndc2pix
         cov3D_precomp = (splat2world[:, [0,1,3]] @ world2pix[:,[0,1,3]]).permute(0,2,1).reshape(-1, 9) # column major
     else:  # this is used now
-        scales = neural_gaussians.get_local_scaling 
-        rotations = neural_gaussians.get_local_rotation
+        scales = neural_gaussians.get_local_scaling.to(dtype) 
+        rotations = neural_gaussians.get_local_rotation.to(dtype)
 
         scales = scales[valid_gs_mask]
         rotations = rotations[valid_gs_mask]
+
+        contains_nan = torch.isnan(rotations).any()
+        assert ~contains_nan, "NaN in rotation"
 
     # if verbose:
     #     print(means3D)
@@ -186,8 +189,8 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(neural_gaussians.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
-        else:
-            shs = neural_gaussians.get_local_features # this is used currently
+        else:  # this is used currently
+            shs = neural_gaussians.get_local_features.to(dtype)
             shs = shs[valid_gs_mask]
     else:
         colors_precomp = override_color
@@ -228,7 +231,7 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         render_normal = allmap[2:5]
         render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
         # render_normal = render_normal / render_alpha
-        # render_normal = torch.nan_to_num(render_normal, 0, 0)
+        render_normal = torch.nan_to_num(render_normal, 0, 0)
         
         # get median depth map # what does this mean? # TODO
         render_depth_median = allmap[5:6]
@@ -287,26 +290,25 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
             rotations = rotations,
             cov3D_precomp = cov3D_precomp)
 
+        # rendered_image = torch.nan_to_num(rendered_image, 0, 0)
+        # rendered_normal = torch.nan_to_num(rendered_normal, 0, 0)
+        # rendered_depth = torch.nan_to_num(rendered_depth, 0, 0)
+        # rendered_opac = torch.nan_to_num(rendered_opac, 0, 0)
+        # radii = torch.nan_to_num(radii, 0, 0)
+
         # here the rendered_normal is already normalized?
+
+        # print(viewpoint_camera.world_view_transform)
 
         # this small part is from 2D GS
         # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
+        
         mask_vis = (rendered_opac.detach() > 1e-5)
-        
         surf_normal = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface
-        # surf_normal = surf_normal.permute(2,0,1)
-        # remember to multiply with accum_alpha since render_normal is unnormalized.
-        # surf_normal = surf_normal * (rendered_opac).detach()
-        
-        # normal_norm = rendered_normal.norm(2, dim=0) # 3,W,H
-        # print(normal_norm)
 
-        # normal_norm = surf_normal.norm(2, dim=0) # 3,W,H
-        # print(normal_norm)
+        # surf_normal = None
 
         # print(rendered_opac)
-
-        # surf_normal *= -1 # switch direction
 
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
@@ -317,7 +319,7 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         
         return {"render": rendered_image, "rend_normal": rendered_normal, "surf_depth": rendered_depth,
                 "rend_alpha": rendered_opac, 'surf_normal': surf_normal,
-                "viewspace_points": screenspace_points, "visibility_filter" : radii > 1, "radii": radii} # > 1 or > 0
+                "viewspace_points": screenspace_points, "visibility_filter": radii > 1, "radii": radii} # > 1 or > 0
 
 
     return rets

@@ -62,6 +62,7 @@ python pin_slam.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vk
 
 ```
 
+
 **pass**
 
 
@@ -254,6 +255,24 @@ We may consider some visual place recognition methods such as NetVLAD or pyBoW. 
 ### Notes
 Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have the distortion loss directlt implemented.
 
+How to run even faster?
+
+1. enable GPU performance mode (prefer maximum perfromance)
+2. export CUDA_LAUNCH_BLOCKING=0
+3. export TORCH_USE_CUDA_MEMORY_POOL=0
+4. export TORCH_CUDA_DEBUG=0
+5. export CUDA_ASSERT=0
+6. export CUDA_MEMCHECK=0
+
+
+*fix the CUDA illegal access issue*
+NaN problem in rotation
+
+```
+# correct the potenitial nan numbers containing in rotation during the initialization
+new_rots = torch.nan_to_num(new_rots, 0, 0)
+```
+
 
 ## GS Visualizer
 
@@ -267,7 +286,7 @@ Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have th
 
 ## TODO List
 
-- [ ] Add pruning
+- [ ] Add pruning (together with the moving objects)
 - [ ] Keyframe strategy
 - [ ] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
@@ -281,7 +300,8 @@ Gaussian surfels seems to be 1.5x faster than 2DGS. However, they do not have th
 - [x] Use depth map to do TSDF fusion to generate the refined mesh
 - [x] Check RTG-SLAM (opacity in RTG-SLAM are fixed as either 0.99 or 0.1)
 - [ ] Allow the freee gaussians to move freely with a larger learning rate, but then you need to have two parameter lists
-- [ ] Add online gaussian visualizer (ft. Liren), check MonoGS
+- [x] Add online gaussian visualizer, check MonoGS
+- [x] Merge the two visualizers into one
 - [x] Figure out what the intrinsic and extrinsic of the R3Live dataset, add dataloader
 - [ ] Figure out what the intrinsic and extrinsic of the BotanicGarden dataset, add dataloader
 - [x] New KITTI-MOT dataloader

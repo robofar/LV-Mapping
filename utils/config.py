@@ -204,7 +204,9 @@ class Config:
 
         # gaussian splatting fitting 
         self.gs_on: bool = False
+        self.gs_eval_on: bool = False
         self.monodepth_on: bool = False
+        self.monodepth_gaussian_res: float = self.voxel_size_m * 10.0
 
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
         self.bg_color = [1.0, 1.0, 1.0] # white 
@@ -548,7 +550,10 @@ class Config:
         # gaussian splatting
         if "gs" in config_args:
             self.gs_on = True
+            self.gs_eval_on = config_args["gs"].get("eval_on", self.gs_eval_on)
+            
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
+            self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 10.0)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
