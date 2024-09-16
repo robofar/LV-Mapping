@@ -309,7 +309,7 @@ class NeuralPoints(nn.Module):
     
 
     # for GS
-    def training_setup_gs(self):
+    def training_setup_gs(self, with_pin_feature: bool = True):
 
         if self.config.movable_gs:
             self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
@@ -349,7 +349,6 @@ class NeuralPoints(nn.Module):
         # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
 
         l = [
-            {'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"},
             {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
             {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
@@ -358,6 +357,9 @@ class NeuralPoints(nn.Module):
             {'params': [self.local_scaling], 'lr': self.scaling_lr, "name": "scaling"},
             {'params': [self.local_rotation], 'lr': self.rotation_lr, "name": "rotation"}
         ]
+
+        if with_pin_feature:
+            l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,

@@ -1,7 +1,7 @@
 setting: 
   name: "test_kitti360_gs"
   output_root: "./experiments"
-  deskew: True
+  deskew: False
   kitti_correct: True
   correct_deg: 0.195
   color_channel: 3

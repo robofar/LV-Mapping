@@ -789,7 +789,8 @@ class SLAM_GUI:
             if self.gaussian_cur is None:
                 return
             glfw.poll_events()
-            gl.glClearColor(0, 0, 0, 1.0)
+            # gl.glClearColor(0, 0, 0, 1.0)
+            gl.glClearColor(1.0, 1.0, 1.0, 0.0)
             gl.glClear(
                 gl.GL_COLOR_BUFFER_BIT
                 | gl.GL_DEPTH_BUFFER_BIT

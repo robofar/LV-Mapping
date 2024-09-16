@@ -241,6 +241,8 @@ class Config:
         self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
         self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
 
+        self.pin_gs_opt_on: bool = True # optimize pin features together with gaussians
+
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1
 

@@ -262,7 +262,8 @@ class SLAMDataset():
             self.get_point_ts(point_ts)
 
     # read frame with specific data loader (partially borrow from kiss-icp: https://github.com/PRBonn/kiss-icp)
-    def read_frame_with_loader(self, frame_id, init_pose: bool = True, use_image: bool = True):
+    def read_frame_with_loader(self, frame_id, init_pose: bool = True, 
+        use_image: bool = True, monodepth_on: bool = False):
         
         if init_pose:
             self.set_ref_pose(frame_id)
@@ -309,7 +310,7 @@ class SLAMDataset():
 
                     # print(cur_img.shape) # for kitti: 376, 1241
                     
-                    if self.monodepth_on and cam_name == self.loader.main_cam_name:
+                    if monodepth_on and cam_name == self.loader.main_cam_name:
                         
                         use_mono_depth_for_gs_init = True
                         if self.is_rgbd:

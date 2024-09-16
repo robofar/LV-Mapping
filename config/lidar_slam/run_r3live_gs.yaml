@@ -20,20 +20,28 @@ neuralpoints:
   search_alpha: 0.5
   # weighted_first: False
 gs:
-  gs_iters: 5
-  gs_bs: 2
-  gs_keyframe_interval: 4
-  img_pool_size: 30
+  eval_on: True
+  # monodepth_on: True # True
+  gs_iters: 20 # 20
+  gs_bs: 2 # 5 # train more
+  gaussian_bs_ratio: 2.0
+  gs_keyframe_interval: 2 # 2
+  img_pool_size: 25 # 15
+  img_test_pool_size: 15
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  sh_degree: 1
-  lambda_depth: 0.1
-  lambda_distort: 100.0
+  init_opacity: 0.5
+  sh_degree: 1 # According to experiments, it seems to not play an important role, but why
+  inverse_depth_loss: True
+  lambda_depth: 10.0 # 10.0
+  lambda_distort: 100.0 # 100.0
   lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0
-  # lambda_sdf_cons: 1.0
-  # lambda_sdf_normal_cons: 1.0
-  # lambda_sdf: 1.0
+  lambda_mono_normal: 0.05
+  # lambda_isotropic: 10.0 
+  lambda_sky: 0.05 # not much impact
+  lambda_sdf_cons: 1.0
+  lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
+  gs_rotation_lr: 1e-2
 loss:
   sigma_sigmoid_m: 0.08
   loss_weight_on: True

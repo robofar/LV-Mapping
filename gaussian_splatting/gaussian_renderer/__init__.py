@@ -18,7 +18,7 @@ gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
 gs_dim = [3, 2, 3]
 
 gs_type = "gaussian_surfel"
-# gs_type = "3d_gs"
+gs_type = "3d_gs"
 
 # 2DGS
 if gs_type == "2d_gs":

@@ -59,7 +59,7 @@ parser.add_argument('--seed', type=int, default=42, help='Set the random seed (d
 parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to the point cloud input directory (this will override the pc_path in config file)')
 parser.add_argument('--output_path', '-o', type=str, default=None, help='Path to the result output directory (this will override the output_root in config file)')
 parser.add_argument('--range', nargs=3, type=int, metavar=('START', 'END', 'STEP'), default=None, help='Specify the start, end and step of the processed frame, for example: --range 10 1000 1')
-parser.add_argument('--data_loader_on', '-d', action='store_true', help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
+parser.add_argument('--data_loader_on', '-d', action='store_true', default=True, help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
 parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
 parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
 parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
@@ -195,7 +195,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T0 = get_time()
 
         if config.use_dataloader:
-            dataset.read_frame_with_loader(frame_id, use_image=config.gs_on)
+            dataset.read_frame_with_loader(frame_id, use_image=config.gs_on, monodepth_on=config.monodepth_on)
         else:
             dataset.read_frame(frame_id)
 
@@ -510,59 +510,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
     
     # gs eval 
-    if config.gs_on and config.gs_eval_on: # TODO: add to a function inside mapper or dataset 
-        if len(mapper.val_psnr_list) > 0:
-            val_pnsr_np = np.mean(np.array(mapper.val_psnr_list))
-            val_ssim_np = np.mean(np.array(mapper.val_ssim_list))
-            val_lpips_np = np.mean(np.array(mapper.val_lpips_list))
-            
-            print("Average validation view PSNR  ↑ :", f"{val_pnsr_np:.3f}")
-            print("Average validation view SSIM  ↑ :", f"{val_ssim_np:.3f}")
-            print("Average validation view LPIPS ↓ :", f"{val_lpips_np:.3f}")
-
-        if len(mapper.val_depth_rmse_list) > 0:
-            val_depthl1_np = np.mean(np.array(mapper.val_depthl1_list))
-            val_depth_rmse_np = np.mean(np.array(mapper.val_depth_rmse_list))
-            print("Average validation view Depth L1 (m) ↓ :", f"{val_depthl1_np:.3f}")
-            print("Average validation view Depth RMSE (m) ↓ :", f"{val_depth_rmse_np:.3f}")
-
-        gs_time_mean = np.mean(np.array(gs_time_table))
-
-        gs_csv_columns = [
-                "PSNR ↑",
-                "SSIM ↑",
-                "LPIPS ↓",
-                "Depth L1 (m)",
-                "Depth RMSE (m) ↓",
-                "Consuming time per frame [s]",
-                "Frame count",
-            ]
-        gs_eval = [
-                {
-                    gs_csv_columns[0]: val_pnsr_np,
-                    gs_csv_columns[1]: val_ssim_np,
-                    gs_csv_columns[2]: val_lpips_np,
-                    gs_csv_columns[3]: val_depthl1_np,
-                    gs_csv_columns[4]: val_depth_rmse_np,
-                    gs_csv_columns[5]: gs_time_mean,
-                    gs_csv_columns[6]: len(mapper.val_psnr_list),
-                }
-            ]
-        gs_output_csv_path = os.path.join(run_path, "gs_eval.csv")
-        try:
-            with open(gs_output_csv_path, "w") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
-                writer.writeheader()
-                for data in gs_eval:
-                    writer.writerow(data)
-        except IOError:
-            print("I/O error")
-
-        if config.save_mesh:
-            output_mc_res_m = config.mc_res_m*0.6
-            mc_cm_str = str(round(output_mc_res_m*1e2))
-            gs_tsdf_mesh_path = os.path.join(run_path, "mesh", "gs_rendered_tsdf_fusion_mesh_" + mc_cm_str + "cm.ply")
-            gs_rendered_tsdf_mesh = mapper.gs_tsdf_fusion(vox_size=output_mc_res_m, depth_trunc=config.max_range*0.9, output_path=gs_tsdf_mesh_path)
+    if config.gs_on: # TODO: add to a function inside mapper or dataset 
+        mapper.init_gs_eval()
+        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate)
+        mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map
