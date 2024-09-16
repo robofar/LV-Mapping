@@ -93,7 +93,7 @@ class VisPacket:
         mesh_verts_rgb=None,
         odom_poses=None,
         gt_poses=None,
-        pgo_poses=None,
+        slam_poses=None,
         local_only=True,
         img_down_rate=0,
     ):
@@ -167,7 +167,7 @@ class VisPacket:
 
         self.odom_poses = odom_poses
         self.gt_poses = gt_poses
-        self.pgo_poses = pgo_poses
+        self.slam_poses = slam_poses
 
     def add_scan(self, current_pointcloud_xyz=None, current_pointcloud_rgb=None):
         self.current_pointcloud_xyz = current_pointcloud_xyz
@@ -180,10 +180,10 @@ class VisPacket:
         self.mesh_verts_rgb = mesh_verts_rgb
 
     # TODO: add loop edges
-    def add_traj(self, odom_poses=None, gt_poses=None, pgo_poses=None):
+    def add_traj(self, odom_poses=None, gt_poses=None, slam_poses=None):
         self.odom_poses = odom_poses
         self.gt_poses = gt_poses
-        self.pgo_poses = pgo_poses
+        self.slam_poses = slam_poses
 
     def resize_img(self, img, width):
         if img is None:

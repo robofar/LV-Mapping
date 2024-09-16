@@ -137,7 +137,7 @@ class SLAM_GUI:
         self.sensor_cad = o3d.geometry.TriangleMesh()
 
         self.odom_traj = o3d.geometry.LineSet()
-        self.pgo_traj = o3d.geometry.LineSet()
+        self.slam_traj = o3d.geometry.LineSet()
         self.gt_traj = o3d.geometry.LineSet()
 
         bounds = self.widget3d.scene.bounding_box
@@ -223,7 +223,9 @@ class SLAM_GUI:
         self.traj_chbox.checked = False
         self.traj_chbox.set_on_checked(self._on_traj_chbox)
         chbox_tile_3dobj.add_child(self.traj_chbox)
-        self.traj_name = "gt_trajectory"
+        self.gt_traj_name = "gt_trajectory"
+        self.slam_traj_name = "slam_trajectory"
+
 
         self.panel.add_child(chbox_tile_3dobj)
 
@@ -405,10 +407,15 @@ class SLAM_GUI:
 
     def _on_traj_chbox(self, is_checked):
         if is_checked:
-            self.widget3d.scene.remove_geometry(self.traj_name)
-            self.widget3d.scene.add_geometry(self.traj_name, self.gt_traj, self.lit)
+            self.widget3d.scene.remove_geometry(self.gt_traj_name)
+            self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
+
+            self.widget3d.scene.remove_geometry(self.slam_traj_name)
+            self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
+
         else:
-            self.widget3d.scene.remove_geometry(self.traj_name)
+            self.widget3d.scene.remove_geometry(self.gt_traj_name)
+            self.widget3d.scene.remove_geometry(self.slam_traj_name)
 
     def _on_kf_window_chbox(self, is_checked):
         if self.kf_window is None:
@@ -582,8 +589,19 @@ class SLAM_GUI:
             self.gt_traj.paint_uniform_color(BLACK)
             # print(self.gt_traj)
             if self.traj_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.traj_name)
-                self.widget3d.scene.add_geometry(self.traj_name, self.gt_traj, self.lit)
+                self.widget3d.scene.remove_geometry(self.gt_traj_name)
+                self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
+
+        if gaussian_packet.slam_poses is not None:
+            slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
+            self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
+            slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
+            self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
+            self.slam_traj.paint_uniform_color(RED)
+            # print(self.gt_traj)
+            if self.traj_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.slam_traj_name)
+                self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
 
         if gaussian_packet.finish:
             print("Received terminate signal")

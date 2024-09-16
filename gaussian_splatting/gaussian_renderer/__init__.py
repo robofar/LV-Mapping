@@ -13,14 +13,23 @@ import math
 import numpy as np
 import torch
 
-use_2d_gs = False 
+# we support multiple GS variants: 3d_gs, 2d_gs, gaussian_surfel
+gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
+gs_dim = [3, 2, 3]
+
+gs_type = "gaussian_surfel"
+# gs_type = "3d_gs"
 
 # 2DGS
-if use_2d_gs:
+if gs_type == "2d_gs":
     from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 # Gaussian Surfel
-else:
+elif gs_type == "gaussian_surfel":
     from diff_gaussian_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+elif gs_type == "3d_gs":
+    from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+else:
+    print("select from a kind of gs variants")
 
 from model.neural_gaussians import NeuralPoints
 from gaussian_splatting.utils.sh_utils import eval_sh
@@ -102,8 +111,7 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
 
     # print(resolution_height, resolution_width)
 
-
-    if use_2d_gs:
+    if gs_type == "2d_gs":
         # 2D GS
         raster_settings = GaussianRasterizationSettings(
             image_height=resolution_height,
@@ -119,7 +127,7 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
             prefiltered=False,
             debug=False,
         )
-    else:
+    elif gs_type == "gaussian_surfel":
         # Gaussian Surfel
         raster_settings = GaussianRasterizationSettings(
             image_height=resolution_height,
@@ -137,6 +145,22 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
             prefiltered=False,
             debug=False,
             config=gaussian_surfel_train_config,
+        )
+    elif gs_type == "3d_gs":
+        # 3D GS
+        raster_settings = GaussianRasterizationSettings(
+            image_height=resolution_height,
+            image_width=resolution_width,
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=neural_gaussians.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=False,
         )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -196,7 +220,7 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         colors_precomp = override_color
     
     # main rasterization function
-    if use_2d_gs:
+    if gs_type == "2d_gs":
         rendered_image, radii, allmap = rasterizer(
             means3D = means3D,
             means2D = means2D,
@@ -276,8 +300,10 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
             'surf_depth': surf_depth, # rendered depth
             'surf_normal': surf_normal, # normal calculated from rendered depth
         })
+
+        return rets
     
-    else:
+    elif gs_type == "gaussian_surfel":
         # gaussian surfels
         # Rasterize visible Gaussians to image, obtain their radii (on screen [unit: pixel]). 
         rendered_image, rendered_normal, rendered_depth, rendered_opac, radii = rasterizer(
@@ -306,10 +332,6 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         mask_vis = (rendered_opac.detach() > 1e-5)
         surf_normal = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface
 
-        # surf_normal = None
-
-        # print(rendered_opac)
-
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
         
@@ -318,8 +340,29 @@ def render(viewpoint_camera: CamImage, cam_pose: torch.Tensor,
         #     print(radii)
         
         return {"render": rendered_image, "rend_normal": rendered_normal, "surf_depth": rendered_depth,
-                "rend_alpha": rendered_opac, 'surf_normal': surf_normal,
-                "viewspace_points": screenspace_points, "visibility_filter": radii > 1, "radii": radii} # > 1 or > 0
+                "rend_alpha": rendered_opac, 'surf_normal': surf_normal, 'rend_dist': None,
+                "viewspace_points": screenspace_points, "visibility_filter": radii > 0, "radii": radii} # > 1 or > 0
 
 
-    return rets
+    elif gs_type == "3d_gs":
+
+        # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+        rendered_image, radii = rasterizer(
+            means3D = means3D,
+            means2D = means2D,
+            shs = shs,
+            colors_precomp = colors_precomp,
+            opacities = opacity,
+            scales = scales,
+            rotations = rotations,
+            cov3D_precomp = cov3D_precomp)
+        
+        
+        return {"render": rendered_image, "rend_normal": None, "surf_depth": None,
+                "rend_alpha": None, 'surf_normal': None, 'rend_dist': None,
+                "viewspace_points": screenspace_points,
+                "visibility_filter" : radii > 0,
+                "radii": radii}
+
+
+    return None

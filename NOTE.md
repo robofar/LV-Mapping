@@ -37,9 +37,9 @@ python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitt
 ## Run on KITTI 360 dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 00 -i ./data/kitti360/ -dvl
+python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl
 
-python pin_slam.py ./config/lidar_slam/run_kitti360.yaml kitti360 03 -i ./data/kitti360/ -dvl
+python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -dvl
 ```
 
 **pass**
@@ -273,6 +273,10 @@ NaN problem in rotation
 new_rots = torch.nan_to_num(new_rots, 0, 0)
 ```
 
+### Set used GPU on server
+```
+export CUDA_VISIBLE_DEVICES=2
+```
 
 ## GS Visualizer
 
@@ -288,10 +292,10 @@ new_rots = torch.nan_to_num(new_rots, 0, 0)
 
 - [ ] Add pruning (together with the moving objects)
 - [ ] Keyframe strategy
-- [ ] Figure out the issue of the normal loss, does not work properly
+- [x] Figure out the issue of the normal loss, does not work properly
 - [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
 - [x] Make use of the mono normal clue in training, also use mono normal as the initialization of the gaussians
-- [ ] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
+- [x] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
 - [x] Add SDF / SDF gradient consistency loss, Gaussian, PIN jointly optimization
 - [x] Depth rendering loss (optional)

@@ -318,7 +318,7 @@ class SLAMDataset():
                         mono_depth_input_rgb = cur_img[:3]
                         
                         # down-sample input image to save computation (otherwise it will take more than 100ms)
-                        if H*W > 5e5: # 5e5
+                        if H*W > 8e5: # 5e5
                             mono_depth_input_rgb = F.interpolate(mono_depth_input_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                             # For kitti, if downsized, computational time can be decrease to 20ms on my GPU
 

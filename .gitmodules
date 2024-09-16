@@ -4,3 +4,6 @@
 [submodule "submodules/diff-gaussian-surfel-rasterization"]
 	path = submodules/diff-gaussian-surfel-rasterization
 	url = https://github.com/YuePanEdward/diff-gaussian-surfel-rasterization.git
+[submodule "submodules/diff-gaussian-rasterization"]
+	path = submodules/diff-gaussian-rasterization
+	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization.git
