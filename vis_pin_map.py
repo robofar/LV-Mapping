@@ -55,11 +55,11 @@ def vis_pin_map():
     neural_points = loaded_model["neural_points"]
 
     # print(loaded_model.keys())
-    geo_mlp.load_state_dict(loaded_model["geo_decoder"])
-    if 'sem_decoder' in loaded_model.keys():
-        sem_mlp.load_state_dict(loaded_model["sem_decoder"])
-    if 'color_decoder' in loaded_model.keys():
-        color_mlp.load_state_dict(loaded_model["color_decoder"])
+    geo_mlp.load_state_dict(loaded_model["sdf_mlp"])
+    if 'sem_mlp' in loaded_model.keys():
+        sem_mlp.load_state_dict(loaded_model["sem_mlp"])
+    if 'color_mlp' in loaded_model.keys():
+        color_mlp.load_state_dict(loaded_model["color_mlp"])
     print("PIN Map loaded")
 
     if config.o3d_vis_on:

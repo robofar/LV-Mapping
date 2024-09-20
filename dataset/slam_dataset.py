@@ -382,16 +382,43 @@ class SLAMDataset():
 
                         toc_lidar_align = get_time()
 
+                        # image edge detection
+                        # Convert the image to grayscale (Canny works better on single-channel images)
+                        # cur_img_gray_np = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_BGR2GRAY)
+                        # # Apply GaussianBlur to reduce noise and improve edge detection
+                        # cur_img_gray_np = cv2.GaussianBlur(cur_img_gray_np, (5, 5), 0)
+                        # # Use the Canny edge detector
+                        # cur_img_edges = cv2.Canny(cur_img_gray_np, 60, 150)  # 100 and 200 are the lower and upper thresholds
+                        # filter edges of the predicted depth image
+
+                        pred_depth_np_normalized = np.clip(pred_depth_np/self.config.max_range * 1.0, 0, 1)
+
+                        pred_depth_np_uint8 = (pred_depth_np_normalized*255.0).astype(np.uint8)
+
+                        # pred_depth_np_uint8 = cv2.GaussianBlur(pred_depth_np_uint8, (5, 5), 0)
+
+                        pred_depth_edges = cv2.Canny(pred_depth_np_uint8, 30, 150)
+
+                        # Define a kernel (structuring element) for dilation (the size controls thickness)
+                        dilation_kernel = np.ones((9, 9), np.uint8)
+
+                        # Apply dilation to thicken the edges
+                        pred_depth_edges = cv2.dilate(pred_depth_edges, dilation_kernel, iterations=1)  # 'iterations' controls how much thickening
+
+                        edge_mask = pred_depth_edges > 0
+                        pred_depth_np[edge_mask] = 0.0 # filter the depth on the edges
+
+                        # Display the original image and the edge-detected image
+                        # cv2.imshow('Original Image', cur_img_rgb_np)
+                        # cv2.imshow('Edge Depth Image', pred_depth_edges)
+                        # cv2.waitKey(1)
+
                         # filter, clean depth
                         # filter the depth image, 1.5cm sigma, in 3 neighborhood 
                         # pred_depth_np = cv2.bilateralFilter(pred_depth_np,3,15,15) 
                     
                         # erosion for depth image
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
-
-                        # cur_gray_img_np = cv2.cvtColor(cur_img_np, cv2.COLOR_RGB2GRAY)
-                        # edges = cv2.Canny(cur_gray_img_np, threshold1=100, threshold2=200) # H, W
-                        # pred_depth_np[edges>0] = 0.0
 
                         # visualize 
                         if self.config.o3d_vis_on and self.config.vis_in_cv2:
@@ -403,6 +430,8 @@ class SLAMDataset():
                             pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
                             pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
                             cv2.imshow("Mono Depth", pred_depth_color)
+
+                            cv2.waitKey(1)
                 
                         # pred_normal[invalid_mask] = 0
                         # print(pred_normal)
@@ -463,7 +492,7 @@ class SLAMDataset():
                         self.cur_frame_mono_depth_o3d = pred_pcd # also may conatin normals
 
                         points_xyz = np.array(pred_pcd.points, dtype=np.float64)
-                        points_rgb = np.array(pred_pcd.colors, dtype=np.float64)
+                        points_rgb = np.array(pred_pcd.colors, dtype=np.float64) # [0-1]
                         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
                         points_normals = np.array(pred_pcd.normals, dtype=np.float64)

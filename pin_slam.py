@@ -110,16 +110,40 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     mp.set_start_method("spawn")
 
     # initialize the mlp decoder
-    geo_mlp = Decoder(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
+    # geo_mlp = Decoder(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
+
+    geo_mlp = Decoder(config, 64, 1, 1)
+
     sem_mlp = Decoder(config, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
     color_mlp = Decoder(config, config.color_mlp_hidden_dim, config.color_mlp_level, config.color_channel) if config.color_on else None
-
-    # initialize the neural gaussians
-    neural_points = NeuralPoints(config)
 
     # Load the decoder model
     if config.load_model: # not used
         load_decoder(config, geo_mlp, sem_mlp, color_mlp)
+
+    n_gaussian = 16
+    hidden_layer_count = 1
+    hidden_layer_dim = 128
+    gaussian_xyz_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+    gaussian_scale_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
+    gaussian_rot_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0)
+    gaussian_alpha_mlp = Decoder(config, 32, 1, 1, n_gaussian, 0)
+    gaussian_sh_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+
+    mlp_dict = {}
+    
+    mlp_dict["sdf"] = geo_mlp
+    mlp_dict["semantic"] = sem_mlp
+    mlp_dict["color"] = color_mlp
+
+    mlp_dict["gauss_xyz"] = gaussian_xyz_mlp
+    mlp_dict["gauss_scale"] = gaussian_scale_mlp
+    mlp_dict["gauss_rot"] = gaussian_rot_mlp
+    mlp_dict["gauss_alpha"] = gaussian_alpha_mlp
+    mlp_dict["gauss_sh"] = gaussian_sh_mlp
+
+    # initialize the neural gaussians
+    neural_points = NeuralPoints(config)
 
     # non-blocking visualizer
     if config.o3d_vis_on:
@@ -150,13 +174,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     dataset = SLAMDataset(config)
 
     # odometry tracker
-    tracker = Tracker(config, neural_points, geo_mlp, sem_mlp, color_mlp)
+    tracker = Tracker(config, neural_points, mlp_dict)
 
     # mapper
-    mapper = Mapper(config, dataset, neural_points, geo_mlp, sem_mlp, color_mlp)
+    mapper = Mapper(config, dataset, neural_points, mlp_dict)
 
     # mesh reconstructor
-    mesher = Mesher(config, neural_points, geo_mlp, sem_mlp, color_mlp)
+    mesher = Mesher(config, neural_points, mlp_dict)
     cur_mesh = None
 
     # pose graph manager (for back-end optimization) initialization
@@ -333,7 +357,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
-            freeze_decoders(geo_mlp, sem_mlp, color_mlp, config)
+            freeze_decoders(mlp_dict, config)
 
         # conduct local bundle adjustment (with lower frequency)
         if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
@@ -377,6 +401,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # V: Mesh reconstruction and visualization
         cur_mesh = None
+        cur_sdf_slice = None
 
         dataset.update_o3d_map()
         frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
@@ -427,7 +452,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                         aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
                         chunks_aabb = split_chunks(global_neural_pcd_down, aabb, o3d_vis.mc_res_m * 300) # reconstruct in chunks
                         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
-            cur_sdf_slice = None
+            
             if config.sdfslice_freq_frame > 0:
                 if o3d_vis.render_sdf and (frame_id == 0 or frame_id == last_frame or (frame_id + 1) % config.sdfslice_freq_frame == 0):
                     slice_res_m = config.voxel_size_m * 0.5 # better be larger (to save time) # TODO: add to config
@@ -472,7 +497,12 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if config.gs_vis_on:
         
             T9 = get_time()
-            packet_to_vis: VisPacket = VisPacket(gaussians=clone_obj(neural_points), current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
+
+            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh = mapper.spawn_gaussians()
+
+            packet_to_vis: VisPacket = VisPacket(current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
+
+            packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
@@ -480,6 +510,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             if cur_mesh is not None:
                 packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
 
+            if cur_sdf_slice is not None:
+                packet_to_vis.add_sdf_slice(np.array(cur_sdf_slice.points, dtype=np.float64), np.array(cur_sdf_slice.colors, dtype=np.float64))
+            
             packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
 
             q_main2vis.put(packet_to_vis)
@@ -511,8 +544,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     
     # gs eval 
     if config.gs_on: # TODO: add to a function inside mapper or dataset 
+        print("Training view")
         mapper.init_gs_eval()
-        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate)
+        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, train_view_only=True)
+        mapper.gs_eval_out()
+        print("Testing view")
+        mapper.init_gs_eval()
+        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, test_view_only=True)
         mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     

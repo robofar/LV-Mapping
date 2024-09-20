@@ -137,6 +137,7 @@ class Config:
 
         # MLP decoder
         self.mlp_bias_on: bool = True
+        self.mlp_leaky_relu: bool = False
         self.geo_mlp_level: int = 1
         self.geo_mlp_hidden_dim: int = 64
         self.sem_mlp_level: int = 1
@@ -615,7 +616,7 @@ class Config:
             self.mesh_min_nn = config_args["eval"].get('mesh_min_nn', self.mesh_min_nn)
             self.skip_top_voxel = config_args["eval"].get('skip_top_voxel', self.skip_top_voxel)
             self.min_cluster_vertices = config_args["eval"].get('min_cluster_vertices', self.min_cluster_vertices)
-            self.mc_res_m = config_args["eval"].get('mc_res_m', self.voxel_size_m) # initial marching cubes grid sampling interval (unit: m)
+            self.mc_res_m = config_args["eval"].get('mc_res_m', self.voxel_size_m*0.6) # initial marching cubes grid sampling interval (unit: m)
             
             # save the map or not
             self.save_map = config_args["eval"].get('save_map', self.save_map)
@@ -623,7 +624,7 @@ class Config:
             self.save_mesh = config_args["eval"].get('save_mesh', self.save_mesh)
 
         # associated parameters
-        self.infer_bs = self.bs * 64
+        self.infer_bs = self.bs * 16
         self.consistency_count = int(self.bs / 4)
         self.window_radius = max(self.max_range, 6.0) # for the sampling data poo, should not be too small
         self.local_map_radius = self.max_range + 2.0 # for the local neural points

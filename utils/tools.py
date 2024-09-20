@@ -126,25 +126,33 @@ def setup_seed(seed):
 def setup_optimizer(
     config: Config,
     neural_point_feat,
-    mlp_geo_param=None,
+    mlp_sdf_param=None,
     mlp_sem_param=None,
     mlp_color_param=None,
+    mlp_gs_xyz_param=None,
+    mlp_gs_scale_param=None,
+    mlp_gs_rot_param=None,
+    mlp_gs_alpha_param=None,
+    mlp_gs_sh_param=None,
     poses=None,
     lr_ratio=1.0,
 ) -> Optimizer:
+    
     lr_cur = config.lr * lr_ratio
     lr_pose = config.lr_pose
+    
+    # weight_decay is for L2 regularization
     weight_decay = config.weight_decay
     weight_decay_mlp = 0.0
     opt_setting = []
-    # weight_decay is for L2 regularization
-    if mlp_geo_param is not None:
-        mlp_geo_param_opt_dict = {
-            "params": mlp_geo_param,
+
+    if mlp_sdf_param is not None:
+        mlp_sdf_param_opt_dict = {
+            "params": mlp_sdf_param,
             "lr": lr_cur,
             "weight_decay": weight_decay_mlp,
         }
-        opt_setting.append(mlp_geo_param_opt_dict)
+        opt_setting.append(mlp_sdf_param_opt_dict)
     if config.semantic_on and mlp_sem_param is not None:
         mlp_sem_param_opt_dict = {
             "params": mlp_sem_param,
@@ -159,15 +167,63 @@ def setup_optimizer(
             "weight_decay": weight_decay_mlp,
         }
         opt_setting.append(mlp_color_param_opt_dict)
+    
+    lr_gs_xyz = 1e-2
+    lr_gs_scale = 1e-3
+    lr_gs_rot = 1e-2
+    lr_gs_alpha = 1e-2
+    lr_gs_sh = 1e-3
+
+    if config.gs_on:
+        if mlp_gs_xyz_param is not None:
+            mlp_gs_xyz_param_opt_dict = {
+                "params": mlp_gs_xyz_param,
+                "lr": lr_gs_xyz,
+                "weight_decay": weight_decay_mlp,
+            }
+            opt_setting.append(mlp_gs_xyz_param_opt_dict)
+        if mlp_gs_scale_param is not None:
+            mlp_gs_scale_param_opt_dict = {
+                "params": mlp_gs_scale_param,
+                "lr": lr_gs_scale,
+                "weight_decay": weight_decay_mlp,
+            }
+            opt_setting.append(mlp_gs_scale_param_opt_dict)
+        if mlp_gs_rot_param is not None:
+            mlp_gs_rot_param_opt_dict = {
+                "params": mlp_gs_rot_param,
+                "lr": lr_gs_rot,
+                "weight_decay": weight_decay_mlp,
+            }
+            opt_setting.append(mlp_gs_rot_param_opt_dict)
+        if mlp_gs_alpha_param is not None:
+            mlp_gs_alpha_param_opt_dict = {
+                "params": mlp_gs_alpha_param,
+                "lr": lr_gs_alpha,
+                "weight_decay": weight_decay_mlp,
+            }
+            opt_setting.append(mlp_gs_alpha_param_opt_dict)
+        if mlp_gs_sh_param is not None:
+            mlp_gs_sh_param_opt_dict = {
+                "params": mlp_gs_sh_param,
+                "lr": lr_gs_sh,
+                "weight_decay": weight_decay_mlp,
+            }
+            opt_setting.append(mlp_gs_sh_param_opt_dict)
+        
     if poses is not None:
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
+    
+    lr_cur_feature = 1e-2
+
     feat_opt_dict = {
         "params": neural_point_feat,
-        "lr": lr_cur,
+        "lr": lr_cur_feature,
         "weight_decay": weight_decay,
     }
     opt_setting.append(feat_opt_dict)
+
     if config.opt_adam:
         opt = optim.Adam(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps)
     else:
@@ -243,21 +299,22 @@ def unfreeze_model(model: nn.Module):
             param.requires_grad = True
 
 
-def freeze_decoders(geo_decoder, sem_decoder, color_decoder, config):
+def freeze_decoders(mlps, config):
     if not config.silence:
         print("Freeze the decoder")
-    freeze_model(geo_decoder)  # fixed the geo decoder
-    if config.semantic_on:
-        freeze_model(sem_decoder)  # fixed the sem decoder
-    if config.color_on:
-        freeze_model(color_decoder)  # fixed the color decoder
+    
+    keys = list(mlps.keys())
+    for key in keys:
+        mlp = mlps[key]
+        if mlp is not None:
+            freeze_model(mlp)
 
 
 def save_checkpoint(
     neural_points,
-    geo_decoder,
-    color_decoder,
-    sem_decoder,
+    sdf_mlp,
+    color_mlp,
+    sem_mlp,
     optimizer,
     run_path,
     checkpoint_name,
@@ -267,9 +324,9 @@ def save_checkpoint(
         {
             "iters": iters,
             "neural_points": neural_points,  # save the whole NN module
-            "geo_decoder": geo_decoder.state_dict(),
-            "color_decoder": color_decoder.state_dict(),
-            "sem_decoder": sem_decoder.state_dict(),
+            "sdf_mlp": sdf_mlp.state_dict(),
+            "color_mlp": color_mlp.state_dict(),
+            "sem_mlp": sem_mlp.state_dict(),
             "optimizer": optimizer.state_dict(),
         },
         os.path.join(run_path, f"{checkpoint_name}.pth"),
@@ -278,14 +335,14 @@ def save_checkpoint(
 
 
 def save_implicit_map(
-    run_path, neural_points, geo_decoder, color_decoder=None, sem_decoder=None
+    run_path, neural_points, sdf_mlp, color_mlp=None, sem_mlp=None
 ):
 
-    map_dict = {"neural_points": neural_points, "geo_decoder": geo_decoder.state_dict()}
-    if color_decoder is not None:
-        map_dict["color_decoder"] = color_decoder.state_dict()
-    if sem_decoder is not None:
-        map_dict["sem_decoder"] = sem_decoder.state_dict()
+    map_dict = {"neural_points": neural_points, "sdf_mlp": sdf_mlp.state_dict()}
+    if color_mlp is not None:
+        map_dict["color_mlp"] = color_mlp.state_dict()
+    if sem_mlp is not None:
+        map_dict["sem_mlp"] = sem_mlp.state_dict()
 
     model_save_path = os.path.join(run_path, "model", "pin_map.pth")  # end with .pth
     torch.save(map_dict, model_save_path)
@@ -300,14 +357,14 @@ def save_implicit_map(
 
 def load_decoder(config, geo_mlp, sem_mlp, color_mlp):
     loaded_model = torch.load(config.model_path)
-    geo_mlp.load_state_dict(loaded_model["geo_decoder"])
+    geo_mlp.load_state_dict(loaded_model["sdf_mlp"])
     print("Pretrained decoder loaded")
     freeze_model(geo_mlp)  # fixed the decoder
     if config.semantic_on:
-        sem_mlp.load_state_dict(loaded_model["sem_decoder"])
+        sem_mlp.load_state_dict(loaded_model["sem_mlp"])
         freeze_model(sem_mlp)  # fixed the decoder
     if config.color_on:
-        color_mlp.load_state_dict(loaded_model["color_decoder"])
+        color_mlp.load_state_dict(loaded_model["color_mlp"])
         freeze_model(color_mlp)  # fixed the decoder
 
 

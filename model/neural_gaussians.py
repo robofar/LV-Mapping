@@ -118,6 +118,8 @@ class NeuralPoints(nn.Module):
             )
         else:
             self.color_features = None
+
+        
         # here, the ts represent the actually processed frame id (not neccessarily the frame id of the dataset)
         self.point_ts_create = torch.empty(
             (0), device=self.device, dtype=torch.int
@@ -127,20 +129,22 @@ class NeuralPoints(nn.Module):
         )  # last update ts
         self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
 
+        self.point_colors = torch.empty((0, 3), dtype=self.dtype, device=self.device) # RGB [0-1]
+
         # Gaussian parameters
         self.gs_dim_count: int = 3 #  2 or 3, 2D or 3D GS # FIXME
 
         self.active_sh_degree = self.config.sh_degree # TODO
         self.max_sh_degree = self.config.sh_degree
 
-        self.xyz = torch.empty(0, dtype=self.dtype, device=self.device) # N, 3 # here, this represent the displacement from the neural point
-        self.features_dc = torch.empty(0, dtype=self.dtype, device=self.device) # N,1,3 # basic color
-        self.features_rest = torch.empty(0, dtype=self.dtype, device=self.device) # N,S-1,3 # additional color with SH
-        self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
-        self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
-        self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
+        # self.xyz = torch.empty(0, dtype=self.dtype, device=self.device) # N, 3 # here, this represent the displacement from the neural point
+        # self.features_dc = torch.empty(0, dtype=self.dtype, device=self.device) # N,1,3 # basic color # [0, 1]
+        # self.features_rest = torch.empty(0, dtype=self.dtype, device=self.device) # N,S-1,3 # additional color with SH # [0, 1]
+        # self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
+        # self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
+        # self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
-        self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
+        # self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)
 
         # self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
@@ -152,7 +156,7 @@ class NeuralPoints(nn.Module):
 
         self.unique_kfIDs = None # should be similar to point_ts_create
 
-        self.setup_functions()
+        # self.setup_functions()
 
         # the local map
         self.local_neural_points = torch.empty(
@@ -171,20 +175,25 @@ class NeuralPoints(nn.Module):
         self.local_point_ts_update = torch.empty(
             (0), device=self.device, dtype=torch.int
         )
+
+        self.local_point_colors = torch.empty(
+            (0, 3), dtype=self.dtype, device=self.device
+        )
+
         self.local_mask = None
         self.global2local = None
 
         # Local Gaussian parameters
-        self.local_xyz = nn.Parameter()
-        # self.local_xyz_free = nn.Parameter()
-        self.local_features_dc = nn.Parameter()
-        self.local_features_rest = nn.Parameter()
-        self.local_scaling = nn.Parameter()
-        self.local_rotation = nn.Parameter()
-        self.local_opacity = nn.Parameter()
+        # self.local_xyz = nn.Parameter()
+        # # self.local_xyz_free = nn.Parameter()
+        # self.local_features_dc = nn.Parameter()
+        # self.local_features_rest = nn.Parameter()
+        # self.local_scaling = nn.Parameter()
+        # self.local_rotation = nn.Parameter()
+        # self.local_opacity = nn.Parameter()
 
         # this is just for vis
-        self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
+        # self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
         self.local_free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
@@ -242,130 +251,130 @@ class NeuralPoints(nn.Module):
         return symm
     
     # for GS
-    def setup_functions(self):
-        self.scaling_activation = torch.exp
-        self.scaling_inverse_activation = torch.log
+    # def setup_functions(self):
+    #     self.scaling_activation = torch.exp
+    #     self.scaling_inverse_activation = torch.log
 
-        if self.gs_dim_count == 2:
-            self.covariance_activation = self.build_covariance_from_scaling_rotation_2dgs # FIXME
-        else: # by defult 3DGS
-            self.covariance_activation = self.build_covariance_from_scaling_rotation_3dgs
+    #     if self.gs_dim_count == 2:
+    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_2dgs # FIXME
+    #     else: # by defult 3DGS
+    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_3dgs
 
-        self.opacity_activation = torch.sigmoid
-        self.inverse_opacity_activation = inverse_sigmoid
-        self.rotation_activation = torch.nn.functional.normalize
+    #     self.opacity_activation = torch.sigmoid
+    #     self.inverse_opacity_activation = inverse_sigmoid
+    #     self.rotation_activation = torch.nn.functional.normalize
 
     
-    @property
-    def get_local_xyz(self):
-        # print(self.local_xyz)
-        return self.local_neural_points + self.local_xyz
+    # @property
+    # def get_local_xyz(self):
+    #     # print(self.local_xyz)
+    #     return self.local_neural_points + self.local_xyz
     
-    @property
-    def get_xyz(self):
-        return self.neural_points + self.xyz
+    # @property
+    # def get_xyz(self):
+    #     return self.neural_points + self.xyz
     
-    @property
-    def get_local_features(self):
-        features_dc = self.local_features_dc
-        features_rest = self.local_features_rest
-        return torch.cat((features_dc, features_rest), dim=1)
+    # @property
+    # def get_local_features(self):
+    #     features_dc = self.local_features_dc
+    #     features_rest = self.local_features_rest
+    #     return torch.cat((features_dc, features_rest), dim=1)
     
-    @property
-    def get_features(self):
-        return torch.cat((self.features_dc, self.features_rest), dim=1)
+    # @property
+    # def get_features(self):
+    #     return torch.cat((self.features_dc, self.features_rest), dim=1)
     
-    # they all need the activation
-    @property
-    def get_local_opacity(self):
-        return self.opacity_activation(self.local_opacity)
+    # # they all need the activation
+    # @property
+    # def get_local_opacity(self):
+    #     return self.opacity_activation(self.local_opacity)
     
-    @property
-    def get_opacity(self):
-        return self.opacity_activation(self.opacity)
+    # @property
+    # def get_opacity(self):
+    #     return self.opacity_activation(self.opacity)
     
-    @property
-    def get_local_scaling(self):
-        return self.scaling_activation(self.local_scaling) #.clamp(max=1)
+    # @property
+    # def get_local_scaling(self):
+    #     return self.scaling_activation(self.local_scaling) #.clamp(max=1)
     
-    @property
-    def get_scaling(self):
-        return self.scaling_activation(self.scaling) #.clamp(max=1)
+    # @property
+    # def get_scaling(self):
+    #     return self.scaling_activation(self.scaling) #.clamp(max=1)
     
-    @property
-    def get_local_rotation(self):
-        return self.rotation_activation(self.local_rotation)
+    # @property
+    # def get_local_rotation(self):
+    #     return self.rotation_activation(self.local_rotation)
     
-    @property
-    def get_rotation(self):
-        return self.rotation_activation(self.rotation)
+    # @property
+    # def get_rotation(self):
+    #     return self.rotation_activation(self.rotation)
 
 
-    def get_local_covariance(self, scaling_modifier = 1):
-        return self.covariance_activation(self.get_local_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
+    # def get_local_covariance(self, scaling_modifier = 1):
+    #     return self.covariance_activation(self.get_local_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
 
-    def get_covariance(self, scaling_modifier = 1):
-        return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self.rotation)
+    # def get_covariance(self, scaling_modifier = 1):
+    #     return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self.rotation)
     
 
     # for GS
-    def training_setup_gs(self, with_pin_feature: bool = True):
+    # def training_setup_gs(self, with_pin_feature: bool = True):
 
-        if self.config.movable_gs:
-            self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
-        else:
-            self.position_lr_init: float = 0.0 # not movable
+    #     if self.config.movable_gs:
+    #         self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
+    #     else:
+    #         self.position_lr_init: float = 0.0 # not movable
 
-        self.feature_lr: float = 0.0025 # for SH, color
-        self.opacity_lr: float = self.config.gs_opacity_lr # 0.05
-        self.scaling_lr: float = self.config.gs_scaling_lr # 0.005
-        self.rotation_lr: float = self.config.gs_rotation_lr # 0.1 # 0.001 # ADD to config. TODO
+    #     self.feature_lr: float = 0.0025 # for SH, color
+    #     self.opacity_lr: float = self.config.gs_opacity_lr # 0.05
+    #     self.scaling_lr: float = self.config.gs_scaling_lr # 0.005
+    #     self.rotation_lr: float = self.config.gs_rotation_lr # 0.1 # 0.001 # ADD to config. TODO
 
-        # not very useful
-        self.position_lr_final: float = 0.0000016
-        self.position_lr_delay_mult: float = 0.01
-        self.position_lr_max_steps: float = 30_000
-        self.percent_dense: float = 0.01
-        self.feature_rest_lr_init: float = 0.0025 / 20.
-        self.feature_rest_lr_final_factor: float = 0.1
-        self.feature_rest_lr_max_steps: int = -1
-        self.feature_extra_lr_init: float = 1e-3
-        self.feature_extra_lr_final_factor: float = 0.1
-        self.feature_extra_lr_max_steps: int = 30_000
+    #     # not very useful
+    #     self.position_lr_final: float = 0.0000016
+    #     self.position_lr_delay_mult: float = 0.01
+    #     self.position_lr_max_steps: float = 30_000
+    #     self.percent_dense: float = 0.01
+    #     self.feature_rest_lr_init: float = 0.0025 / 20.
+    #     self.feature_rest_lr_final_factor: float = 0.1
+    #     self.feature_rest_lr_max_steps: int = -1
+    #     self.feature_extra_lr_init: float = 1e-3
+    #     self.feature_extra_lr_final_factor: float = 0.1
+    #     self.feature_extra_lr_max_steps: int = 30_000
 
-        # densification_interval: int = 100
-        # opacity_reset_interval: int = 3000
-        # densify_from_iter: int = 500
-        # densify_until_iter: int = 15_000
-        # densify_grad_threshold: float = 0.0002
+    #     # densification_interval: int = 100
+    #     # opacity_reset_interval: int = 3000
+    #     # densify_from_iter: int = 500
+    #     # densify_until_iter: int = 15_000
+    #     # densify_grad_threshold: float = 0.0002
 
-        # TODO: it's also necessary to duplicate, clone, split the gaussians
+    #     # TODO: it's also necessary to duplicate, clone, split the gaussians
 
 
-        # self.xyz_gradient_accum = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
-        # self.denom = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
+    #     # self.xyz_gradient_accum = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
+    #     # self.denom = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
 
-        # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
-        # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
+    #     # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
+    #     # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
 
-        l = [
-            {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
-            {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
-            {'params': [self.local_features_rest], 'lr': self.feature_lr / 20.0, "name": "f_rest"},
-            {'params': [self.local_opacity], 'lr': self.opacity_lr, "name": "opacity"},
-            {'params': [self.local_scaling], 'lr': self.scaling_lr, "name": "scaling"},
-            {'params': [self.local_rotation], 'lr': self.rotation_lr, "name": "rotation"}
-        ]
+    #     l = [
+    #         {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+    #         # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
+    #         {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
+    #         {'params': [self.local_features_rest], 'lr': self.feature_lr / 20.0, "name": "f_rest"},
+    #         {'params': [self.local_opacity], 'lr': self.opacity_lr, "name": "opacity"},
+    #         {'params': [self.local_scaling], 'lr': self.scaling_lr, "name": "scaling"},
+    #         {'params': [self.local_rotation], 'lr': self.rotation_lr, "name": "rotation"}
+    #     ]
 
-        if with_pin_feature:
-            l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
+    #     if with_pin_feature:
+    #         l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
 
-        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
-        #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
-        #                                             lr_delay_mult=self.position_lr_delay_mult,
-        #                                             max_steps=self.position_lr_max_steps)
+    #     self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+    #     # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
+    #     #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
+    #     #                                             lr_delay_mult=self.position_lr_delay_mult,
+    #     #                                             max_steps=self.position_lr_max_steps)
     
     # For GS
     def update_learning_rate(self, iteration):
@@ -434,17 +443,19 @@ class NeuralPoints(nn.Module):
 
             update_mask = (hash_idx == -1) | (dist2 > 3 * cur_resolution**2)
 
-            if sample_colors is not None:
-                # FIXME (we do not need valid_color_mask any more)
-                # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
-                # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
-                # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
-                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
+            # if sample_colors is not None:
+            #     # FIXME (we do not need valid_color_mask any more)
+            #     # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
+            #     # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
+            #     # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
+            #     sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
 
-                color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
-                hash_idx_color_update = hash_idx[color_update_mask]
-                self.features_dc[hash_idx_color_update] = sample_colors[color_update_mask].view(-1, 1, 3) # N, 1, 3
-                self.valid_color_mask[hash_idx_color_update] = 1 # valid again now
+            #     color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
+            #     hash_idx_color_update = hash_idx[color_update_mask]
+            #     self.features_dc[hash_idx_color_update] = sample_colors[color_update_mask].view(-1, 1, 3) # N, 1, 3
+
+
+            #     self.valid_color_mask[hash_idx_color_update] = 1 # valid again now
                 
                 # print("# Color update count:", color_update_mask.sum().item()) 
 
@@ -468,6 +479,7 @@ class NeuralPoints(nn.Module):
         added_colors = None
         if sample_colors is not None:
             added_colors = sample_colors[update_mask]
+            # print(added_colors) # color also between 0 and 1
 
         added_normals = None
         if sample_normals is not None:
@@ -534,85 +546,90 @@ class NeuralPoints(nn.Module):
             new_free_mask = torch.ones((new_point_count), dtype=bool, device=self.device)
         self.free_gs_mask = torch.cat((self.free_gs_mask, new_free_mask), 0)
 
-        new_xyz = torch.zeros((new_point_count,3), device=self.device, dtype=self.dtype)
-        self.xyz = torch.cat((self.xyz, new_xyz), 0) # displacement
+        ## Displacement (Position)
+        # new_xyz = torch.zeros((new_point_count,3), device=self.device, dtype=self.dtype)
+        # self.xyz = torch.cat((self.xyz, new_xyz), 0) # displacement
+        ## ----------------
 
-        sh_features = torch.zeros((new_point_count, 3, (self.max_sh_degree + 1) ** 2), device=self.device, dtype=self.dtype)
+        ## Color SH
+        # sh_features = torch.zeros((new_point_count, 3, (self.max_sh_degree + 1) ** 2), device=self.device, dtype=self.dtype)
 
+        # if added_colors is not None:
+        #     fused_color = RGB2SH(added_colors) # N, 3, now sh with 0 dim
+        #     # print(fused_color.shape)
+        #     sh_features[:, :3, 0 ] = fused_color
+        #     sh_features[:, 3:, 1:] = 0.0        
+
+        # # give a initial value for these (TODO)
+        # new_features_dc = sh_features[:,:,0:1].transpose(1, 2).contiguous() # N, 1 ,3
+        # # print(new_features_dc.shape)
+        # self.features_dc = torch.cat((self.features_dc, new_features_dc), 0)
+
+        # new_features_rest = sh_features[:,:,1:].transpose(1, 2).contiguous() # N, (max_sh+1)**2-1, 3
+        # # print(new_features_rest.shape)
+        # self.features_rest = torch.cat((self.features_rest, new_features_rest), 0)
+
+        # update RGB color
         if added_colors is not None:
-            fused_color = RGB2SH(added_colors) # N, 3, now sh with 0 dim
-            # print(fused_color.shape)
-            sh_features[:, :3, 0 ] = fused_color
-            sh_features[:, 3:, 1:] = 0.0        
+            self.point_colors = torch.cat((self.point_colors, added_colors), 0)
+        ## ----------------
 
-        # give a initial value for these (TODO)
-        new_features_dc = sh_features[:,:,0:1].transpose(1, 2).contiguous() # N, 1 ,3
-        # print(new_features_dc.shape)
-        self.features_dc = torch.cat((self.features_dc, new_features_dc), 0)
-
-        new_features_rest = sh_features[:,:,1:].transpose(1, 2).contiguous() # N, (max_sh+1)**2-1, 3
-        # print(new_features_rest.shape)
-        self.features_rest = torch.cat((self.features_rest, new_features_rest), 0)
-
-        # added_pt_dist2 = torch.sum((added_pt - sensor_position)**2, dim=-1)
-
+        ## Scale
         # the same scaling initialization for all Gaussians
-        mean_dist = torch.tensor([1.0 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO) # 1.0 give rise to better results
+        # mean_dist = torch.tensor([1.0 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO) # 1.0 give rise to better results
         
-        if is_reliable:
-            init_scale = mean_dist
-        else: # initalize with a larger radius
-            init_scale = mean_dist * 3.0
+        # if is_reliable:
+        #     init_scale = mean_dist
+        # else: # initalize with a larger radius
+        #     init_scale = mean_dist * 3.0
 
-        new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, self.gs_dim_count) # only for two dim, 2D Gaussian
-        if self.gs_dim_count == 3: # gaussian surfel setting
-            new_scales[..., -1] -= 1e10 # squeeze z scaling
+        # new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, self.gs_dim_count) # only for two dim, 2D Gaussian
+        # if self.gs_dim_count == 3: # gaussian surfel setting
+        #     new_scales[..., -1] -= 1e10 # squeeze z scaling
 
-        self.scaling = torch.cat((self.scaling, new_scales), 0) 
-
-        # print(self.scaling[:10])
+        # self.scaling = torch.cat((self.scaling, new_scales), 0) 
+        ## ----------------
         
-        new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
+        ## Rotation
+        # new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
         
-        if added_normals is not None: # initialize it with the valid surface normal 
-            valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
-            new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
+        # if added_normals is not None: # initialize it with the valid surface normal 
+        #     valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
+        #     new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
 
-        # switch the normal direction if the normal is not pointing to the camera
-        added_ray = added_pt - sensor_position # N, 3
-        new_normals = rotation2normal(new_rots) # N, 3
-        dot_product = (added_ray * new_normals).sum(dim=1) # N
-        new_normals[dot_product>0] *= -1 
-        new_rots = normal2rotation(new_normals)
+        # # switch the normal direction if the normal is not pointing to the camera
+        # added_ray = added_pt - sensor_position # N, 3
+        # new_normals = rotation2normal(new_rots) # N, 3
+        # dot_product = (added_ray * new_normals).sum(dim=1) # N
+        # new_normals[dot_product>0] *= -1 
+        # new_rots = normal2rotation(new_normals)
 
-        new_rots = torch.nan_to_num(new_rots, 0, 0) # no NaN is allowed, otherwise CUDA has error
+        # new_rots = torch.nan_to_num(new_rots, 0, 0) # no NaN is allowed, otherwise CUDA has error
         
-        self.rotation = torch.cat((self.rotation, new_rots), 0) # initialize the normals done
+        # self.rotation = torch.cat((self.rotation, new_rots), 0) # initialize the normals done
+        ## ----------------
 
-        # init_opacity = self.config.gs_init_opacity
+        ## Opacity
+        # if is_reliable:
+        #     init_opacity = self.config.gs_init_opacity # 0.5
+        # else:
+        #     init_opacity = 0.1
 
-        if is_reliable:
-            init_opacity = self.config.gs_init_opacity # 0.5
-        else:
-            init_opacity = 0.1
-
-        new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
+        # new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
+        # self.opacity = torch.cat((self.opacity, new_opacities), 0)
+        ## ----------------
         
-        if added_colors is not None:
-            # FIXME
-            # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
-            new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
+        ## Mask
+        # if added_colors is not None:
+        #     # FIXME
+        #     # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
+        #     new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
 
-            self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
-        else:
-            self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)
+        #     self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
+        # else:
+        #     self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)
 
         self.valid_gs_mask = torch.cat((self.valid_gs_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0) # all True
-        
-        self.opacity = torch.cat((self.opacity, new_opacities), 0)
-
-        # new_max_radii2D = torch.zeros((new_point_count), dtype=self.dtype, device=self.device)
-        # self.max_radii2D = torch.cat((self.max_radii2D, new_max_radii2D), 0)
 
         self.reset_local_map(
             sensor_position, sensor_orientation, cur_ts
@@ -668,16 +685,17 @@ class NeuralPoints(nn.Module):
         self.local_point_orientations = self.point_orientations[local_mask]
         self.local_point_certainties = self.point_certainties[local_mask]
         self.local_point_ts_update = self.point_ts_update[local_mask]
+        self.local_point_colors = self.point_colors[local_mask]
 
         # Local Gaussian parameters
-        self.local_xyz = nn.Parameter(self.xyz[local_mask])
-        self.local_features_dc = nn.Parameter(self.features_dc[local_mask])
-        self.local_features_rest = nn.Parameter(self.features_rest[local_mask])
-        self.local_scaling = nn.Parameter(self.scaling[local_mask])
-        self.local_rotation = nn.Parameter(self.rotation[local_mask])
-        self.local_opacity = nn.Parameter(self.opacity[local_mask])
+        # self.local_xyz = nn.Parameter(self.xyz[local_mask])
+        # self.local_features_dc = nn.Parameter(self.features_dc[local_mask])
+        # self.local_features_rest = nn.Parameter(self.features_rest[local_mask])
+        # self.local_scaling = nn.Parameter(self.scaling[local_mask])
+        # self.local_rotation = nn.Parameter(self.rotation[local_mask])
+        # self.local_opacity = nn.Parameter(self.opacity[local_mask])
 
-        self.local_valid_color_mask = self.valid_color_mask[local_mask]
+        # self.local_valid_color_mask = self.valid_color_mask[local_mask]
         self.local_valid_gs_mask = self.valid_gs_mask[local_mask]
         self.local_free_gs_mask = self.free_gs_mask[local_mask]
 
@@ -717,12 +735,12 @@ class NeuralPoints(nn.Module):
 
     def assign_local_gaussians_to_global(self):
         local_mask = self.local_mask
-        self.xyz[local_mask[:-1]] = self.local_xyz.data
-        self.features_dc[local_mask[:-1]] = self.local_features_dc.data
-        self.features_rest[local_mask[:-1]] = self.local_features_rest.data
-        self.scaling[local_mask[:-1]] = self.local_scaling.data
-        self.rotation[local_mask[:-1]] = self.local_rotation.data
-        self.opacity[local_mask[:-1]] = self.local_opacity.data
+        # self.xyz[local_mask[:-1]] = self.local_xyz.data
+        # self.features_dc[local_mask[:-1]] = self.local_features_dc.data
+        # self.features_rest[local_mask[:-1]] = self.local_features_rest.data
+        # self.scaling[local_mask[:-1]] = self.local_scaling.data
+        # self.rotation[local_mask[:-1]] = self.local_rotation.data
+        # self.opacity[local_mask[:-1]] = self.local_opacity.data
         self.valid_gs_mask[local_mask[:-1]] = self.local_valid_gs_mask
 
     # not use the free gaussians (neural points)
@@ -941,63 +959,63 @@ class NeuralPoints(nn.Module):
             queried_certainty,
         )
     
-    # test global one first
-    def construct_list_of_attributes(self):
-        l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
-        # All channels except the 3 DC
-        for i in range(self.features_dc.shape[1]*self.features_dc.shape[2]):
-            l.append('f_dc_{}'.format(i))
-        for i in range(self.features_rest.shape[1]*self.features_rest.shape[2]):
-            l.append('f_rest_{}'.format(i))
-        l.append('opacity')
-        for i in range(3): # 2D GS --> 3D GS
-            l.append('scale_{}'.format(i))
-        for i in range(self.rotation.shape[1]):
-            l.append('rot_{}'.format(i))
-        return l
+    # # test global one first
+    # def construct_list_of_attributes(self):
+    #     l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
+    #     # All channels except the 3 DC
+    #     for i in range(self.features_dc.shape[1]*self.features_dc.shape[2]):
+    #         l.append('f_dc_{}'.format(i))
+    #     for i in range(self.features_rest.shape[1]*self.features_rest.shape[2]):
+    #         l.append('f_rest_{}'.format(i))
+    #     l.append('opacity')
+    #     for i in range(3): # 2D GS --> 3D GS
+    #         l.append('scale_{}'.format(i))
+    #     for i in range(self.rotation.shape[1]):
+    #         l.append('rot_{}'.format(i))
+    #     return l
 
-    def save_gaussian_ply(self, save_path: str, query_global: bool = True):
+    # def save_gaussian_ply(self, save_path: str, query_global: bool = True):
 
-        mkdir_p(os.path.dirname(save_path))
+    #     mkdir_p(os.path.dirname(save_path))
 
-        if query_global:
-            valid_mask = self.valid_gs_mask
-            xyz = self.get_xyz[valid_mask].detach().cpu().numpy()
-            normals = np.zeros_like(xyz)
-            f_dc = self.features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-            f_rest = self.features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-            # without activation
-            opacities = self.opacity[valid_mask].detach().cpu().numpy()
-            scale = self.scaling[valid_mask].detach().cpu().numpy()
-            rotation = self.rotation[valid_mask].detach().cpu().numpy()
+    #     if query_global:
+    #         valid_mask = self.valid_gs_mask
+    #         xyz = self.get_xyz[valid_mask].detach().cpu().numpy()
+    #         normals = np.zeros_like(xyz)
+    #         f_dc = self.features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+    #         f_rest = self.features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+    #         # without activation
+    #         opacities = self.opacity[valid_mask].detach().cpu().numpy()
+    #         scale = self.scaling[valid_mask].detach().cpu().numpy()
+    #         rotation = self.rotation[valid_mask].detach().cpu().numpy()
 
-        else:
-            valid_mask = self.local_valid_gs_mask
-            xyz = self.get_local_xyz[valid_mask].detach().cpu().numpy()
-            normals = np.zeros_like(xyz)
-            f_dc = self.local_features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-            f_rest = self.local_features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-            # without activation
-            opacities = self.local_opacity[valid_mask].detach().cpu().numpy()
-            scale = self.local_scaling[valid_mask].detach().cpu().numpy()
-            rotation = self.local_rotation[valid_mask].detach().cpu().numpy()
+    #     else:
+    #         valid_mask = self.local_valid_gs_mask
+    #         xyz = self.get_local_xyz[valid_mask].detach().cpu().numpy()
+    #         normals = np.zeros_like(xyz)
+    #         f_dc = self.local_features_dc[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+    #         f_rest = self.local_features_rest[valid_mask].detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+    #         # without activation
+    #         opacities = self.local_opacity[valid_mask].detach().cpu().numpy()
+    #         scale = self.local_scaling[valid_mask].detach().cpu().numpy()
+    #         rotation = self.local_rotation[valid_mask].detach().cpu().numpy()
         
-        # some with invalid rotation are also presented?
+    #     # some with invalid rotation are also presented?
 
-        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+    #     dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
-        elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        # should be a small value before the exp activation, because we want to have a scale close to 0 after activation
-        if self.gs_dim_count == 2: # for 2D GS
-            scale_3d = np.ones((xyz.shape[0], 1))*(-1e7) 
-            scale = np.concatenate((scale, scale_3d), axis=1) 
+    #     elements = np.empty(xyz.shape[0], dtype=dtype_full)
+    #     # should be a small value before the exp activation, because we want to have a scale close to 0 after activation
+    #     if self.gs_dim_count == 2: # for 2D GS
+    #         scale_3d = np.ones((xyz.shape[0], 1))*(-1e7)  # with very small scale (close to 0 after exp activation)
+    #         scale = np.concatenate((scale, scale_3d), axis=1) 
 
-        # print(scale_z.shape)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-        elements[:] = list(map(tuple, attributes))
-        el = PlyElement.describe(elements, 'vertex')
-        PlyData([el]).write(save_path)
-        print(f"save the gaussian map to {save_path}")
+    #     # print(scale_z.shape)
+    #     attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+    #     elements[:] = list(map(tuple, attributes))
+    #     el = PlyElement.describe(elements, 'vertex')
+    #     PlyData([el]).write(save_path)
+    #     print(f"save the gaussian map to {save_path}")
         
 
     def get_neural_points_o3d(
@@ -1016,7 +1034,7 @@ class NeuralPoints(nn.Module):
         # neural_points_np = self.neural_points[::random_down_ratio].cpu().detach().numpy().astype(np.float64)
         neural_pc_o3d = o3d.geometry.PointCloud()
 
-        if self.config.gs_on:  # "gaussian fused color" # here we do not use random_down_ratio            
+        if False:  # "gaussian fused color" # here we do not use random_down_ratio            
             if query_global:
                 if vis_free_gaussians:
                     shown_gaussian_mask = self.valid_gs_mask
@@ -1053,6 +1071,8 @@ class NeuralPoints(nn.Module):
                 #     .numpy()
                 #     .astype(np.float64)
                 # )
+                # gaussian_rgb_np[]
+
                 if vis_normals:
                     normal_np =  (
                         rotation2normal(self.get_rotation[shown_gaussian_mask])
@@ -1063,16 +1083,15 @@ class NeuralPoints(nn.Module):
                     )
             else: # only show local map
                 # TODO
-                if vis_free_gaussians:
-                    shown_gaussian_mask = self.local_valid_gs_mask
-                else:
-                    shown_gaussian_mask = self.local_valid_gs_mask & (~self.local_free_gs_mask)
-
                 # if vis_free_gaussians:
-                #     shown_gaussian_mask = self.local_valid_color_mask
-                # else:
                 #     shown_gaussian_mask = self.local_valid_gs_mask
+                # else:
+                #     shown_gaussian_mask = self.local_valid_gs_mask & (~self.local_free_gs_mask)
 
+                shown_gaussian_mask = torch.ones_like(self.local_valid_gs_mask).to(self.local_valid_gs_mask)
+                local_valid_gs_mask_np = self.local_valid_gs_mask.cpu().detach().numpy()
+                local_free_gs_mask_np = self.local_free_gs_mask.cpu().detach().numpy()       
+                       
                 if color_mode == 0:
                     neural_points_np = (
                         self.get_local_xyz[shown_gaussian_mask]
@@ -1096,6 +1115,8 @@ class NeuralPoints(nn.Module):
                     .numpy()
                     .astype(np.float64)
                 )
+                # gaussian_rgb_np[~local_valid_gs_mask_np] = np.array([1.0, 0, 0])
+                # gaussian_rgb_np[local_valid_gs_mask_np] = np.array([0.6, 0.6, 0.6])
                 # alpha_np =  (
                 #     self.get_local_opacity[shown_gaussian_mask]
                 #     .cpu()
@@ -1254,16 +1275,17 @@ class NeuralPoints(nn.Module):
             self.point_ts_create = self.point_ts_create[~prune_mask]
             self.point_ts_update = self.point_ts_update[~prune_mask]
             self.point_certainties = self.point_certainties[~prune_mask]
+            self.point_colors = self.point_colors[~prune_mask]
 
             # Gaussian related
-            self.xyz = self.xyz[~prune_mask]
-            self.features_dc = self.features_dc[~prune_mask]
-            self.features_rest = self.features_rest[~prune_mask]
-            self.scaling = self.scaling[~prune_mask]
-            self.rotation = self.rotation[~prune_mask]
-            self.opacity = self.opacity[~prune_mask]
+            # self.xyz = self.xyz[~prune_mask]
+            # self.features_dc = self.features_dc[~prune_mask]
+            # self.features_rest = self.features_rest[~prune_mask]
+            # self.scaling = self.scaling[~prune_mask]
+            # self.rotation = self.rotation[~prune_mask]
+            # self.opacity = self.opacity[~prune_mask]
         
-            self.valid_color_mask = self.valid_color_mask[~prune_mask]
+            # self.valid_color_mask = self.valid_color_mask[~prune_mask]
             self.valid_gs_mask = self.valid_gs_mask[~prune_mask]
             self.free_gs_mask = self.free_gs_mask[~prune_mask]
 
@@ -1300,6 +1322,18 @@ class NeuralPoints(nn.Module):
         self.point_orientations = quat_multiply(
             diff_quat_torch[used_ts], self.point_orientations
         ).to(self.point_orientations)
+
+        # gaussian parameters
+        # self.xyz = transform_batch_torch(
+        #     self.xyz, pose_diff_torch[used_ts]
+        # )
+        
+        # self.rotation = quat_multiply(
+        #     diff_quat_torch[used_ts], self.rotation
+        # ).to(self.rotation)
+
+        # scale and opacity keep the same
+        # update SH feature (TODO) 
 
     def recreate_hash(
         self,
@@ -1358,6 +1392,7 @@ class NeuralPoints(nn.Module):
             self.point_ts_create = self.point_ts_create[sample_idx]
             self.point_ts_update = self.point_ts_update[sample_idx]
             self.point_certainties = self.point_certainties[sample_idx]
+            self.point_colors = self.point_colors[sample_idx]
 
             sample_idx_pad = torch.cat((sample_idx, torch.tensor([-1]).to(sample_idx)))
             self.geo_features = self.geo_features[
@@ -1369,14 +1404,14 @@ class NeuralPoints(nn.Module):
                 ]  # with padding in the end
 
             # Gaussian related
-            self.xyz = self.xyz[sample_idx]
-            self.features_dc = self.features_dc[sample_idx]
-            self.features_rest = self.features_rest[sample_idx]
-            self.scaling = self.scaling[sample_idx]
-            self.rotation = self.rotation[sample_idx]
-            self.opacity = self.opacity[sample_idx]
+            # self.xyz = self.xyz[sample_idx]
+            # self.features_dc = self.features_dc[sample_idx]
+            # self.features_rest = self.features_rest[sample_idx]
+            # self.scaling = self.scaling[sample_idx]
+            # self.rotation = self.rotation[sample_idx]
+            # self.opacity = self.opacity[sample_idx]
 
-            self.valid_color_mask = self.valid_color_mask[sample_idx]
+            # self.valid_color_mask = self.valid_color_mask[sample_idx]
             self.valid_gs_mask = self.valid_gs_mask[sample_idx]
             self.free_gs_mask = self.free_gs_mask[sample_idx]
 
@@ -1515,6 +1550,7 @@ class NeuralPoints(nn.Module):
         self.local_color_features = nn.Parameter()
         self.local_point_certainties = None
         self.local_point_ts_update = None
+        self.local_point_colors = None
         
         # gaussain related
         self.local_xyz = None
@@ -1524,7 +1560,7 @@ class NeuralPoints(nn.Module):
         self.local_features_dc = None
         self.local_features_rest = None
         
-        self.local_valid_color_mask = None
+        # self.local_valid_color_mask = None
         self.local_valid_gs_mask = None
         
         self.local_mask = None
@@ -1535,6 +1571,7 @@ class NeuralPoints(nn.Module):
             self.point_ts_create = None
             self.point_ts_update = None
             self.point_certainties = None
+            self.point_colors = None
 
     def get_map_o3d_bbx(self):
         map_min, _ = torch.min(self.neural_points, dim=0)

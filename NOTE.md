@@ -293,7 +293,8 @@ export CUDA_VISIBLE_DEVICES=2
 - [ ] Add pruning (together with the moving objects)
 - [ ] Keyframe strategy
 - [x] Figure out the issue of the normal loss, does not work properly
-- [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement
+- [ ] Use the dense rendered depth from the PIN map (mesh or SDF) as the depth supervision instead of the raw LiDAR measurement, try this, almost your final chance
+- [ ] Gaussians update after PGO pose correction
 - [x] Make use of the mono normal clue in training, also use mono normal as the initialization of the gaussians
 - [x] Figure out how is the rendered normal calculated (and is it proper to directly optimize the surfel normals in 3D?), normal at the accumulated alpha = 0.5
 - [x] Batch mode
@@ -315,11 +316,16 @@ export CUDA_VISIBLE_DEVICES=2
 - [x] Sky (out-of-lidar-fov) masking
 - [ ] Level of details, especially for the closer range
 - [ ] Evaluate Chamfer distance and PSNR
-- [ ] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS)
+- [x] Think about better way to predict more gaussians from the neural point in a memory efficient way (like ScaffoldGS) TODO, DO IT, MLP predict gaussian parameters, for color, also learn a residual
+- [ ] Opacity regularization loss
+- [ ] Only spawn the points in the frustum
 - [x] Prune dynamic Gaussians using the PIN Map
 - [ ] Add BoW python for image place recognition (loop detection)
 - [ ] Add IMU, make the pose estimation more robust, use Pinochio, but add the new IMU data loader
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
+- [ ] Add the opacity entropy loss, either 0 or 1
+- [ ] Normal smoothness loss
+- [ ] Stop visualizer operation with a checkbox (not let the training get so slow)
 - [x] Try GaussianSurfel instead of 2D GS
 - [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.), would be very useful and important
 - [ ] The goal is RAL or ISPRS Journal

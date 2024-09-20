@@ -97,7 +97,7 @@ class MapVisualizer:
         self._initialize_visualizer()
 
         # Visualization options
-        self.render_mesh: bool = False # default off
+        self.render_mesh: bool = True # default on
         self.render_pointcloud: bool = True
         self.render_frame_axis: bool = True
         self.render_trajectory: bool = True
@@ -105,7 +105,7 @@ class MapVisualizer:
         self.render_odom_trajectory: bool = (
             True  # when pgo is on, visualize the odom or not
         )
-        self.render_neural_points: bool = True
+        self.render_neural_points: bool = False
         self.render_data_pool: bool = False
         self.render_sdf: bool = False
         self.render_pgo: bool = self.render_trajectory

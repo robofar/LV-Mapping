@@ -77,13 +77,9 @@ def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02):
 class VisPacket:
     def __init__(
         self,
-        current_frame=None,
+        gaussians=None,
         keyframe=None,
-        gaussian_xyz=None,
-        gaussian_scale=None,
-        gaussian_rot=None,
-        gaussian_alpha=None,
-        gaussian_sh=None,
+        current_frame=None,
         gtcolor=None,
         gtdepth=None,
         gtnormal=None,
@@ -104,25 +100,45 @@ class VisPacket:
         img_down_rate=0,
     ):
         self.has_gaussians = False
-
-        if gaussian_xyz is not None:
+        if gaussians is not None:
             self.has_gaussians = True
 
-            self.dtype = gaussian_xyz.dtype
-            self.device = gaussian_xyz.device
+            self.dtype = gaussians.dtype
+            self.device = gaussians.device
 
-            # now set to 0 (TODO)
-            self.max_sh_degree = 0
-            self.active_sh_degree = 0
+            self.max_sh_degree = gaussians.max_sh_degree
+            self.active_sh_degree = gaussians.active_sh_degree
 
-            self.gaussian_xyz = gaussian_xyz.detach()
-            self.gaussian_scale = gaussian_scale.detach()
-            self.gaussian_rot = gaussian_rot.detach()
-            self.gaussian_alpha = gaussian_alpha.detach()
-            self.gaussian_sh = gaussian_sh.detach()
+            if not local_only:
+                self.get_xyz = gaussians.get_xyz.clone()
+                self.get_opacity = gaussians.get_opacity.clone()
+                self.get_scaling = gaussians.get_scaling.clone()
+                self.get_rotation = gaussians.get_rotation.clone()
+                self.get_features = gaussians.get_features.clone()
+                self.valid_gs_mask = gaussians.valid_gs_mask.clone()
 
-            self.local_count = self.gaussian_xyz.shape[0]
+                self.count = self.get_xyz.shape[0]
 
+            # originally with detach and clone
+            self.get_local_xyz = gaussians.get_local_xyz.detach()
+            self.get_local_opacity = gaussians.get_local_opacity.detach()
+            self.get_local_scaling = gaussians.get_local_scaling.detach()
+            self.get_local_rotation = gaussians.get_local_rotation.detach()
+            self.get_local_features = gaussians.get_local_features.detach()
+            self.local_valid_gs_mask = gaussians.local_valid_gs_mask
+
+            self.local_count = self.get_local_xyz.shape[0]
+
+            # self._rotation = gaussians.rotation.clone()
+            # self.rotation_activation = torch.nn.functional.normalize
+
+            if gaussians.unique_kfIDs is None:
+                self.unique_kfIDs = torch.ones(gaussians.count(), device=self.device, dtype=self.dtype)
+            else:
+                self.unique_kfIDs = gaussians.unique_kfIDs.clone()
+            # self.n_obs = gaussians.n_obs.clone()
+
+            
         self.keyframe = keyframe
         self.current_frame = current_frame
         if current_frame is not None:
@@ -134,7 +150,7 @@ class VisPacket:
                 if current_frame.mono_normal_on:
                     gtnormal = current_frame.normal_img_list[img_down_rate]
         
-        self.img_resize_width = 640 # resized for vis
+        self.img_resize_width = 640
 
         self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
         self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)
@@ -157,33 +173,6 @@ class VisPacket:
         self.odom_poses = odom_poses
         self.gt_poses = gt_poses
         self.slam_poses = slam_poses
-
-        self.img_down_rate = img_down_rate
-
-    def add_gaussians(self,  
-                    gaussian_xyz=None,
-                    gaussian_scale=None,
-                    gaussian_rot=None,
-                    gaussian_alpha=None,
-                    gaussian_sh=None):
-
-        if gaussian_xyz is not None:
-            self.has_gaussians = True
-
-            self.dtype = gaussian_xyz.dtype
-            self.device = gaussian_xyz.device
-
-            # now set to 0 (TODO)
-            self.max_sh_degree = 0
-            self.active_sh_degree = 0
-
-            self.gaussian_xyz = gaussian_xyz.detach()
-            self.gaussian_scale = gaussian_scale.detach()
-            self.gaussian_rot = gaussian_rot.detach()
-            self.gaussian_alpha = gaussian_alpha.detach()
-            self.gaussian_sh = gaussian_sh.detach()
-
-            self.local_count = self.gaussian_xyz.shape[0]
 
     def add_scan(self, current_pointcloud_xyz=None, current_pointcloud_rgb=None):
         self.current_pointcloud_xyz = current_pointcloud_xyz

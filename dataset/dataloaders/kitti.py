@@ -41,6 +41,8 @@ class KITTIOdometryDataset:
         if not os.path.exists(self.velodyne_dir):
             self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
 
+        # self.velodyne_dir = os.path.join(self.kitti_sequence_dir, "velodyne/")
+
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "*.bin"))
         scan_count = len(self.scan_files)
 
@@ -104,10 +106,11 @@ class KITTIOdometryDataset:
 
         # Load GT Poses (if available)
         if int(sequence) < 11:
-            self.poses_fn = os.path.join(data_dir, f"poses/{self.sequence_id}.txt")
-            if not os.path.exists(self.poses_fn):
-                # load pin-slam's pose
-                self.poses_fn = os.path.join(self.kitti_sequence_dir, f"poses_pin_slam.txt") 
+            # load pin-slam's pose
+            self.poses_fn = os.path.join(self.kitti_sequence_dir, f"poses_pin_slam.txt") 
+            if not os.path.exists(self.poses_fn): # KITTI poses
+                self.poses_fn = os.path.join(data_dir, f"poses/{self.sequence_id}.txt")
+                
             self.gt_poses = self.load_poses(self.poses_fn)
 
     def __getitem__(self, idx):

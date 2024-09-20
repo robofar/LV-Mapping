@@ -25,17 +25,15 @@ class Mesher:
         self,
         config: Config,
         neural_points: NeuralPoints,
-        geo_decoder: Decoder,
-        sem_decoder: Decoder,
-        color_decoder: Decoder,
+        decoders
     ):
 
         self.config = config
         self.silence = config.silence
         self.neural_points = neural_points
-        self.geo_decoder = geo_decoder
-        self.sem_decoder = sem_decoder
-        self.color_decoder = color_decoder
+        self.sdf_mlp = decoders["sdf"]
+        self.sem_mlp = decoders["semantic"]
+        self.color_mlp = decoders["color"]
         self.device = config.device
         self.cur_device = self.device
         self.dtype = config.dtype
@@ -129,7 +127,7 @@ class Mesher:
                             device=self.device,
                         )
                     # predict the sdf with the feature, only do for the unmasked part (not in the unknown freespace)
-                    batch_sdf[pred_mask] = self.geo_decoder.sdf(
+                    batch_sdf[pred_mask] = self.sdf_mlp.sdf(
                         batch_geo_feature[pred_mask]
                     )
 
@@ -140,7 +138,7 @@ class Mesher:
                     else:
                         sdf_pred[head:tail] = batch_sdf.detach().cpu().numpy()
                 if query_sem:
-                    batch_sem_prob = self.sem_decoder.sem_label_prob(batch_geo_feature)
+                    batch_sem_prob = self.sem_mlp.sem_label_prob(batch_geo_feature)
                     if not self.config.weighted_first:
                         batch_sem_prob = torch.sum(batch_sem_prob * weight_knn, dim=1)
                     batch_sem = torch.argmax(batch_sem_prob, dim=1)
@@ -149,7 +147,7 @@ class Mesher:
                     else:
                         sem_pred[head:tail] = batch_sem.detach().cpu().numpy()
                 if query_color:
-                    batch_color = self.color_decoder.regress_color(batch_color_feature)
+                    batch_color = self.color_mlp.regress_color(batch_color_feature)
                     if not self.config.weighted_first:
                         batch_color = torch.sum(batch_color * weight_knn, dim=1)  # N, C
                     if out_torch:

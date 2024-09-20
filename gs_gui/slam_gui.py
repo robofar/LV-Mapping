@@ -51,8 +51,6 @@ class SLAM_GUI:
         self.frustum_dict = {}
         self.model_dict = {}
 
-        self.init_widget()
-
         self.q_main2vis = None
         self.gaussian_cur = None
         self.pipe = None # not used
@@ -65,12 +63,14 @@ class SLAM_GUI:
 
         if params_gui is not None:
             self.background = params_gui.background
-            self.gaussian_cur = params_gui.gaussians # actually as neural gaussians
-            self.init = True
+            # self.gaussian_cur = params_gui.gaussians # actually as neural gaussians
+            # self.init = True
             self.q_main2vis = params_gui.q_main2vis
             self.q_vis2main = params_gui.q_vis2main
             self.pipe = params_gui.pipe
             self.config = params_gui.config
+
+        self.init_widget()
 
         self.gaussian_nums = []
 
@@ -134,21 +134,35 @@ class SLAM_GUI:
         # other geometry entities
         self.mesh = o3d.geometry.TriangleMesh()
         self.scan = o3d.geometry.PointCloud()
+        self.sdf_slice = o3d.geometry.PointCloud()
         self.sensor_cad = o3d.geometry.TriangleMesh()
+
+        if self.config.sensor_cad_path is not None:
+            self.sensor_cad = o3d.io.read_triangle_mesh(self.config.sensor_cad_path)
+            self.sensor_cad.compute_vertex_normals()
 
         self.odom_traj = o3d.geometry.LineSet()
         self.slam_traj = o3d.geometry.LineSet()
         self.gt_traj = o3d.geometry.LineSet()
 
+        self.last_used_pose = np.eye(4)
+
         bounds = self.widget3d.scene.bounding_box
         self.widget3d.setup_camera(60.0, bounds, bounds.get_center())
         em = self.window.theme.font_size
         margin = 0.5 * em
+        
         self.panel = gui.Vert(0.5 * em, gui.Margins(margin))
-        self.button = gui.ToggleSwitch("Resume/Pause")
+        
+        self.button = gui.ToggleSwitch("Resume / Pause SLAM")
         self.button.is_on = True
         self.button.set_on_clicked(self._on_button)
         self.panel.add_child(self.button)
+
+        self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
+        self.button_render.is_on = True
+        # self.button_render.set_on_clicked(self._on_button_render)
+        self.panel.add_child(self.button_render)
 
         self.panel.add_child(gui.Label("Viewpoint Options"))
 
@@ -219,13 +233,24 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
 
+        self.sdf_chbox = gui.Checkbox("SDF")
+        self.sdf_chbox.checked = False
+        self.sdf_chbox.set_on_checked(self._on_sdf_chbox)
+        chbox_tile_3dobj.add_child(self.sdf_chbox)
+        self.sdf_name = "cur_sdf_slice"
+
+        self.cad_chbox = gui.Checkbox("CAD")
+        self.cad_chbox.checked = False
+        self.cad_chbox.set_on_checked(self._on_cad_chbox)
+        chbox_tile_3dobj.add_child(self.cad_chbox)
+        self.cad_name = "sensor_cad"
+
         self.traj_chbox = gui.Checkbox("Trajectory")
         self.traj_chbox.checked = False
         self.traj_chbox.set_on_checked(self._on_traj_chbox)
         chbox_tile_3dobj.add_child(self.traj_chbox)
         self.gt_traj_name = "gt_trajectory"
         self.slam_traj_name = "slam_trajectory"
-
 
         self.panel.add_child(chbox_tile_3dobj)
 
@@ -248,9 +273,9 @@ class SLAM_GUI:
         self.opacity_chbox.checked = False
         chbox_tile_geometry.add_child(self.opacity_chbox)
 
-        self.time_shader_chbox = gui.Checkbox("Time Shader")
-        self.time_shader_chbox.checked = False
-        chbox_tile_geometry.add_child(self.time_shader_chbox)
+        # self.time_shader_chbox = gui.Checkbox("Time Shader")
+        # self.time_shader_chbox.checked = False
+        # chbox_tile_geometry.add_child(self.time_shader_chbox)
 
         self.elipsoid_chbox = gui.Checkbox("Elipsoid Shader")
         self.elipsoid_chbox.checked = False
@@ -360,6 +385,17 @@ class SLAM_GUI:
 
     def _on_close(self):
         self.is_done = True
+
+        print("Received terminate signal")
+        # clean up the pipe
+        while not self.q_main2vis.empty():
+            self.q_main2vis.get()
+        while not self.q_vis2main.empty():
+            self.q_vis2main.get()
+        self.q_vis2main = None
+        self.q_main2vis = None
+        self.process_finished = True
+
         return True  # False would cancel the close
 
     def _on_combo_model(self, new_val, new_idx):
@@ -382,13 +418,20 @@ class SLAM_GUI:
         for name in names:
             self.widget3d.scene.show_geometry(name, is_checked)
 
-    def _on_axis_chbox(self, is_checked):
-        name = "axis"
+    # def _on_axis_chbox(self, is_checked):
+    #     name = "axis"
+    #     if is_checked:
+    #         self.widget3d.scene.remove_geometry(name)
+    #         self.widget3d.scene.add_geometry(name, self.axis, self.lit_geo)
+    #     else:
+    #         self.widget3d.scene.remove_geometry(name)
+
+    def _on_cad_chbox(self, is_checked):
         if is_checked:
-            self.widget3d.scene.remove_geometry(name)
-            self.widget3d.scene.add_geometry(name, self.axis, self.lit_geo)
+            self.widget3d.scene.remove_geometry(self.cad_name)
+            self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
         else:
-            self.widget3d.scene.remove_geometry(name)
+            self.widget3d.scene.remove_geometry(self.cad_name)
     
     # TODO: rendering shader is not good
     def _on_mesh_chbox(self, is_checked):
@@ -404,6 +447,13 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
         else:
             self.widget3d.scene.remove_geometry(self.scan_name)
+
+    def _on_sdf_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.sdf_name)
+            self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.lit_geo)
+        else:
+            self.widget3d.scene.remove_geometry(self.sdf_name)
 
     def _on_traj_chbox(self, is_checked):
         if is_checked:
@@ -504,7 +554,7 @@ class SLAM_GUI:
         if gaussian_packet.has_gaussians:
             self.gaussian_cur = gaussian_packet
             self.output_info.text = "Number of Gaussians in the local map: {}".format(
-                self.gaussian_cur.get_local_xyz.shape[0] # valid_only (TODO)
+                self.gaussian_cur.local_count # valid_only (TODO)
             )
             self.init = True
 
@@ -551,7 +601,6 @@ class SLAM_GUI:
             depth_color_o3d = o3d.geometry.Image(depth_color)
             self.in_depth_widget.update_image(depth_color_o3d)
 
-        # TODO
         if gaussian_packet.gtnormal is not None:
             normal = gaussian_packet.gtnormal.contiguous().cpu().numpy() 
             normal_color = 0.5 - normal * 0.5
@@ -567,6 +616,14 @@ class SLAM_GUI:
             if self.scan_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.scan_name)
                 self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
+
+        if gaussian_packet.sdf_slice_xyz is not None:
+            self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
+            if gaussian_packet.sdf_slice_rgb is not None:
+                self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
+            if self.sdf_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.sdf_name)
+                self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.lit_geo)
 
         if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
             self.mesh = o3d.geometry.TriangleMesh(
@@ -592,6 +649,14 @@ class SLAM_GUI:
                 self.widget3d.scene.remove_geometry(self.gt_traj_name)
                 self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
 
+            if gaussian_packet.slam_poses is None:
+                relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.gt_poses[-1]
+                self.sensor_cad.transform(relative_tran)
+                self.last_used_pose = gaussian_packet.gt_poses[-1]
+                if self.cad_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.cad_name)
+                    self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+
         if gaussian_packet.slam_poses is not None:
             slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
             self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
@@ -602,7 +667,14 @@ class SLAM_GUI:
             if self.traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.slam_traj_name)
                 self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
-
+            
+            relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.slam_poses[-1]
+            self.sensor_cad.transform(relative_tran)
+            self.last_used_pose = gaussian_packet.slam_poses[-1]
+            if self.cad_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.cad_name)
+                self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+        
         if gaussian_packet.finish:
             print("Received terminate signal")
             # clean up the pipe
@@ -699,50 +771,63 @@ class SLAM_GUI:
         return current_cam
 
     # TODO: change gaussians functions here
-    def rasterise(self, current_cam):
-        if (
-            self.time_shader_chbox.checked # what does this mean? # no idea (FIXME)
-            and self.gaussian_cur is not None
-            and type(self.gaussian_cur) == VisPacket
-        ):
-            features = self.gaussian_cur.get_features.clone()
-            kf_ids = self.gaussian_cur.unique_kfIDs.float()
-            alpha = 0.1
+    # def rasterise(self, current_cam):
+    #     if (
+    #         self.time_shader_chbox.checked # what does this mean? # no idea (FIXME)
+    #         and self.gaussian_cur is not None
+    #         and type(self.gaussian_cur) == VisPacket
+    #     ):
+    #         features = self.gaussian_cur.get_features.clone()
+    #         kf_ids = self.gaussian_cur.unique_kfIDs.float()
+    #         alpha = 0.1
 
-            # rgb_kf = imgviz.depth2rgb(
-            #     kf_ids.view(-1, 1).cpu().numpy(), colormap="jet", dtype=np.float32
-            # )
+    #         # rgb_kf = imgviz.depth2rgb(
+    #         #     kf_ids.view(-1, 1).cpu().numpy(), colormap="jet", dtype=np.float32
+    #         # )
             
-            # self.gaussian_cur.get_features = alpha * features + (
-            #     1 - alpha
-            # ) * torch.from_numpy(rgb_kf).to(features.device)
+    #         # self.gaussian_cur.get_features = alpha * features + (
+    #         #     1 - alpha
+    #         # ) * torch.from_numpy(rgb_kf).to(features.device)
 
-            self.gaussian_cur.get_features = alpha * features
+    #         self.gaussian_cur.get_features = alpha * features
 
-            # FIXME: the rendering function is here
-            with torch.no_grad():
-                rendering_data = render(
-                    current_cam,
-                    None,
-                    self.gaussian_cur,
-                    # self.pipe,
-                    self.background,
-                    self.scaling_slider.double_value,
-                ) # not used currently
+    #         # FIXME: the rendering function is here
+    #         with torch.no_grad():
+    #             rendering_data = render(
+    #                 current_cam,
+    #                 None,
+    #                 self.gaussian_cur,
+    #                 # self.pipe,
+    #                 self.background,
+    #                 self.scaling_slider.double_value,
+    #             ) # not used currently
 
-            self.gaussian_cur.get_features = features
-        else: # this is for the visualizer camera view
-            # print("Render visualizer cam view")
-            with torch.no_grad():
-                rendering_data = render(
-                    current_cam,
-                    None,
-                    self.gaussian_cur,
-                    # self.pipe,
-                    self.background,
-                    self.scaling_slider.double_value,
-                    verbose=True
-                )
+    #         self.gaussian_cur.get_features = features
+    #     else: # this is for the visualizer camera view
+    #         # print("Render visualizer cam view")
+    #         with torch.no_grad():
+    #             rendering_data = render(
+    #                 current_cam,
+    #                 None,
+    #                 self.gaussian_cur,
+    #                 # self.pipe,
+    #                 self.background,
+    #                 self.scaling_slider.double_value,
+    #                 verbose=True
+    #             )
+    #     return rendering_data
+
+    def rasterise(self, current_cam):
+        if self.gaussian_cur is None:
+            return None
+
+        with torch.no_grad():
+            rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
+                self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
+                self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_sh, 
+                self.background, scaling_modifier=self.scaling_slider.double_value, 
+                down_rate=self.gaussian_cur.img_down_rate)
+
         return rendering_data
 
     # main rendering function for the 3D visualizer
@@ -818,11 +903,11 @@ class SLAM_GUI:
             # self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
 
             # local map only
-            self.gaussians_gl.xyz = self.gaussian_cur.get_local_xyz.cpu().numpy()
-            self.gaussians_gl.opacity = self.gaussian_cur.get_local_opacity.cpu().numpy()
-            self.gaussians_gl.scale = self.gaussian_cur.get_local_scaling.cpu().numpy()
-            self.gaussians_gl.rot = self.gaussian_cur.get_local_rotation.cpu().numpy()
-            self.gaussians_gl.sh = self.gaussian_cur.get_local_features.cpu().numpy()[:, 0, :]
+            self.gaussians_gl.xyz = self.gaussian_cur.gaussian_xyz.cpu().numpy()
+            self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy()
+            self.gaussians_gl.scale = self.gaussian_cur.gaussian_scale.cpu().numpy()
+            self.gaussians_gl.rot = self.gaussian_cur.gaussian_rot.cpu().numpy()
+            self.gaussians_gl.sh = self.gaussian_cur.gaussian_sh.cpu().numpy()[:, 0, :]
 
             self.update_activated_renderer_state(self.gaussians_gl)
             self.g_renderer.sort_and_update(self.g_camera)
@@ -877,10 +962,11 @@ class SLAM_GUI:
                 break
 
             def update():
-                # print("UPDATE scene")
-                if self.step % 3 == 0:
-                    # print("UPDATE scene happens")
-                    self.scene_update()
+                if self.button_render.is_on:
+                    # print("UPDATE scene")
+                    if self.step % 3 == 0: # 0.03s
+                        # print("UPDATE scene happens")
+                        self.scene_update() # don't do it so frequently
 
                 if self.step >= 1e9:
                     self.step = 0
