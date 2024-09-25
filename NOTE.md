@@ -325,7 +325,9 @@ export CUDA_VISIBLE_DEVICES=2
 - [ ] Think about if we can do something to refine the monodepth estimation using the already built map (like Double Take)
 - [ ] Add the opacity entropy loss, either 0 or 1
 - [ ] Normal smoothness loss
-- [ ] Stop visualizer operation with a checkbox (not let the training get so slow)
+- [x] Stop visualizer operation with a checkbox (not let the training get so slow)
+- [ ] Memory mechanism to tackle forgetting
+- [ ] Maybe have sperate color and geometry feature
 - [x] Try GaussianSurfel instead of 2D GS
 - [ ] Exposion compensation (refer to R3Live, FastLIVO, etc.), would be very useful and important
 - [ ] The goal is RAL or ISPRS Journal
@@ -366,6 +368,8 @@ export CUDA_VISIBLE_DEVICES=2
 + [NeuSG](https://arxiv.org/pdf/2312.00846)
 
 + [RaDe-GS](https://baowenz.github.io/radegs/)
+
++ [3D GS with depth rendering](https://github.com/ingra14m/depth-diff-gaussian-rasterization)
 
 + [MipGS](https://github.com/autonomousvision/mip-splatting)
 

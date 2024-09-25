@@ -53,8 +53,9 @@ class NeuralPoints(nn.Module):
         self.geo_feature_dim = config.feature_dim
         self.geo_feature_std = config.feature_std
 
-        self.color_feature_dim = config.feature_dim
+        self.color_feature_dim = config.color_feature_dim
         self.color_feature_std = config.feature_std
+        # self.color_feature_std = 0.01
 
         if config.use_gaussian_pe:
             self.position_encoder_geo = GaussianFourierFeatures(config)
@@ -397,7 +398,7 @@ class NeuralPoints(nn.Module):
             self.config.feature_dim + 3 + 4
         )  # feature plus neural point position and orientation
         if self.color_features is not None:
-            point_dim += self.config.feature_dim  # also include the color feature
+            point_dim += self.config.color_feature_dim  # also include the color feature
         cur_memory = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
         if not self.silence:
             print("Memory consumption: %f (MB)" % cur_memory)

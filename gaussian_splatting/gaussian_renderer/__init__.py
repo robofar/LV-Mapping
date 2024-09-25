@@ -43,7 +43,7 @@ def render(viewpoint_camera: CamImage,
            gaussian_scale: torch.Tensor,
            gaussian_rot: torch.Tensor,
            gaussian_alpha: torch.Tensor,
-           gaussian_sh: torch.Tensor,
+           gaussian_color: torch.Tensor,
            bg_color: torch.Tensor, 
            scaling_modifier: float = 1.0, 
            active_sh_degree: int = 0,
@@ -173,14 +173,16 @@ def render(viewpoint_camera: CamImage,
     contains_nan = torch.isnan(rotations).any()
     assert ~contains_nan, "NaN in rotation"
 
-    shs = gaussian_sh # currently let sh degree as 0
+    # shs = gaussian_sh # currently let sh degree as 0
+
+    colors = gaussian_color
     
     # main rasterization function
     if gs_type == "2d_gs":
         rendered_image, radii, allmap = rasterizer(
             means3D = means3D,
             means2D = means2D,
-            shs = shs,
+            colors_precomp = colors,
             opacities = opacity,
             scales = scales,
             rotations = rotations
@@ -259,7 +261,7 @@ def render(viewpoint_camera: CamImage,
         rendered_image, rendered_normal, rendered_depth, rendered_opac, radii = rasterizer(
             means3D = means3D,
             means2D = means2D,
-            shs = shs,
+            colors_precomp = colors,
             opacities = opacity,
             scales = scales,
             rotations = rotations)
@@ -298,7 +300,7 @@ def render(viewpoint_camera: CamImage,
         rendered_image, radii = rasterizer(
             means3D = means3D,
             means2D = means2D,
-            shs = shs,
+            colors_precomp = colors,
             opacities = opacity,
             scales = scales,
             rotations = rotations)
@@ -312,3 +314,57 @@ def render(viewpoint_camera: CamImage,
 
 
     return None
+
+# TODO
+# def prefilter_neural_points(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+#     """
+#     Find the visble neural points in the camera FOV 
+#     """
+#     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
+#     screenspace_points = torch.zeros_like(pc.get_anchor, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
+#     try:
+#         screenspace_points.retain_grad()
+#     except:
+#         pass
+
+#     # Set up rasterization configuration
+#     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+#     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+
+#     raster_settings = GaussianRasterizationSettings(
+#         image_height=int(viewpoint_camera.image_height),
+#         image_width=int(viewpoint_camera.image_width),
+#         tanfovx=tanfovx,
+#         tanfovy=tanfovy,
+#         bg=bg_color,
+#         scale_modifier=scaling_modifier,
+#         viewmatrix=viewpoint_camera.world_view_transform,
+#         projmatrix=viewpoint_camera.full_proj_transform,
+#         sh_degree=1,
+#         campos=viewpoint_camera.camera_center,
+#         prefiltered=False,
+#         debug=pipe.debug
+#     )
+
+#     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+#     means3D = pc.get_anchor
+
+
+#     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
+#     # scaling / rotation by the rasterizer.
+#     scales = None
+#     rotations = None
+#     cov3D_precomp = None
+#     if pipe.compute_cov3D_python:
+#         cov3D_precomp = pc.get_covariance(scaling_modifier)
+#     else:
+#         scales = pc.get_scaling
+#         rotations = pc.get_rotation
+
+#     radii_pure = rasterizer.visible_filter(means3D = means3D,
+#         scales = scales[:,:3],
+#         rotations = rotations,
+#         cov3D_precomp = cov3D_precomp)
+
+#     return radii_pure > 0

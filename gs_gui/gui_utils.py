@@ -83,7 +83,7 @@ class VisPacket:
         gaussian_scale=None,
         gaussian_rot=None,
         gaussian_alpha=None,
-        gaussian_sh=None,
+        gaussian_color=None,
         gtcolor=None,
         gtdepth=None,
         gtnormal=None,
@@ -119,7 +119,7 @@ class VisPacket:
             self.gaussian_scale = gaussian_scale.detach()
             self.gaussian_rot = gaussian_rot.detach()
             self.gaussian_alpha = gaussian_alpha.detach()
-            self.gaussian_sh = gaussian_sh.detach()
+            self.gaussian_color = gaussian_color.detach()
 
             self.local_count = self.gaussian_xyz.shape[0]
 
@@ -165,7 +165,7 @@ class VisPacket:
                     gaussian_scale=None,
                     gaussian_rot=None,
                     gaussian_alpha=None,
-                    gaussian_sh=None):
+                    gaussian_color=None):
 
         if gaussian_xyz is not None:
             self.has_gaussians = True
@@ -181,7 +181,7 @@ class VisPacket:
             self.gaussian_scale = gaussian_scale.detach()
             self.gaussian_rot = gaussian_rot.detach()
             self.gaussian_alpha = gaussian_alpha.detach()
-            self.gaussian_sh = gaussian_sh.detach()
+            self.gaussian_color = gaussian_color.detach()
 
             self.local_count = self.gaussian_xyz.shape[0]
 

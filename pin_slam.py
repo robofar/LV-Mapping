@@ -112,23 +112,28 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # initialize the mlp decoder
     # geo_mlp = Decoder(config, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
 
-    geo_mlp = Decoder(config, 64, 1, 1)
+    geo_feature_dim = config.feature_dim
+    sem_feature_dim = config.sem_feature_dim
+    color_feature_dim = config.color_feature_dim
+    # print("colro feature dim:", color_feature_dim)
 
-    sem_mlp = Decoder(config, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
-    color_mlp = Decoder(config, config.color_mlp_hidden_dim, config.color_mlp_level, config.color_channel) if config.color_on else None
+    geo_mlp = Decoder(config, geo_feature_dim, 64, 1, 1)
+    sem_mlp = Decoder(config, sem_feature_dim, 64, 1, config.sem_class_count + 1) if config.semantic_on else None
+    color_mlp = Decoder(config, color_feature_dim, 64, 2, config.color_channel) if config.color_on else None
 
-    # Load the decoder model
-    if config.load_model: # not used
-        load_decoder(config, geo_mlp, sem_mlp, color_mlp)
+    # # Load the decoder model
+    # if config.load_model: # not used
+    #     load_decoder(config, geo_mlp, sem_mlp, color_mlp)
 
-    n_gaussian = 16
-    hidden_layer_count = 1
-    hidden_layer_dim = 128
-    gaussian_xyz_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
-    gaussian_scale_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
-    gaussian_rot_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0)
-    gaussian_alpha_mlp = Decoder(config, 32, 1, 1, n_gaussian, 0)
-    gaussian_sh_mlp = Decoder(config, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+    n_gaussian = 8 # almost 2D, then 4 already means 1/2 resolution
+    hidden_layer_count = 2
+    hidden_layer_dim = 64 # 128
+    gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
+    gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0)
+    # gaussian_alpha_mlp = Decoder(config, 32, 1, 1, n_gaussian, 0)
+    gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, 0)
+    gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
 
     mlp_dict = {}
     
@@ -140,7 +145,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     mlp_dict["gauss_scale"] = gaussian_scale_mlp
     mlp_dict["gauss_rot"] = gaussian_rot_mlp
     mlp_dict["gauss_alpha"] = gaussian_alpha_mlp
-    mlp_dict["gauss_sh"] = gaussian_sh_mlp
+    mlp_dict["gauss_color"] = gaussian_color_mlp
 
     # initialize the neural gaussians
     neural_points = NeuralPoints(config)
@@ -163,7 +168,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             config=config,
         )
 
-        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
+        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
         gui_process.start()
         time.sleep(2) # second
 
@@ -498,11 +503,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
             T9 = get_time()
 
-            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh = mapper.spawn_gaussians()
+            # spawn gaussians in the current local map
+            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color = mapper.spawn_gaussians()
 
+            # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
 
-            packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh)
+            packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))

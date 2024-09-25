@@ -133,7 +133,7 @@ def setup_optimizer(
     mlp_gs_scale_param=None,
     mlp_gs_rot_param=None,
     mlp_gs_alpha_param=None,
-    mlp_gs_sh_param=None,
+    mlp_gs_color_param=None,
     poses=None,
     lr_ratio=1.0,
 ) -> Optimizer:
@@ -169,10 +169,10 @@ def setup_optimizer(
         opt_setting.append(mlp_color_param_opt_dict)
     
     lr_gs_xyz = 1e-2
-    lr_gs_scale = 1e-3
+    lr_gs_scale = 1e-2
     lr_gs_rot = 1e-2
     lr_gs_alpha = 1e-2
-    lr_gs_sh = 1e-3
+    lr_gs_color = 1e-2
 
     if config.gs_on:
         if mlp_gs_xyz_param is not None:
@@ -203,19 +203,19 @@ def setup_optimizer(
                 "weight_decay": weight_decay_mlp,
             }
             opt_setting.append(mlp_gs_alpha_param_opt_dict)
-        if mlp_gs_sh_param is not None:
-            mlp_gs_sh_param_opt_dict = {
-                "params": mlp_gs_sh_param,
-                "lr": lr_gs_sh,
+        if mlp_gs_color_param is not None:
+            mlp_gs_color_param_opt_dict = {
+                "params": mlp_gs_color_param,
+                "lr": lr_gs_color,
                 "weight_decay": weight_decay_mlp,
             }
-            opt_setting.append(mlp_gs_sh_param_opt_dict)
+            opt_setting.append(mlp_gs_color_param_opt_dict)
         
     if poses is not None:
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
     
-    lr_cur_feature = 1e-2
+    lr_cur_feature = 1e-2 # too small then it does not work for color decoder?
 
     feat_opt_dict = {
         "params": neural_point_feat,

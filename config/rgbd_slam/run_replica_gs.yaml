@@ -4,13 +4,14 @@ setting:
   pc_path: "./data/Replica/room0/rgbd_ply"
   pose_path: "./data/Replica/room0/poses.txt"
   color_channel: 3
+  color_map_on: True 
   first_frame_ref: False
 process:
   min_range_m: 0.05
   max_range_m: 10.0
   min_z_m: -10.0
-  vox_down_m: 0.015
-  estimate_normal: True
+  vox_down_m: 0.01
+  estimate_normal: False
 sampler:
   surface_sample_range_m: 0.03
   surface_sample_n: 2
@@ -18,33 +19,35 @@ sampler:
   free_sample_end_dist_m: 0.1
   free_front_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.04 # 0.04
+  voxel_size_m: 0.05 # 0.04
   query_nn_k: 8
-  from_sample_points: False
+  feature_dim: 64
+  # from_sample_points: False
 gs:
   monodepth_on: False
-  gs_iters: 5
+  gs_iters: 10
   gs_bs: 5
-  gs_keyframe_interval: 5
+  gs_keyframe_interval: 2
   img_pool_size: 25 # 15
   img_test_pool_size: 15
   gs_down_rate: 1
   gs_vis_down_rate: 0
   sh_degree: 0
-  init_opacity: 0.5
+  inverse_depth_loss: False
   lambda_depth: 1.0
-  lambda_distort: 1000.0
-  # lambda_normal: 0.1 # not too big 0.05 
+  # lambda_normal: 0.05 # not too big 0.05 
   # lambda_isotropic: 100.0
-  lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 1.0
-  lambda_sdf: 0.0
-  gs_rotation_lr: 1e-2
+  lambda_area: 5e-3 # 1e-3
+  # lambda_sdf_cons: 0.5
+  # lambda_sdf_normal_cons: 0.5
+  # lambda_sdf: 1.0
 loss:
   sigma_sigmoid_m: 0.01
   ekional_loss_on: True
   weight_e: 0.5
   numerical_grad_on: True
+decoder:
+  freeze_after_frame: 40
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 3e7
@@ -62,11 +65,12 @@ continual:
 #   term_deg: 1e-3
 #   term_m: 1e-4
 optimizer:
-  iters: 20 # you need more iterations for achieveing a nice mesh # 50
+  iters: 10 # you need more iterations for achieveing a nice mesh # 50
   batch_size: 16384
-  ba_freq_frame: 20
+  ba_freq_frame: 0
   lr_pose_ba: 1e-3
 eval:
+  o3d_vis_on: True
   mesh_freq_frame: 5 # reconstruct the mesh every x frames
   mesh_min_nn: 9
   sensor_cad_path: ./cad/camera.ply

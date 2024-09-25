@@ -30,7 +30,7 @@ from gaussian_splatting.scene.cameras import CamImage
 
 from utils.tools import colorize_depth_maps
 
-o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
+# o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
 YELLOW = np.array([1, 0.706, 0])
 RED = np.array([255, 0, 0]) / 255.0
@@ -74,28 +74,32 @@ class SLAM_GUI:
 
         self.gaussian_nums = []
 
-        self.g_camera = util.Camera(self.window_h, self.window_w)
-        self.window_gl = self.init_glfw()
-        self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)
+        # these are only used for the elipsoid rendering 
+        # TODO: something wrong here with the glfw (just crash) after I use mini-forge
+        # self.g_camera = util.Camera(self.window_h, self.window_w)
+        # self.window_gl = self.init_glfw() 
+        # self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)
 
-        gl.glEnable(gl.GL_TEXTURE_2D)
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        gl.glDepthFunc(gl.GL_LEQUAL)
-        self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
+        # gl.glEnable(gl.GL_TEXTURE_2D)
+        # gl.glEnable(gl.GL_DEPTH_TEST)
+        # gl.glDepthFunc(gl.GL_LEQUAL)
+        # self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
 
+        # screenshot saving path
         self.save_path = "."
         self.save_path = pathlib.Path(self.save_path)
         self.save_path.mkdir(parents=True, exist_ok=True)
 
         threading.Thread(target=self._update_thread).start()
 
+    # has some issue here
     def init_widget(self):
         # self.window_w, self.window_h = 1600, 900
         self.window_w, self.window_h = 2560, 1600
 
         self.window = gui.Application.instance.create_window(
            "PINGS Viewer", self.window_w, self.window_h
-        ) # open3d gui
+        ) # open3d gui #FIXME, now this is crashing
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
         self.widget3d = gui.SceneWidget()
@@ -320,6 +324,7 @@ class SLAM_GUI:
         self.panel.add_child(tabs)
         self.window.add_child(self.panel)
 
+    # something wrong here
     def init_glfw(self):
         window_name = "headless rendering"
 
@@ -330,19 +335,21 @@ class SLAM_GUI:
 
         window = glfw.create_window(
             self.window_w, self.window_h, window_name, None, None
-        )
+        ) 
+
         glfw.make_context_current(window)
         glfw.swap_interval(0)
+
         if not window:
             glfw.terminate()
             exit(1)
         return window
 
-    def update_activated_renderer_state(self, gaus):
+    def update_activated_renderer_state(self, gaus, rend_mode=-4):
         self.g_renderer.update_gaussian_data(gaus)
         self.g_renderer.sort_and_update(self.g_camera)
         self.g_renderer.set_scale_modifier(self.scaling_slider.double_value)
-        self.g_renderer.set_render_mod(-4)
+        self.g_renderer.set_render_mod(rend_mode)
         self.g_renderer.update_camera_pose(self.g_camera)
         self.g_renderer.update_camera_intrin(self.g_camera)
         self.g_renderer.set_render_reso(self.g_camera.w, self.g_camera.h)
@@ -824,7 +831,7 @@ class SLAM_GUI:
         with torch.no_grad():
             rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
                 self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
-                self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_sh, 
+                self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
                 self.background, scaling_modifier=self.scaling_slider.double_value, 
                 down_rate=self.gaussian_cur.img_down_rate)
 
@@ -870,7 +877,7 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.elipsoid_chbox.checked:
+        elif self.elipsoid_chbox.checked: # important
             if self.gaussian_cur is None:
                 return
             glfw.poll_events()
@@ -903,13 +910,19 @@ class SLAM_GUI:
             # self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
 
             # local map only
+            gaussian_count = self.gaussian_cur.gaussian_xyz.shape[0]
+
             self.gaussians_gl.xyz = self.gaussian_cur.gaussian_xyz.cpu().numpy()
-            self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy()
+            self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy() + 1.0
             self.gaussians_gl.scale = self.gaussian_cur.gaussian_scale.cpu().numpy()
             self.gaussians_gl.rot = self.gaussian_cur.gaussian_rot.cpu().numpy()
-            self.gaussians_gl.sh = self.gaussian_cur.gaussian_sh.cpu().numpy()[:, 0, :]
 
-            self.update_activated_renderer_state(self.gaussians_gl)
+            gaussians_gl_rgb = self.gaussian_cur.gaussian_color.cpu().numpy()
+            self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814 # C0
+
+            # self.gaussians_gl.sh = self.gaussian_cur.gaussian_color.cpu().numpy()[:, 0, :]
+
+            self.update_activated_renderer_state(self.gaussians_gl, -3) # -4 as gauss ball, -3 as flat gauss
             self.g_renderer.sort_and_update(self.g_camera)
             width, height = glfw.get_framebuffer_size(self.window_gl)
             self.g_renderer.draw()

@@ -15,6 +15,7 @@ class Decoder(nn.Module):
     def __init__(
         self,
         config: Config,
+        input_feature_dim,
         hidden_dim,
         hidden_level,
         out_dim,
@@ -37,8 +38,7 @@ class Decoder(nn.Module):
         else:
             position_dim = pos_dim * (2 * config.pos_encoding_band + 1)
 
-        feature_dim = config.feature_dim
-        input_layer_count = feature_dim + position_dim
+        input_layer_count = input_feature_dim + position_dim
 
         # default not used
         if is_time_conditioned:

@@ -101,7 +101,9 @@ class Config:
 
         # shared by both kinds of feature 
         self.feature_dim: int = 8  # length of the feature for each grid feature
-        self.feature_std: float = 0.0  # grid feature initialization standard deviation
+        self.color_feature_dim: int = 8
+        self.sem_feature_dim: int = 8
+        self.feature_std: float = 0.0  # grid feature initialization standard deviation (zero initialization)
 
         # Use all the surface samples or just the exact measurements to build the neural points map
         # If True may lead to larger memory consumption, but is more robust while the reconstruction.
@@ -142,7 +144,7 @@ class Config:
         self.geo_mlp_hidden_dim: int = 64
         self.sem_mlp_level: int = 1
         self.sem_mlp_hidden_dim: int = 64
-        self.color_mlp_level: int = 1
+        self.color_mlp_level: int = 2
         self.color_mlp_hidden_dim: int = 64
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
 
@@ -207,7 +209,7 @@ class Config:
         self.gs_on: bool = False
         self.gs_eval_on: bool = False
         self.monodepth_on: bool = False
-        self.monodepth_gaussian_res: float = self.voxel_size_m * 10.0
+        self.monodepth_gaussian_res: float = self.voxel_size_m * 4.0
 
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
         self.bg_color = [1.0, 1.0, 1.0] # white 
@@ -227,6 +229,7 @@ class Config:
         self.lambda_dssim: float = 0.2 # weight for ssim
         self.lambda_depth: float = 0.0 # weight for depth rendering
         self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
+        self.lambda_area: float = 0.0 # weight for area (volume) regularization # 0.001
         self.lambda_normal: float = 0.0 # normal consistency regularization weight # 0.05
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
         self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
@@ -429,6 +432,7 @@ class Config:
             self.num_nei_cells = config_args["neuralpoints"].get("num_nei_cells", self.num_nei_cells)
             self.search_alpha = config_args["neuralpoints"].get("search_alpha", self.search_alpha)
             self.feature_dim = config_args["neuralpoints"].get("feature_dim", self.feature_dim)
+            self.color_feature_dim = config_args["neuralpoints"].get("color_feature_dim", self.color_feature_dim)
             # weighted the neighborhood feature before decoding to sdf or do the weighting of the decoded 
             # sdf afterwards, weighted first is faster, but may have some problem during the neural point map update after pgo
             self.weighted_first = config_args["neuralpoints"].get("weighted_first", self.weighted_first) 
@@ -556,7 +560,7 @@ class Config:
             self.gs_eval_on = config_args["gs"].get("eval_on", self.gs_eval_on)
             
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
-            self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 10.0)
+            self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 5.0)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
@@ -574,6 +578,7 @@ class Config:
             self.lambda_normal = float(config_args["gs"].get("lambda_normal", self.lambda_normal)) # weight for the distance/normal consistency loss
             self.lambda_mono_normal = float(config_args["gs"].get("lambda_mono_normal", self.lambda_mono_normal))
             self.lambda_isotropic = float(config_args["gs"].get("lambda_isotropic", self.lambda_isotropic))
+            self.lambda_area = float(config_args["gs"].get("lambda_area", self.lambda_area))
             self.lambda_sky = float(config_args["gs"].get("lambda_sky", self.lambda_sky))
             self.lambda_sdf_cons = float(config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons))
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))

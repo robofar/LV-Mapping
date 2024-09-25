@@ -22,7 +22,6 @@ from numpy.linalg import inv
 from rich import print
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 from PIL import Image
 
 from dataset.dataloaders import dataset_factory
@@ -103,12 +102,9 @@ class SLAMDataset():
                     # model_name = 'metric3d_vit_large' # slower, 450 ms
                     # model_name = "metric3d_vit_giant2" # slowest, 1600 ms
 
+                    # use torch hub for model loading
                     self.metric3d = torch.hub.load('yvanyin/metric3d', model_name, pretrain=True).to(self.device).eval()
                     # install xformers for faster inference
-
-                    # self.depth_anything_processor = AutoImageProcessor.from_pretrained("LiheYoung/depth-anything-small-hf")
-                    # self.depth_anything = AutoModelForDepthEstimation.from_pretrained("LiheYoung/depth-anything-small-hf")
-    
             
         else: # original pin-slam generic loader
             # point cloud files
@@ -330,7 +326,7 @@ class SLAMDataset():
                             pred_depth, confidence, output_dict = self.metric3d.inference({'input': mono_depth_input_rgb.unsqueeze(0)}) #B,C,H,W 
                         
                         toc_metric3d = get_time()
-                        if not self.config.silence:
+                        if not self.silence:
                             print("Metric3D prediction time     (ms):", (toc_metric3d-tic_metric3d)*1e3)  
 
                         pred_normal = output_dict['prediction_normal'][:, :3, :, :] # only available for Metric3Dv2 i.e., ViT models  # 1, 3, H, W
@@ -365,8 +361,8 @@ class SLAMDataset():
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             residual_before = pred_depth_with_gt - valid_depth_measurement
                             rmse_before = np.sqrt((np.mean(residual_before**2)))
-                            if not self.silence:
-                                print("mono depth rmse (m): ", rmse_before) # RMSE (m)
+                            # if not self.silence:
+                            #     print("mono depth rmse (m): ", rmse_before) # RMSE (m)
                             
                             # depth least square fitting with regards to the lidar measurement
                             if valid_depth_count > 100: # at least some valid measurements available
@@ -374,8 +370,8 @@ class SLAMDataset():
                                 # sometimes this fitting would fail (TODO)
                                 k, b = coefficients
                                 rmse_after = np.sqrt((residuals[0]/valid_depth_count))
-                                if not self.silence:
-                                    print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
+                                # if not self.silence:
+                                #     print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
                                 pred_depth_np = k * pred_depth_np + b
                             else:
                                 use_mono_depth_for_gs_init = False
@@ -559,56 +555,6 @@ class SLAMDataset():
             self.get_point_ts(point_ts)
 
         # print(self.cur_point_ts_torch)
-
-    # For Metric3D
-    def preprocess_img(self, rgb_origin, K_mat):
-        # fit the image size for VIT
-
-        #### ajust input size to fit pretrained model
-        # keep ratio resize
-        input_size = (616, 1064) # for vit model
-        # input_size = (544, 1216) # for convnext model
-        h, w = rgb_origin.shape[:2]
-        scale = min(input_size[0] / h, input_size[1] / w)
-        rgb = cv2.resize(rgb_origin, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR)
-        # remember to scale intrinsic, hold depth
-        intrinsic = [K_mat[0,0] * scale, K_mat[1,1] * scale, K_mat[0,2] * scale, K_mat[1,2] * scale]
-        # padding to input_size
-        padding = [123.675, 116.28, 103.53]
-        h, w = rgb.shape[:2]
-        pad_h = input_size[0] - h
-        pad_w = input_size[1] - w
-        pad_h_half = pad_h // 2
-        pad_w_half = pad_w // 2
-        rgb = cv2.copyMakeBorder(rgb, pad_h_half, pad_h - pad_h_half, pad_w_half, pad_w - pad_w_half, cv2.BORDER_CONSTANT, value=padding)
-        pad_info = [pad_h_half, pad_h - pad_h_half, pad_w_half, pad_w - pad_w_half]
-
-        #### normalize
-        # what does these parameter mean?
-        mean = torch.tensor([123.675, 116.28, 103.53]).float()[:, None, None]
-        std = torch.tensor([58.395, 57.12, 57.375]).float()[:, None, None]
-        rgb = torch.from_numpy(rgb.transpose((2, 0, 1))).float()
-        rgb = torch.div((rgb - mean), std)
-        rgb = rgb[None, :, :, :].to(self.device)
-
-        return rgb, pad_info
-    
-    # For Metric3D
-    def postprocess_depth(self, pred_depth, pad_info, fx, original_shape):
-        # un pad
-        pred_depth = pred_depth.squeeze()
-        pred_depth = pred_depth[pad_info[0] : pred_depth.shape[0] - pad_info[1], pad_info[2] : pred_depth.shape[1] - pad_info[3]]
-        
-        # upsample to original size
-        pred_depth = torch.nn.functional.interpolate(pred_depth[None, None, :, :], original_shape, mode='bilinear').squeeze()
-        ###################### canonical camera space ######################
-
-        #### de-canonical transform
-        canonical_to_real_scale = fx / 1000.0 # 1000.0 is the focal length of canonical camera
-        pred_depth = pred_depth * canonical_to_real_scale # now the depth is metric
-        pred_depth = torch.clamp(pred_depth, 0, 300)
-        return pred_depth
-
 
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts=None): 
