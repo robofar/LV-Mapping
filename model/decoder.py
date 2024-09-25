@@ -80,6 +80,8 @@ class Decoder(nn.Module):
                 else:
                     h = F.relu(l(h))
         out = self.lout(h)
+        # no relu, for last linear one
+        
         return out
 
     # predict the sdf (opposite sign to the actual sdf)

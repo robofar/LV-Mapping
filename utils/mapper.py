@@ -1061,7 +1061,7 @@ class Mapper:
         return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh
 
 
-    def spawn_gaussians(self):
+    def spawn_gaussians(self, alpha_filter_on: bool = True):
 
         # TODO: only spawn points from the neural points inside the frustum
         # using the cuda function "in_frustum"
@@ -1080,7 +1080,11 @@ class Mapper:
         
         gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
 
-        gaussian_scale = 0.5 * self.config.voxel_size_m * torch.exp(self.gaussian_scale_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 2K
+        # gaussian_scale = 0.5 * self.config.voxel_size_m * torch.exp(self.gaussian_scale_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 2K
+        # FIXME
+        # what should be the maximum size here?
+        gaussian_scale = 2.0 * self.config.voxel_size_m * torch.sigmoid(self.gaussian_scale_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 2K
+        
         gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
         
         # print("mean scale:", gaussian_scale.mean().item())
@@ -1094,16 +1098,17 @@ class Mapper:
         gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
 
 
-        gaussian_alpha = torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
+        # gaussian_alpha = torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
+        gaussian_alpha = torch.tanh(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
         # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
         # gaussian_alpha = 0.5-0.5*torch.tanh(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, K  #[-1,1] --> [0,1]
         
         # this is like RTG-SLAM
         # print(gaussian_alpha)
 
-        gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK # [0-1] (after activation)
-
-        print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
+        gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
+        
+        # print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
 
         # try to now use only one single feature vector
         # learn residual now
@@ -1120,7 +1125,28 @@ class Mapper:
         # gaussian_color = gaussian_color.view(local_gaussian_count, 1, -1) # NK, 1, 3
         # gaussian_sh = RGB2SH(gaussian_rgb_base)
 
-        return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color
+        mean_alpha_all = gaussian_alpha.mean()
+
+        # alpha threshold # but this cannot let the gradients to backpropagate (FIXME) # what's the better way to set an self-adpative mask
+        if alpha_filter_on:
+            before_size = gaussian_alpha.shape[0]
+
+            alpha_thre = 0.0 # tanh [-1,1]
+            alpha_mask_idx = torch.nonzero(gaussian_alpha.squeeze(-1) > alpha_thre).view(-1)
+
+            gaussian_xyz = gaussian_xyz[alpha_mask_idx]
+            gaussian_scale = gaussian_scale[alpha_mask_idx]
+            gaussian_rot = gaussian_rot[alpha_mask_idx]
+            gaussian_alpha = gaussian_alpha[alpha_mask_idx]
+            gaussian_color = gaussian_color[alpha_mask_idx]
+
+            after_shape = gaussian_alpha.shape[0]
+
+            print("Gaussian count:", before_size, "-->", after_shape) # it's downsampled a bit too much, shall we have some inductive bias
+
+        # also consider the entropy loss, let the opacity to be either 0 or 1
+
+        return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, mean_alpha_all
 
 
     # jointly optimize the neural point features and gaussian parameters
@@ -1164,7 +1190,7 @@ class Mapper:
 
             for iter in tqdm(range(iter_count), disable=self.silence):    
 
-                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color = self.spawn_gaussians()
+                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, mean_alpha_all = self.spawn_gaussians()
 
                 local_gaussian_count = gaussian_xyz.shape[0]
                 gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
@@ -1192,6 +1218,11 @@ class Mapper:
                 mono_normal_loss_batch = 0
 
                 sky_loss_batch = 0
+
+                opacity_loss = 0
+                if mean_alpha_all is not None: # let the opacity to be ideally larger
+                    opacity_loss = 1.0 - mean_alpha_all # [0, 2]
+                    print("Opacity loss:", opacity_loss.item())
                 
                 gs_bs = min(self.config.gs_bs, cur_img_pool_size)
 
@@ -1413,10 +1444,13 @@ class Mapper:
                 area_loss = 0.0
                 if self.config.lambda_area > 0:
                     scaling = gaussian_scale[sampled_indices]
-                    area_loss = (scaling[:,0] * scaling[:,1]).mean() 
+                    area_loss = (scaling[:,0] * scaling[:,1]).mean() # but this is already mean value
                     area_loss *= self.config.lambda_area
                 # ----------------
                 
+                # Opacity regularization loss (prefer large value, prefer positive value)
+                opacity_loss *= self.config.lambda_opacity
+
                 # Gaussian SDF consistency loss
                 sdf_consistency_loss = 0.0
                 sdf_normal_consistency_loss = 0.0
@@ -1456,10 +1490,10 @@ class Mapper:
                     sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
                 # ----------------
 
-                batch_visbility_mask_neural_points = torch.any(batch_visbility_mask.view(-1, gaussian_count_per_point), dim=1)
-                batch_visbility_mask_neural_points = torch.cat((batch_visbility_mask_neural_points, torch.tensor([False]).to(batch_visbility_mask_neural_points)))
+                # batch_visbility_mask_neural_points = torch.any(batch_visbility_mask.view(-1, gaussian_count_per_point), dim=1)
+                # batch_visbility_mask_neural_points = torch.cat((batch_visbility_mask_neural_points, torch.tensor([False]).to(batch_visbility_mask_neural_points)))
                 
-                # self.neural_points.local_geo_features[~batch_visbility_mask_neural_points] # I don't want to optimize those not visible parts
+                # # self.neural_points.local_geo_features[~batch_visbility_mask_neural_points] # I don't want to optimize those not visible parts
 
                 # SDF training loss
                 sdf_loss = 0.0
@@ -1514,7 +1548,7 @@ class Mapper:
                 # total loss
                 # TODO: monitor losses by wandb
                 total_loss = (rgb_loss_batch + depth_loss_batch + distort_loss_batch + normal_loss_batch + mono_normal_loss_batch + sky_loss_batch) / gs_bs \
-                    + isotropic_loss + area_loss \
+                    + isotropic_loss + area_loss + opacity_loss \
                     + sdf_consistency_loss + sdf_normal_consistency_loss \
                     + sdf_loss + eikonal_loss
 
@@ -1561,7 +1595,7 @@ class Mapper:
             with torch.no_grad():
                 
                 # current values
-                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color = self.spawn_gaussians()
+                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = self.spawn_gaussians()
 
                 vis_cam_name = self.dataset.cam_names[0] # TODO # -1 
 
@@ -1809,10 +1843,10 @@ class Mapper:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.set_pose(T_w_c)
 
-                self.neural_points.reset_local_map(T_w_l[:3,3], None, cur_ts=frame_id)
+                self.neural_points.reset_local_map(T_w_l[:3,3], None, cur_ts=frame_id) # for larger map, you even need to firstly recreate hash
 
                 # current values
-                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color = self.spawn_gaussians()
+                gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = self.spawn_gaussians(alpha_filter_on=True)
 
                 render_pkg = render(cur_view_cam, None, gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, background, down_rate=eval_down_rate) # render gaussians 
 

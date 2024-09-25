@@ -51,8 +51,9 @@ gs:
   lambda_depth: 10.0 # 10.0
   # lambda_normal: 0.05 # not too big 0.05 
   lambda_mono_normal: 0.05
-  lambda_isotropic: 1.0 
+  # lambda_isotropic: 1.0 
   # lambda_area: 1e-2 # 1e-3
+  lambda_opacity: 1e-4
   lambda_sky: 0.01 # not much impact, should not be too large
   lambda_sdf_cons: 0.5
   lambda_sdf_normal_cons: 0.5 # rendered normal seems to be better without this loss
@@ -77,7 +78,7 @@ optimizer: # mappers
   batch_size: 16384
   iters: 10
 eval:
-  o3d_vis_on: False
+  o3d_vis_on: True
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 12
   sensor_cad_path: ./cad/kitti_car.ply

@@ -504,7 +504,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             T9 = get_time()
 
             # spawn gaussians in the current local map
-            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color = mapper.spawn_gaussians()
+            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
 
             # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
