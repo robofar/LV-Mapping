@@ -55,7 +55,7 @@ class McapDataloader:
             del self.bag
 
     def __getitem__(self, idx):
-        msg = next(self.msgs).ros_msg
+        msg = next(self.msgs).ros_msg # would be the same as ros1?
         points, point_ts = self.read_point_cloud(msg)
         frame_data = {"points": points, "point_ts": point_ts}
 

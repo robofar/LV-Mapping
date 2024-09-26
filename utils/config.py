@@ -144,9 +144,14 @@ class Config:
         self.geo_mlp_hidden_dim: int = 64
         self.sem_mlp_level: int = 1
         self.sem_mlp_hidden_dim: int = 64
-        self.color_mlp_level: int = 2
+        self.color_mlp_level: int = 1
         self.color_mlp_hidden_dim: int = 64
+
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
+
+        # For GS MLPs (FIXME)
+        self.dist_concat_on: bool = False
+        self.view_concat_on: bool = False
 
         # positional encoding related [not used]
         self.use_gaussian_pe: bool = False # use Gaussian Fourier or original log positional encoding

@@ -20,7 +20,7 @@ class Decoder(nn.Module):
         hidden_level,
         out_dim,
         out_k=1, 
-        pos_dim=3, # for gs decoder, pos_dim=0
+        pos_dim=3, # for gs decoder, pos_dim=0 # some positional or directional embedding concatenation
         is_time_conditioned=False,
     ):
 
@@ -32,24 +32,24 @@ class Decoder(nn.Module):
 
         bias_on = config.mlp_bias_on
 
-        # default not used
+        # default not used (positional encoding -> high frequency)
         if config.use_gaussian_pe:
             position_dim = pos_dim + 2 * config.pos_encoding_band
         else:
             position_dim = pos_dim * (2 * config.pos_encoding_band + 1)
 
-        input_layer_count = input_feature_dim + position_dim
+        input_dim = input_feature_dim + position_dim
 
         # default not used
         if is_time_conditioned:
-            input_layer_count += 1
+            input_dim += 1
 
         # predict sdf (now it anyway only predict sdf without further sigmoid
         # Initializa the structure of shared MLP
         layers = []
         for i in range(hidden_level):
             if i == 0:
-                layers.append(nn.Linear(input_layer_count, hidden_dim, bias_on))
+                layers.append(nn.Linear(input_dim, hidden_dim, bias_on))
             else:
                 layers.append(nn.Linear(hidden_dim, hidden_dim, bias_on))
         self.layers = nn.ModuleList(layers)
@@ -81,7 +81,7 @@ class Decoder(nn.Module):
                     h = F.relu(l(h))
         out = self.lout(h)
         # no relu, for last linear one
-        
+
         return out
 
     # predict the sdf (opposite sign to the actual sdf)
@@ -111,6 +111,10 @@ class Decoder(nn.Module):
         out = torch.argmax(self.sem_label_prob(features), dim=1)
         return out
 
+    # def regress_color(self, features):
+    #     out = torch.clamp(self.mlp(features), 0.0, 1.0) # clamp result
+    #     return out
+
     def regress_color(self, features):
-        out = torch.clamp(self.mlp(features), 0.0, 1.0)
+        out = torch.sigmoid(self.mlp(features)) # sigmoid map to [0,1]
         return out

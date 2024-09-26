@@ -164,7 +164,7 @@ class SLAM_GUI:
         self.panel.add_child(self.button)
 
         self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
-        self.button_render.is_on = True
+        self.button_render.is_on = False # default off
         # self.button_render.set_on_clicked(self._on_button_render)
         self.panel.add_child(self.button_render)
 

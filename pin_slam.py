@@ -119,7 +119,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
     geo_mlp = Decoder(config, geo_feature_dim, 64, 1, 1)
     sem_mlp = Decoder(config, sem_feature_dim, 64, 1, config.sem_class_count + 1) if config.semantic_on else None
-    color_mlp = Decoder(config, color_feature_dim, 64, 2, config.color_channel) if config.color_on else None
+    color_mlp = Decoder(config, color_feature_dim, 64, 1, config.color_channel) if config.color_on else None
 
     # # Load the decoder model
     # if config.load_model: # not used
@@ -127,13 +127,17 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
     n_gaussian = 8 # almost 2D, then 4 already means 1/2 resolution
     hidden_layer_count = 2
-    hidden_layer_dim = 64 # 128
+    hidden_layer_dim = 128 # 128
     gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
     gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
     gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0)
     # gaussian_alpha_mlp = Decoder(config, 32, 1, 1, n_gaussian, 0)
-    gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, 0)
-    gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+
+    dist_concat_dim = 1 if config.dist_concat_on else 0
+    view_concat_dim = 3 if config.view_concat_on else 0
+
+    gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, dist_concat_dim) # concat distance
+    gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, view_concat_dim) # concat view direction
 
     mlp_dict = {}
     

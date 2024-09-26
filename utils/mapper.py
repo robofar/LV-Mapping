@@ -1061,17 +1061,29 @@ class Mapper:
         return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_sh
 
 
-    def spawn_gaussians(self, alpha_filter_on: bool = True):
+    def spawn_gaussians(self, cam_origin = None, alpha_filter_on: bool = True):
 
         # TODO: only spawn points from the neural points inside the frustum
         # using the cuda function "in_frustum"
         # currently just use all the points in the local map
-        
-        xyz_displacement = self.config.voxel_size_m * torch.tanh(self.gaussian_xyz_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 3K # [-1,1]        
+
+        view_direction = None
+        view_distance = None
+        if cam_origin is not None:
+            view_direction = self.neural_points.local_neural_points - cam_origin # N, 3
+            view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
+            # normalize
+            view_direction = view_direction / view_distance
+
+        geo_feature_in = self.neural_points.local_geo_features[:-1]
+
+        # ------------------
+        # Position
+
+        # test this scale here, better to not be too large (FIXME)
+        xyz_displacement = 4.0 * self.config.voxel_size_m * torch.tanh(self.gaussian_xyz_mlp.mlp(geo_feature_in)) # N, 3K # [-1,1]        
         # print(xyz_displacement)
 
-        # this also need to be regularized (TODO)
-        
         local_point_count = xyz_displacement.shape[0]
         gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
         local_gaussian_count = local_point_count * gaussian_count_per_point
@@ -1080,10 +1092,13 @@ class Mapper:
         
         gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
 
-        # gaussian_scale = 0.5 * self.config.voxel_size_m * torch.exp(self.gaussian_scale_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 2K
+        # ------------------
+        # Scale
+
+        gaussian_scale = self.config.voxel_size_m * torch.exp(self.gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
         # FIXME
         # what should be the maximum size here?
-        gaussian_scale = 2.0 * self.config.voxel_size_m * torch.sigmoid(self.gaussian_scale_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, 2K
+        # gaussian_scale = 2.0 * self.config.voxel_size_m * torch.sigmoid(self.gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
         
         gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
         
@@ -1091,39 +1106,59 @@ class Mapper:
         
         thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
         gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
-
-        gaussian_rot = self.gaussian_rot_mlp.mlp(self.neural_points.local_geo_features)[:-1] # N, 4K
+        
+        # ------------------
+        # Rotation
+        gaussian_rot = self.gaussian_rot_mlp.mlp(geo_feature_in) # N, 4K
         gaussian_rot = gaussian_rot.view(local_gaussian_count, -1) # NK , 4
         gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
         gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
 
 
-        # gaussian_alpha = torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
-        gaussian_alpha = torch.tanh(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
+        # ------------------
+        # Opacity
+
+        if self.config.dist_concat_on:
+            geo_feature_in = torch.concat(geo_feature_in, view_distance)
+
+        # gaussian_alpha = torch.sigmoid(self.gaussian_alpha_mlp.mlp(geo_feature_in) 
+        gaussian_alpha = torch.tanh(self.gaussian_alpha_mlp.mlp(geo_feature_in)) 
         # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
         # gaussian_alpha = 0.5-0.5*torch.tanh(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, K  #[-1,1] --> [0,1]
-        
-        # this is like RTG-SLAM
-        # print(gaussian_alpha)
 
         gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
         
         # print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
 
+        # ------------------
+        # Color
+
+        color_feature_in = self.neural_points.local_color_features[:-1]
+        if self.config.view_concat_on:
+            color_features_in = torch.concat(color_features_in, view_direction) # no high freq positional embedding yet
+        
         # try to now use only one single feature vector
         # learn residual now
-        gaussian_rgb_residual = self.gaussian_color_mlp.mlp(self.neural_points.local_color_features)[:-1] # N, 3K
+
+        # gaussian_rgb_residual = 0.5 * torch.tanh(self.gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
+        gaussian_rgb_residual = self.gaussian_color_mlp.mlp(color_feature_in) # N, 3K
         # print(gaussian_rgb_residual)
         # print(torch.abs(gaussian_rgb_residual).mean().item())
         
         gaussian_color = self.neural_points.local_point_colors.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
         gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
 
+        # or we directlt learn the color value (instead of residual)
+        # gaussian_color = torch.sigmoid(self.gaussian_color_mlp.mlp(self.neural_points.local_color_features)[:-1]) # N, 3K
+
         gaussian_color = gaussian_color.view(local_gaussian_count, -1) # NK, 3 # not SH anymore
 
         # gaussian_rgb_base = self.neural_points.local_point_colors.repeat(1, gaussian_count_per_point)
         # gaussian_color = gaussian_color.view(local_gaussian_count, 1, -1) # NK, 1, 3
         # gaussian_sh = RGB2SH(gaussian_rgb_base)
+
+        # ------------------
+        # Mask
 
         mean_alpha_all = gaussian_alpha.mean()
 
