@@ -86,6 +86,10 @@ def load_shaders(vs, fs):
     vertex_shader = open(vs, "r").read()
     fragment_shader = open(fs, "r").read()
 
+    # print(vs)
+    # print("READ shader done")
+
+    # this has some issue (FIXME) might be GL version issue
     active_shader = shaders.compileProgram(
         shaders.compileShader(vertex_shader, GL_VERTEX_SHADER),
         shaders.compileShader(fragment_shader, GL_FRAGMENT_SHADER),

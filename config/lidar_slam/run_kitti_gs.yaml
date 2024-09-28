@@ -38,8 +38,7 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True # True
-  gs_iters: 20 # 20
-  gs_bs: 10 # 5 # train more
+  gs_iters: 50 # 20 # 100 has good results
   gaussian_bs_ratio: 1.0
   gs_keyframe_interval: 1 # 2
   img_pool_size: 50 # 15

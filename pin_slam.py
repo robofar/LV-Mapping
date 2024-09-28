@@ -63,11 +63,11 @@ parser.add_argument('--data_loader_on', '-d', action='store_true', default=True,
 parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
 parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
 parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
-parser.add_argument('--rerun_on', '-r', action='store_true', help='Turn on the rerun logging')
 parser.add_argument('--wandb_on', '-w', action='store_true', help='Turn on the weight & bias logging')
 parser.add_argument('--save_map', '-s', action='store_true', help='Save the PIN map after SLAM')
 parser.add_argument('--save_mesh', '-m', action='store_true', help='Save the reconstructed mesh after SLAM')
 parser.add_argument('--save_merged_pc', '-p', action='store_true', help='Save the merged point cloud after SLAM')
+parser.add_argument('--deskew', action='store_true', help='Try to deskew the LiDAR scans')
 
 args, unknown = parser.parse_known_args()
 
@@ -89,11 +89,12 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         config.seed = args.seed
         config.silence = not args.log_on
         config.wandb_vis_on = args.wandb_on
-        config.rerun_vis_on = args.rerun_on
         config.gs_vis_on = args.visualize
         config.save_map = args.save_map
         config.save_mesh = args.save_mesh
         config.save_merged_pc = args.save_merged_pc
+        if not config.deskew and args.deskew: # set to True if not set in the config file but set upon running
+            config.deskew = True
         if args.range is not None:
             config.begin_frame, config.end_frame, config.step_frame = args.range
         if args.cpu_only:
@@ -125,17 +126,16 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # if config.load_model: # not used
     #     load_decoder(config, geo_mlp, sem_mlp, color_mlp)
 
-    n_gaussian = 8 # almost 2D, then 4 already means 1/2 resolution
+    n_gaussian = config.spawn_n_gaussian # almost 2D, then 4 already means 1/2 resolution
     hidden_layer_count = 2
     hidden_layer_dim = 128 # 128
-    gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
-    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
-    gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0)
-    # gaussian_alpha_mlp = Decoder(config, 32, 1, 1, n_gaussian, 0)
 
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
 
+    gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
+    gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0) # (TODO) optimize quat is not very stable, try to use normal 
+    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, dist_concat_dim)
     gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, dist_concat_dim) # concat distance
     gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, view_concat_dim) # concat view direction
 
@@ -164,9 +164,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         q_vis2main = mp.Queue()
 
         params_gui = ParamsGUI(
-            pipe=None,
+            decoders=mlp_dict,
             background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
-            gaussians=neural_points,
             q_main2vis=q_main2vis,
             q_vis2main=q_vis2main,
             config=config,
@@ -175,9 +174,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
         gui_process.start()
         time.sleep(2) # second
-
-    if config.rerun_vis_on:
-        rr.init("pin_slam_rerun_viewer", spawn=True)
 
     # dataset
     dataset = SLAMDataset(config)
@@ -489,14 +485,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 
             o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
 
-            if config.rerun_vis_on:
-                if neural_pcd is not None:
-                    rr.log("world/neural_points", rr.Points3D(neural_pcd.points, colors=neural_pcd.colors, radii=0.05))
-                if dataset.cur_frame_o3d is not None:
-                    rr.log("world/input_scan", rr.Points3D(dataset.cur_frame_o3d.points, colors=dataset.cur_frame_o3d.colors, radii=0.03))
-                if cur_mesh is not None:
-                    rr.log("world/mesh_map", rr.Mesh3D(vertex_positions=cur_mesh.vertices, triangle_indices=cur_mesh.triangles, vertex_normals=cur_mesh.vertex_normals, vertex_colors=cur_mesh.vertex_colors))
-
             T8 = get_time()
 
             if not config.silence:
@@ -507,13 +495,14 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
             T9 = get_time()
 
-            # spawn gaussians in the current local map
-            gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
-
             # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
 
-            packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
+            # spawn gaussians in the current local map
+            # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
+            # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
+
+            packet_to_vis.add_neural_points_data(neural_points)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))

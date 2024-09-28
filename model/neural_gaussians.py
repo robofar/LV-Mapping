@@ -163,7 +163,6 @@ class NeuralPoints(nn.Module):
         self.local_neural_points = torch.empty(
             (0, 3), dtype=self.dtype, device=self.device
         )
-        # self.local_neural_points = nn.Parameter()
 
         self.local_point_orientations = torch.empty(
             (0, 4), dtype=self.dtype, device=self.device

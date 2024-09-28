@@ -104,6 +104,11 @@ class VisPacket:
         img_down_rate=0,
     ):
         self.has_gaussians = False
+        self.has_neural_points = False
+
+        self.neural_points_data = None
+
+        self.local_gaussian_count = 0
 
         if gaussian_xyz is not None:
             self.has_gaussians = True
@@ -121,7 +126,7 @@ class VisPacket:
             self.gaussian_alpha = gaussian_alpha.detach()
             self.gaussian_color = gaussian_color.detach()
 
-            self.local_count = self.gaussian_xyz.shape[0]
+            self.local_gaussian_count = self.gaussian_xyz.shape[0]
 
         self.keyframe = keyframe
         self.current_frame = current_frame
@@ -159,6 +164,18 @@ class VisPacket:
         self.slam_poses = slam_poses
 
         self.img_down_rate = img_down_rate
+
+    def add_neural_points_data(self, neural_points):
+        if neural_points is not None:
+            self.has_neural_points = True
+            self.neural_points_data = {}
+            self.neural_points_data["position"] = neural_points.local_neural_points
+            self.neural_points_data["color"] = neural_points.local_point_colors
+            self.neural_points_data["geo_feature"] = neural_points.local_geo_features
+            self.neural_points_data["color_feature"] = neural_points.local_color_features
+            self.neural_points_data["resolution"] = neural_points.resolution
+            self.neural_points_data["count"] = neural_points.count()
+            self.neural_points_data["local_count"] = neural_points.local_count()
 
     def add_gaussians(self,  
                     gaussian_xyz=None,
@@ -257,16 +274,15 @@ class Packet_vis2main:
 class ParamsGUI:
     def __init__(
         self,
-        pipe=None,
+        decoders=None,
         background=None,
-        gaussians=None,
         q_main2vis=None,
         q_vis2main=None,
-        config=None,
+        config=None, # PINGS configs
     ):
-        self.pipe = pipe
+        self.decoders = decoders # dict of MLPs
+        
         self.background = background
-        self.gaussians = gaussians
         self.q_main2vis = q_main2vis
         self.q_vis2main = q_vis2main
         self.config = config

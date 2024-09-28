@@ -28,7 +28,7 @@ from gs_gui.gui_utils import (
 from gaussian_splatting.scene.cameras import CamImage
 # from utils.logging_utils import Log
 
-from utils.tools import colorize_depth_maps
+from utils.tools import colorize_depth_maps, setup_seed, get_time
 
 # o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -53,7 +53,9 @@ class SLAM_GUI:
 
         self.q_main2vis = None
         self.gaussian_cur = None
-        self.pipe = None # not used
+
+        self.decoders = None
+
         self.background = None
         self.config = None
 
@@ -62,28 +64,34 @@ class SLAM_GUI:
         self.render_img = None
 
         if params_gui is not None:
+            self.decoders = params_gui.decoders
             self.background = params_gui.background
-            # self.gaussian_cur = params_gui.gaussians # actually as neural gaussians
-            # self.init = True
+            self.init = True
             self.q_main2vis = params_gui.q_main2vis
             self.q_vis2main = params_gui.q_vis2main
-            self.pipe = params_gui.pipe
             self.config = params_gui.config
+        
+        if self.config is not None:
+            setup_seed(self.config.seed)
 
         self.init_widget()
 
         self.gaussian_nums = []
 
         # these are only used for the elipsoid rendering 
-        # TODO: something wrong here with the glfw (just crash) after I use mini-forge
-        # self.g_camera = util.Camera(self.window_h, self.window_w)
-        # self.window_gl = self.init_glfw() 
-        # self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)
+      
+        self.g_camera = util.Camera(self.window_h, self.window_w)
+        self.window_gl = self.init_glfw() # this has no issue
 
-        # gl.glEnable(gl.GL_TEXTURE_2D)
-        # gl.glEnable(gl.GL_DEPTH_TEST)
-        # gl.glDepthFunc(gl.GL_LEQUAL)
-        # self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
+        # TODO: something wrong here with the glfw (just crash) after I use mini-forge
+        # Maybe a pyQT issue
+        # exactly this line here
+        # self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)  
+
+        gl.glEnable(gl.GL_TEXTURE_2D)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LEQUAL)
+        self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
 
         # screenshot saving path
         self.save_path = "."
@@ -304,24 +312,37 @@ class SLAM_GUI:
         )  # set the callback function
         self.panel.add_child(self.screenshot_btn)
 
-        ## Rendering Tab
+        ## Info Tab
         tab_margins = gui.Margins(0, int(np.round(0.5 * em)), 0, 0)
         tabs = gui.TabControl()
-
         tab_info = gui.Vert(0, tab_margins)
-        self.output_info = gui.Label("Number of Gaussians: ")
-        tab_info.add_child(self.output_info)
 
-        self.in_rgb_widget = gui.ImageWidget()
-        self.in_depth_widget = gui.ImageWidget()
-        self.in_normal_widget = gui.ImageWidget()
-        tab_info.add_child(gui.Label("Input Color/Depth/Normal"))
-        tab_info.add_child(self.in_rgb_widget)
-        tab_info.add_child(self.in_depth_widget)
-        tab_info.add_child(self.in_normal_widget)
+        self.neural_points_info = gui.Label("# Neural points: ")
+        tab_info.add_child(self.neural_points_info)
+
+        self.gaussian_info = gui.Label("# Current view Gaussians: ")
+        tab_info.add_child(self.gaussian_info)
+
+        self.freq_info = gui.Label("Render FPS: ")
+        tab_info.add_child(self.freq_info)
 
         tabs.add_tab("Info", tab_info)
         self.panel.add_child(tabs)
+
+
+        ## Input Image Tab
+        tabs2 = gui.TabControl()
+        tab_input = gui.Vert(0, tab_margins)
+        self.in_rgb_widget = gui.ImageWidget()
+        self.in_depth_widget = gui.ImageWidget()
+        self.in_normal_widget = gui.ImageWidget()
+        tab_input.add_child(gui.Label("Input Color/Depth/Normal"))
+        tab_input.add_child(self.in_rgb_widget)
+        tab_input.add_child(self.in_depth_widget)
+        tab_input.add_child(self.in_normal_widget)
+        tabs2.add_tab("Input", tab_input)
+        self.panel.add_child(tabs2)
+
         self.window.add_child(self.panel)
 
     # something wrong here
@@ -330,6 +351,14 @@ class SLAM_GUI:
 
         if not glfw.init():
             exit(1)
+
+        # check by: glxinfo | grep "OpenGL version"
+
+        # set opengl version hint (FIXME)
+        glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
+        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
         glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
 
@@ -558,12 +587,15 @@ class SLAM_GUI:
         if gaussian_packet is None:
             return
 
-        if gaussian_packet.has_gaussians:
-            self.gaussian_cur = gaussian_packet
-            self.output_info.text = "Number of Gaussians in the local map: {}".format(
-                self.gaussian_cur.local_count # valid_only (TODO)
+        self.gaussian_cur = gaussian_packet
+        self.init = True
+
+        # TODO: with MLP, think about the random seed issue
+        if gaussian_packet.has_neural_points:
+            self.neural_points_info.text = "# Neural points: {} (local {})".format(
+                gaussian_packet.neural_points_data["count"],
+                gaussian_packet.neural_points_data["local_count"] 
             )
-            self.init = True
 
         frustum_size = self.config.max_range*0.005
 
@@ -777,6 +809,8 @@ class SLAM_GUI:
                                                         
         return current_cam
 
+    
+
     # TODO: change gaussians functions here
     # def rasterise(self, current_cam):
     #     if (
@@ -828,13 +862,41 @@ class SLAM_GUI:
         if self.gaussian_cur is None:
             return None
 
-        with torch.no_grad():
-            rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
-                self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
-                self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
-                self.background, scaling_modifier=self.scaling_slider.double_value, 
-                down_rate=self.gaussian_cur.img_down_rate)
+        if self.gaussian_cur.neural_points_data is None:
+            return None
 
+        # print("# Local neural point:", self.neural_points.local_count())
+
+        # print(self.decoders["gauss_xyz"])
+
+        with torch.no_grad():
+            # rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
+            #     self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
+            #     self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
+            #     self.background, scaling_modifier=self.scaling_slider.double_value, 
+            #     down_rate=self.gaussian_cur.img_down_rate)
+
+            render_tic = get_time()
+
+            rendering_data = render(current_cam, None, self.gaussian_cur.neural_points_data, self.decoders, 
+                None, self.background, scaling_modifier=self.scaling_slider.double_value, 
+                down_rate=self.config.gs_vis_down_rate, 
+                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on)
+            
+            render_toc = get_time()
+
+            gaussians_all_count = rendering_data["alpha_all"].shape[0]
+            gaussians_valid_count = rendering_data["gaussian_alpha"].shape[0]
+            valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
+            mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
+
+            cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
+            render_time = render_toc - render_tic # s
+            render_freq = 1.0/render_time
+
+            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_view_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
+            self.freq_info.text = "Render FPS: {:.1f}".format(render_freq)
+        
         return rendering_data
 
     # main rendering function for the 3D visualizer

@@ -150,8 +150,8 @@ class Config:
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
 
         # For GS MLPs (FIXME)
-        self.dist_concat_on: bool = False
-        self.view_concat_on: bool = False
+        self.dist_concat_on: bool = True
+        self.view_concat_on: bool = True
 
         # positional encoding related [not used]
         self.use_gaussian_pe: bool = False # use Gaussian Fourier or original log positional encoding
@@ -219,6 +219,8 @@ class Config:
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
         self.bg_color = [1.0, 1.0, 1.0] # white 
         
+        self.spawn_n_gaussian = 8 # how many gaussians being spawned per neural point
+
         self.gs_iters: int = 0
         self.gs_bs: int = 5
         self.gaussian_bs_ratio: float = 4.0 # gaussian_bs = bs * gaussian_bs_ratio

@@ -9,8 +9,6 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-from typing import Dict
-
 import math
 import numpy as np
 import torch
@@ -38,23 +36,19 @@ from gaussian_splatting.utils.point_utils import depth_to_normal, depth2normal
 from gaussian_splatting.utils.graphics_utils import getWorld2View
 from gaussian_splatting.scene.cameras import CamImage
 
-from model.decoder import Decoder
-from model.neural_gaussians import NeuralPoints
-
 # the mian gaussain rendering function
 def render(viewpoint_camera: CamImage, 
            cam_pose: torch.Tensor,
-           neural_points_data: Dict,
-           decoders: Dict[str, Decoder],
-           gaussians: Dict[str, torch.Tensor], # input already spwaned gaussians 
+           gaussian_xyz: torch.Tensor,
+           gaussian_scale: torch.Tensor,
+           gaussian_rot: torch.Tensor,
+           gaussian_alpha: torch.Tensor,
+           gaussian_color: torch.Tensor,
            bg_color: torch.Tensor, 
            scaling_modifier: float = 1.0, 
+           active_sh_degree: int = 0,
            down_rate: int = 0, 
-           verbose: bool = False,
-           dist_concat_on: bool = False, 
-           view_concat_on: bool = False, 
-           alpha_filter_on: bool = True):
-
+           verbose: bool = False):
     """
     Render the scene. 
     
@@ -62,15 +56,13 @@ def render(viewpoint_camera: CamImage,
     scaling_modifier: You can use the Scaling Modifier to control the size of the displayed Gaussians, or show the initial point cloud. (suggested value, 0.001 to 1.0)
     """
     
-    # if neural_points.count() == 0: # not yet started
-    #     return None
+    if gaussian_xyz.shape[0] == 0: # not yet started
+        return None
 
     dtype = torch.float32
-    device = viewpoint_camera.device
+    device = gaussian_xyz.device
 
     img_scale = 2**down_rate
-
-    active_sh_degree = 0 # we use view dependent color prediction, no SH involved
 
     # Set up rasterization configuration (scalar value)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -107,8 +99,6 @@ def render(viewpoint_camera: CamImage,
 
     # print(resolution_height, resolution_width)
 
-
-    # Rasterizer settings
     if gs_type == "2d_gs":
         # 2D GS
         raster_settings = GaussianRasterizationSettings(
@@ -163,23 +153,6 @@ def render(viewpoint_camera: CamImage,
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    # Use already predicted gaussians
-    if neural_points_data is None and decoders is None and gaussians is not None:
-        gaussian_xyz = gaussians["gaussian_xyz"]
-        gaussian_scale = gaussians["gaussian_scale"]
-        gaussian_rot = gaussians["gaussian_rot"]
-        gaussian_alpha = gaussians["gaussian_alpha"]
-        gaussian_color = gaussians["gaussian_color"]
-        alpha_all = None
-
-    else: 
-
-        # Spawn Gaussians
-        gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all = spawn_gaussians(neural_points_data,
-            decoders, viewpoint_camera.camera_center, 
-            dist_concat_on, view_concat_on, alpha_filter_on)
-    
-
     means3D = gaussian_xyz
     opacity = gaussian_alpha
 
@@ -203,17 +176,7 @@ def render(viewpoint_camera: CamImage,
     # shs = gaussian_sh # currently let sh degree as 0
 
     colors = gaussian_color
-
-    # Spawned gaussians
-    results = {
-        "gaussian_xyz": gaussian_xyz, 
-        "gaussian_scale": gaussian_scale, 
-        "gaussian_rot": gaussian_rot, 
-        "gaussian_alpha": gaussian_alpha, 
-        "gaussian_color": gaussian_color, 
-        "alpha_all": alpha_all
-    }
-
+    
     # main rasterization function
     if gs_type == "2d_gs":
         rendered_image, radii, allmap = rasterizer(
@@ -229,7 +192,10 @@ def render(viewpoint_camera: CamImage,
         
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
-        results =  {
+        rets =  {"render": rendered_image,
+                "viewspace_points": means2D,
+                "visibility_filter" : radii > 0,
+                "radii": radii,
         }
 
         # additional regularizations
@@ -279,11 +245,7 @@ def render(viewpoint_camera: CamImage,
         surf_normal = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth
 
         # rendered result
-        results.update({
-            "render": rendered_image,
-            "viewspace_points": means2D,
-            "visibility_filter" : radii > 0,
-            "radii": radii,
+        rets.update({
             'rend_alpha': render_alpha,
             'rend_normal': render_normal,
             'rend_dist': render_dist, # distortion
@@ -291,6 +253,7 @@ def render(viewpoint_camera: CamImage,
             'surf_normal': surf_normal, # normal calculated from rendered depth
         })
 
+        return rets
     
     elif gs_type == "gaussian_surfel":
         # gaussian surfels
@@ -326,16 +289,9 @@ def render(viewpoint_camera: CamImage,
         #     print(screenspace_points)
         #     print(radii)
         
-        results.update({
-            "render": rendered_image, 
-            "rend_normal": rendered_normal,
-            "surf_depth": rendered_depth,
-            "rend_alpha": rendered_opac,
-            'surf_normal': surf_normal, 
-            'rend_dist': None,
-            "viewspace_points": screenspace_points, 
-            "visibility_filter": radii > 0, 
-            "radii": radii}) # > 1 or > 0
+        return {"render": rendered_image, "rend_normal": rendered_normal, "surf_depth": rendered_depth,
+                "rend_alpha": rendered_opac, 'surf_normal': surf_normal, 'rend_dist': None,
+                "viewspace_points": screenspace_points, "visibility_filter": radii > 0, "radii": radii} # > 1 or > 0
 
 
     elif gs_type == "3d_gs":
@@ -349,162 +305,15 @@ def render(viewpoint_camera: CamImage,
             scales = scales,
             rotations = rotations)
         
-        results.update({
-            "render": rendered_image, 
-            "rend_normal": None, 
-            "surf_depth": None,
-            "rend_alpha": None, 
-            'surf_normal': None, 
-            'rend_dist': None,
-            "viewspace_points": screenspace_points,
-            "visibility_filter" : radii > 0,
-            "radii": radii})
+        
+        return {"render": rendered_image, "rend_normal": None, "surf_depth": None,
+                "rend_alpha": None, 'surf_normal': None, 'rend_dist': None,
+                "viewspace_points": screenspace_points,
+                "visibility_filter" : radii > 0,
+                "radii": radii}
 
 
-    return results
-
-
-def spawn_gaussians(neural_points_data: Dict,
-                    decoders: Dict[str, Decoder],
-                    cam_origin: torch.tensor = None, 
-                    dist_concat_on: bool = False, 
-                    view_concat_on: bool = False,
-                    alpha_filter_on: bool = True):
-
-    # TODO: only spawn points from the neural points inside the frustum
-    # using the cuda function "in_frustum"
-    # currently just use all the points in the local map
-
-    neural_point_position = neural_points_data["position"]
-    neural_point_color = neural_points_data["color"]
-    neural_point_geo_features = neural_points_data["geo_feature"]
-    neural_point_color_features = neural_points_data["color_feature"]
-    neural_point_resolution = neural_points_data["resolution"]
-
-
-    gaussian_xyz_mlp = decoders["gauss_xyz"] 
-    gaussian_scale_mlp = decoders["gauss_scale"] 
-    gaussian_rot_mlp = decoders["gauss_rot"] 
-    gaussian_alpha_mlp = decoders["gauss_alpha"] 
-    gaussian_color_mlp = decoders["gauss_color"] 
-
-    view_direction = None
-    view_distance = None
-    if cam_origin is not None:
-        view_direction = neural_point_position - cam_origin # N, 3
-        view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
-        # normalize
-        view_direction = view_direction / view_distance
-
-    geo_feature_in = neural_point_geo_features[:-1]
-
-    # ------------------
-    # Position (view independent)
-
-    # test this scale here, better to not be too large (FIXME)
-    xyz_displacement = 4.0 * neural_point_resolution * torch.tanh(gaussian_xyz_mlp.mlp(geo_feature_in)) # N, 3K # [-1,1]        
-    # print(xyz_displacement)
-
-    local_point_count = xyz_displacement.shape[0]
-    gaussian_count_per_point = gaussian_xyz_mlp.out_k
-    local_gaussian_count = local_point_count * gaussian_count_per_point
-
-    gaussian_xyz = neural_point_position.repeat(1, gaussian_count_per_point) + xyz_displacement # N, 3K
-    
-    gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
-
-    # ------------------
-    # Rotation (view independent)
-    gaussian_rot = gaussian_rot_mlp.mlp(geo_feature_in) # N, 4K
-    gaussian_rot = gaussian_rot.view(local_gaussian_count, -1) # NK , 4
-    gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
-    gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
-
-
-    if dist_concat_on and view_distance is not None:
-        # print(view_distance)
-        geo_feature_in = torch.concat((geo_feature_in, view_distance), dim=1)
-
-    # ------------------
-    # Scale (view dependent)
-
-    gaussian_scale = neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
-    # FIXME
-    # what should be the maximum size here?
-    # gaussian_scale = 2.0 * neural_point_resolution * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
-    
-    gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
-    
-    # print("mean scale:", gaussian_scale.mean().item())
-    
-    thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
-    gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
-    
-
-    # ------------------
-    # Opacity (view dependent)
-
-    # gaussian_alpha = torch.sigmoid(gaussian_alpha_mlp.mlp(geo_feature_in) 
-    gaussian_alpha = torch.tanh(gaussian_alpha_mlp.mlp(geo_feature_in)) 
-    # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(gaussian_alpha_mlp.mlp(geo_feature_in)) 
-    # gaussian_alpha = 0.5-0.5*torch.tanh(gaussian_alpha_mlp.mlp(geo_feature_in)) # N, K  #[-1,1] --> [0,1]
-
-    gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
-    
-    # print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
-
-    # ------------------
-    # Color (view dependent)
-
-    color_feature_in = neural_point_color_features[:-1]
-    if view_concat_on and view_direction is not None:
-        color_feature_in = torch.concat((color_feature_in, view_direction), dim=1) # no high freq positional embedding yet
-    
-    # try to now use only one single feature vector
-    # learn residual now
-
-    # gaussian_rgb_residual = 0.5 * torch.tanh(gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
-    gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K
-    # print(gaussian_rgb_residual)
-    # print(torch.abs(gaussian_rgb_residual).mean().item())
-    
-    gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
-    gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
-
-    # or we directlt learn the color value (instead of residual)
-    # gaussian_color = torch.sigmoid(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K
-
-    gaussian_color = gaussian_color.view(local_gaussian_count, -1) # NK, 3 # not SH anymore
-
-    # gaussian_rgb_base = neural_point_color.repeat(1, gaussian_count_per_point)
-    # gaussian_color = gaussian_color.view(local_gaussian_count, 1, -1) # NK, 1, 3
-    # gaussian_sh = RGB2SH(gaussian_rgb_base)
-
-    # ------------------
-    # Mask
-
-    alpha_all = gaussian_alpha.clone()
-
-    # alpha threshold # but this cannot let the gradients to backpropagate (FIXME) # what's the better way to set an self-adpative mask
-    if alpha_filter_on:
-        before_size = gaussian_alpha.shape[0]
-
-        alpha_thre = 0.0 # tanh [-1,1]
-        alpha_mask_idx = torch.nonzero(gaussian_alpha.squeeze(-1) > alpha_thre).view(-1)
-
-        gaussian_xyz = gaussian_xyz[alpha_mask_idx]
-        gaussian_scale = gaussian_scale[alpha_mask_idx]
-        gaussian_rot = gaussian_rot[alpha_mask_idx]
-        gaussian_alpha = gaussian_alpha[alpha_mask_idx]
-        gaussian_color = gaussian_color[alpha_mask_idx]
-
-        after_shape = gaussian_alpha.shape[0]
-
-        # print("Gaussian count:", before_size, "-->", after_shape) # it's downsampled a bit too much, shall we have some inductive bias
-
-    # also consider the entropy loss, let the opacity to be either 0 or 1
-
-    return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all
+    return None
 
 # TODO
 # def prefilter_neural_points(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):

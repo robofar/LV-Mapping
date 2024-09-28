@@ -64,12 +64,16 @@ class GaussianRenderBase:
 class OpenGLRenderer(GaussianRenderBase):
     def __init__(self, w, h):
         super().__init__()
+
         gl.glViewport(0, 0, w, h)
         cur_path = os.path.dirname(os.path.abspath(__file__))
+        # # this has issue (TODO) fixit
         self.program = util.load_shaders(
             os.path.join(cur_path, "shaders/gau_vert.glsl"),
             os.path.join(cur_path, "shaders/gau_frag.glsl"),
         )
+
+        # print("Shader loaded")
 
         # Vertex data for a quad
         self.quad_v = np.array([-1, 1, 1, 1, 1, -1, -1, -1], dtype=np.float32).reshape(
@@ -88,6 +92,8 @@ class OpenGLRenderer(GaussianRenderBase):
         gl.glDisable(gl.GL_CULL_FACE)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+
+        print("GL seted")
 
     def update_gaussian_data(self, gaus: util_gau.GaussianData):
         self.gaussians = gaus

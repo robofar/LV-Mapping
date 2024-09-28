@@ -41,10 +41,8 @@ class KITTIMOTDataset:
         self.sequence_id = str(sequence).zfill(4)
         # include the data dir as kitti_mot/training/
         # self.kitti_sequence_dir = os.path.join(data_dir, "sequences", self.sequence_id)
-
-        self.data_split = "training" # training or testing
         
-        self.velodyne_dir = os.path.join(data_dir, "data_tracking_velodyne", self.data_split, "velodyne", self.sequence_id) 
+        self.velodyne_dir = os.path.join(data_dir, "velodyne", self.sequence_id) 
         self.scan_files = sorted(glob.glob(self.velodyne_dir + "/*.bin"))
         scan_count = len(self.scan_files)
         # print(scan_count)
@@ -54,21 +52,24 @@ class KITTIMOTDataset:
         self.use_only_colorized_points = True
 
         # cam 2 (color)
-        self.img2_dir = os.path.join(data_dir, "data_tracking_image_2", self.data_split, "image_02", self.sequence_id) 
+        self.img2_dir = os.path.join(data_dir, "image_02", self.sequence_id) 
         self.img2_files = sorted(glob.glob(self.img2_dir + "/*.png"))
         img2_count = len(self.img2_files)
+        # print(img2_count)
         if img2_count == scan_count:
             self.image_available = True
         else:
             self.image_available = False
 
         # cam 3 (color)
-        self.img3_dir = os.path.join(data_dir, "data_tracking_image_3", self.data_split, "image_03", self.sequence_id) 
+        self.img3_dir = os.path.join(data_dir, "image_03", self.sequence_id) 
         self.img3_files = sorted(glob.glob(self.img3_dir + "/*.png"))
         img3_count = len(self.img3_files)
 
-        # calib files
-        calib_file_path = os.path.join(data_dir, "data_tracking_calib", self.data_split, "calib", self.sequence_id+".txt")
+        # cam 2 sky mask
+        # cam 3 sky mask
+
+        calib_file_path = os.path.join(data_dir, "calib", self.sequence_id+".txt")
         calib_mats = self.tracking_calib_from_txt(calib_file_path) 
         K_mat2 = calib_mats["K2"]
         K_mat3 = calib_mats["K3"]
@@ -97,13 +98,17 @@ class KITTIMOTDataset:
             self.extrinsic = T_c2_l
 
         # get poses in IMU frame by loading oxts data
-        oxts_file_path = os.path.join(data_dir, "data_tracking_oxts", self.data_split, "oxts", self.sequence_id+".txt")
+        oxts_file_path = os.path.join(data_dir, "oxts", self.sequence_id+".txt")
         poses_imu_w_tracking, _, _ = self.get_poses_calibration(data_dir, oxts_file_path)  # (n_frames, 4, 4) imu pose
 
         # GT poses in LiDAR frame
         Tr_lidar_imu = calib_mats["T_l_i"]
         Tr_imu_lidar = np.linalg.inv(Tr_lidar_imu)
-        self.gt_poses = Tr_lidar_imu @ poses_imu_w_tracking @ Tr_imu_lidar 
+        self.gt_poses_oxts = Tr_lidar_imu @ poses_imu_w_tracking @ Tr_imu_lidar 
+
+        # Use PIN-SLAM poses (directly in LiDAR frame)
+        poses_fn = os.path.join(data_dir, "poses_pin_slam", f"{self.sequence_id}.txt")
+        self.gt_poses = self.load_poses(poses_fn)
 
 
     def __getitem__(self, idx):
@@ -112,8 +117,8 @@ class KITTIMOTDataset:
         point_ts = self.get_timestamps(points)
 
         if self.load_img and self.image_available:
-            # print("load img")
-            img = self.read_img(self.img2_files[idx])
+            print("load img")
+            img = self.read_img(self.img2_files[idx]) # just for vis here
         
             points_rgb = np.ones_like(points)
 
