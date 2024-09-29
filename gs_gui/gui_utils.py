@@ -130,6 +130,12 @@ class VisPacket:
 
         self.keyframe = keyframe
         self.current_frame = current_frame
+
+        self.gtcolor = None
+        self.gtdepth = None
+        self.gtnormal = None
+
+        self.img_resize_width = 600 # resized for vis
         if current_frame is not None:
             if current_frame.original_image_list[img_down_rate] is not None:
                 cur_gt_img = current_frame.original_image_list[img_down_rate]
@@ -139,11 +145,9 @@ class VisPacket:
                 if current_frame.mono_normal_on:
                     gtnormal = current_frame.normal_img_list[img_down_rate]
         
-        self.img_resize_width = 640 # resized for vis
-
-        self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
-        self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)
-        self.gtnormal = self.resize_img(gtnormal, self.img_resize_width)
+            self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
+            self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)
+            self.gtnormal = self.resize_img(gtnormal, self.img_resize_width)
 
         self.keyframes = keyframes
         self.finish = finish
@@ -174,6 +178,7 @@ class VisPacket:
             self.neural_points_data["geo_feature"] = neural_points.local_geo_features
             self.neural_points_data["color_feature"] = neural_points.local_color_features
             self.neural_points_data["resolution"] = neural_points.resolution
+            self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
             self.neural_points_data["count"] = neural_points.count()
             self.neural_points_data["local_count"] = neural_points.local_count()
 

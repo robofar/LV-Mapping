@@ -1027,6 +1027,7 @@ class Mapper:
         neural_points_data["geo_feature"] = self.neural_points.local_geo_features
         neural_points_data["color_feature"] = self.neural_points.local_color_features
         neural_points_data["resolution"] = self.neural_points.resolution
+        neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
         
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
@@ -1109,15 +1110,14 @@ class Mapper:
                 gaussian_rot = render_pkg["gaussian_rot"]
                 gaussian_alpha = render_pkg["gaussian_alpha"]
                 gaussian_color = render_pkg["gaussian_color"]
+                gaussian_free_mask = render_pkg["gaussian_free_mask"]
+
                 alpha_all = render_pkg["alpha_all"]
                 if alpha_all is not None:
                     gaussian_alpha_mask = alpha_all > 0.0
 
                 local_gaussian_count = gaussian_xyz.shape[0]
                 gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
-
-                # TODO: not used now
-                local_free_gs_mask = self.neural_points.local_free_gs_mask.repeat(1, gaussian_count_per_point).view(-1)
 
                 
                 # T4 = get_time()
@@ -1265,10 +1265,13 @@ class Mapper:
 
                 constraint_mask = visible_mask # also use the free ones now (FIXME)
 
-                true_count = torch.sum(constraint_mask).item()
+                if gaussian_free_mask is not None:
+                    constraint_mask = constraint_mask & (~gaussian_free_mask) # non-free visible gaussians
+
+                true_count = torch.sum(constraint_mask).item() # TODO: for isotropic and area loss, we actually also need to consider free gaussians
 
                 if not self.silence:
-                    print(" # Used Gaussians for 3D losses:", true_count)
+                    print(" # Gaussians for 3D losses in current view:", true_count)
 
                 true_indices = torch.nonzero(constraint_mask, as_tuple=True)[0]
                 gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
@@ -1423,15 +1426,15 @@ class Mapper:
             # # filter dynamic gaussains (TODO)
             filter_gaussian_on = False
             # this may has some issue
-            if filter_gaussian_on:
-                local_gaussian_position = self.neural_points.get_local_xyz
-                nonfree_local_gaussian_position = local_gaussian_position[~self.neural_points.local_free_gs_mask]
-                nonfree_local_gaussians_static_mask = self.dynamic_filter(nonfree_local_gaussian_position, type_2_on=False)
-                local_gaussians_static_mask = self.neural_points.local_free_gs_mask.clone()
-                local_gaussians_static_mask[local_gaussians_static_mask==0] = nonfree_local_gaussians_static_mask # non free part according to this static mask, free part all static
+            # if filter_gaussian_on:
+            #     local_gaussian_position = self.neural_points.get_local_xyz
+            #     nonfree_local_gaussian_position = local_gaussian_position[~self.neural_points.local_free_gs_mask]
+            #     nonfree_local_gaussians_static_mask = self.dynamic_filter(nonfree_local_gaussian_position, type_2_on=False)
+            #     local_gaussians_static_mask = self.neural_points.local_free_gs_mask.clone()
+            #     local_gaussians_static_mask[local_gaussians_static_mask==0] = nonfree_local_gaussians_static_mask # non free part according to this static mask, free part all static
 
-                self.neural_points.local_valid_gs_mask = local_gaussians_static_mask 
-                # self.neural_points.local_valid_gs_mask = self.neural_points.local_valid_gs_mask & local_gaussians_static_mask # TODO
+            #     self.neural_points.local_valid_gs_mask = local_gaussians_static_mask 
+            #     # self.neural_points.local_valid_gs_mask = self.neural_points.local_valid_gs_mask & local_gaussians_static_mask # TODO
 
             self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
@@ -1701,6 +1704,7 @@ class Mapper:
                 neural_points_data["geo_feature"] = self.neural_points.local_geo_features
                 neural_points_data["color_feature"] = self.neural_points.local_color_features
                 neural_points_data["resolution"] = self.neural_points.resolution
+                neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
 
                 # current values
                 render_pkg = render(cur_view_cam, None, neural_points_data, self.decoders, None, background, down_rate=eval_down_rate, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on) # render gaussians 

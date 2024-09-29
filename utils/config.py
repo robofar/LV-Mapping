@@ -268,8 +268,8 @@ class Config:
         self.consist_wieght_on: bool = False # weight for color (intensity) consistency for the measured and queried value
         self.source_vox_down_m: float = 0.8 # downsample voxel resolution for source point cloud
         self.uniform_motion_on: bool = True # use uniform motion (constant velocity) model for the transformation inital guess
-        self.reg_min_grad_norm: float = 0.5 # min norm of SDF gradient for valid source point
-        self.reg_max_grad_norm: float = 2.0 # max norm of SDF gradient for valid source point
+        self.reg_min_grad_norm: float = 0.4 # min norm of SDF gradient for valid source point
+        self.reg_max_grad_norm: float = 2.5 # max norm of SDF gradient for valid source point
         self.track_mask_query_nn_k: int = self.query_nn_k # during tracking, a point without nn_k neighbors would be regarded as invalid
         self.max_sdf_ratio: float = 5.0 # ratio * surface_sample sigma
         self.max_sdf_std_ratio: float = 1.0 # ratio * surface_sample sigma
@@ -640,6 +640,6 @@ class Config:
         # associated parameters
         self.infer_bs = self.bs * 16
         self.consistency_count = int(self.bs / 4)
-        self.window_radius = max(self.max_range, 6.0) # for the sampling data poo, should not be too small
-        self.local_map_radius = self.max_range + 2.0 # for the local neural points
+        self.window_radius = max(self.max_range+0.5, 6.0) # for the sampling data pool, should not be too small
+        self.local_map_radius = min(self.max_range*1.1, self.max_range+5.0) # for the local neural points
         self.vis_frame_axis_len = self.max_range / 50.0

@@ -176,7 +176,7 @@ def setup_optimizer(
 
     lr_gs_xyz = 1e-3
     lr_gs_scale = 1e-3
-    lr_gs_rot = 1e-3
+    lr_gs_rot = 1e-4
     lr_gs_alpha = 1e-3
     lr_gs_color = 1e-3
 

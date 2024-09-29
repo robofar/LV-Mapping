@@ -21,26 +21,26 @@ sampler:
 neuralpoints:
   voxel_size_m: 0.05 # 0.04
   query_nn_k: 8
-  feature_dim: 64
-  # from_sample_points: False
+  feature_dim: 32
+  color_feature_dim: 16
+decoder:
+  freeze_after_frame: 40
 gs:
-  monodepth_on: False
-  gs_iters: 10
-  gs_bs: 5
-  gs_keyframe_interval: 2
-  img_pool_size: 25 # 15
-  img_test_pool_size: 15
+  gs_iters: 20
+  gs_keyframe_interval: 5
+  img_pool_size: 50 # 15
+  img_test_pool_size: 0
   gs_down_rate: 1
-  gs_vis_down_rate: 0
-  sh_degree: 0
+  gs_vis_down_rate: 1
   inverse_depth_loss: False
   lambda_depth: 1.0
-  # lambda_normal: 0.05 # not too big 0.05 
+  lambda_normal: 0.05 # not too big 0.05 
   # lambda_isotropic: 100.0
-  lambda_area: 5e-3 # 1e-3
-  # lambda_sdf_cons: 0.5
-  # lambda_sdf_normal_cons: 0.5
-  # lambda_sdf: 1.0
+  # lambda_area: 5e-3 # 1e-3
+  lambda_opacity: 5e-3 # increase to have more valid gaussians
+  lambda_sdf_cons: 0.2
+  lambda_sdf_normal_cons: 0.1
+  lambda_sdf: 1.0
 loss:
   sigma_sigmoid_m: 0.01
   ekional_loss_on: True
@@ -65,8 +65,8 @@ continual:
 #   term_deg: 1e-3
 #   term_m: 1e-4
 optimizer:
-  iters: 10 # you need more iterations for achieveing a nice mesh # 50
-  batch_size: 16384
+  iters: 15 # you need more iterations for achieveing a nice mesh # 50
+  batch_size: 8192
   ba_freq_frame: 0
   lr_pose_ba: 1e-3
 eval:

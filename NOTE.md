@@ -37,6 +37,8 @@ python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitt
 ## Run on KITTI 360 dataset
 
 ```
+python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl --deskew
+
 python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl
 
 python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -dvl
