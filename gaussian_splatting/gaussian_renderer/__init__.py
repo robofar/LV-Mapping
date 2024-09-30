@@ -451,8 +451,8 @@ def spawn_gaussians(neural_points_data: Dict,
 
     gaussian_scale = neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
     # FIXME
-    # what should be the maximum size here?
-    # gaussian_scale = 2.0 * neural_point_resolution * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
+    # what should be the maximum size here? $ TODO
+    # gaussian_scale = 1.0 * neural_point_resolution * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
     
     gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
     

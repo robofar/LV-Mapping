@@ -1327,11 +1327,14 @@ class Mapper:
                     sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one
                     grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
                     # maybe relax this a bit
-                    valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
-                    valid_grad_mask = valid_grad_mask.detach()
-                    valid_grad_count = torch.sum(valid_grad_mask).item()
-                    if not self.silence:
-                        print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                    # valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
+                    # # TODO: why there are fewer and fewer valid points TODO
+                    # valid_grad_mask = valid_grad_mask.detach()
+                    # valid_grad_count = torch.sum(valid_grad_mask).item()
+                    # if not self.silence:
+                    #     print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+
+                    valid_grad_mask = torch.ones_like(sampled_guassians_sdf, device=self.device, dtype=torch.bool)
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 

@@ -38,7 +38,7 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True # True
-  gs_iters: 50 # 20 # 100 has good results
+  gs_iters: 100 # 20 # 100 has good results
   gaussian_bs_ratio: 1.0
   gs_keyframe_interval: 1 # 2
   img_pool_size: 50 # 15
@@ -52,9 +52,9 @@ gs:
   lambda_mono_normal: 0.01
   # lambda_isotropic: 1.0
   # lambda_area: 1e-2 # 1e-3
-  lambda_opacity: 5e-3 # increase to have more valid gaussians
+  lambda_opacity: 1e-3 # 5e-4 # increase to have more valid gaussians
   lambda_sky: 0.01 # not much impact, should not be too large
-  lambda_sdf_cons: 0.2
+  lambda_sdf_cons: 0.5
   lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0
   # gs_batch_training_on: True

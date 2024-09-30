@@ -473,7 +473,7 @@ class SLAM_GUI:
     def _on_mesh_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.specular_geo) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
 
