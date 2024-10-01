@@ -34,28 +34,40 @@ def depths_to_points(camera, depth):
     rays_d = points @ torch.linalg.inv(intrins).T @ c2w[:3,:3].T
     rays_o = c2w[:3,3]
     points = depth.reshape(-1, 1) * rays_d + rays_o
+    # points in world frame
     return points
 
 # used by 2D GS
 def depth_to_normal(camera, depth):
     """
         camera: view camera
-        depth: depthmap 
+        depth: rendered depthmap 
+        the output normal is in the world frame  3, H, W 
     """
     # print(depth.shape)
     points = depths_to_points(camera, depth).reshape(*depth.shape[1:], 3) # already in world frame
     output = torch.zeros_like(points)
     dx = torch.cat([points[2:, 1:-1] - points[:-2, 1:-1]], dim=0)
     dy = torch.cat([points[1:-1, 2:] - points[1:-1, :-2]], dim=1)
+    # this is only done once, not like depth2normal functions
     normal_map = torch.nn.functional.normalize(torch.linalg.cross(dx, dy, dim=-1), dim=-1)
     output[1:-1, 1:-1, :] = normal_map
     # as the gradient of depth 
     # pointing towards the surface
+
+    output = output.permute([2,0,1]) # convert to 3, H, W # in world frame
+
     return output
 
 # used by Gaussian Surfels
 def depth2normal(depth, mask, camera):
-    # conver to camera position
+    """
+        depth: rendered depthmap 
+        mask: visible mask
+        camera: view camera
+        the output normal is in the camera frame  3, H, W 
+    """
+    # convert to camera position
     camD = depth.permute([1, 2, 0])
     mask = mask.permute([1, 2, 0])
     shape = camD.shape # H, W, 1
@@ -74,7 +86,7 @@ def depth2normal(depth, mask, camera):
     K = torch.tensor([K00, 0, 0, K11]).reshape([2,2])
     Kinv = torch.inverse(K).to(device)
     # print(p.shape, Kinv.shape)
-    p = p @ Kinv.t()
+    p = p @ Kinv.t() # unprojected to 3D, still in camera frame
     camPos = torch.cat([p, camD], -1)
 
     # padded = mod.contour_padding(camPos.contiguous(), mask.contiguous(), torch.zeros_like(camPos), filter_size // 2)
@@ -93,16 +105,7 @@ def depth2normal(depth, mask, camera):
     n_ur = torch.linalg.cross(p_r, p_u)
     n_br = torch.linalg.cross(p_b, p_r)
     n_bl = torch.linalg.cross(p_l, p_b)
-
-    # n_ul = torch.nn.functional.normalize(torch.linalg.cross(p_u, p_l), dim=-1)
-    # n_ur = torch.nn.functional.normalize(torch.linalg.cross(p_r, p_u), dim=-1)
-    # n_br = torch.nn.functional.normalize(torch.linalg.cross(p_b, p_r), dim=-1)
-    # n_bl = torch.nn.functional.normalize(torch.linalg.cross(p_l, p_b), dim=-1)
-
-    # n_ul = torch.nn.functional.normalize(torch.linalg.cross(p_l, p_u), dim=-1)
-    # n_ur = torch.nn.functional.normalize(torch.linalg.cross(p_u, p_r), dim=-1)
-    # n_br = torch.nn.functional.normalize(torch.linalg.cross(p_r, p_b), dim=-1)
-    # n_bl = torch.nn.functional.normalize(torch.linalg.cross(p_b, p_l), dim=-1)
+    # the finally result would be the average of these four
     
     n = n_ul + n_ur + n_br + n_bl
     n = n[0]
@@ -117,5 +120,8 @@ def depth2normal(depth, mask, camera):
     # n[..., 1] *= -1
     # n *= -1
 
-    n = (n * mask).permute([2, 0, 1])
+    n = (n * mask).permute([2, 0, 1]) # 3, H, W
+
+    # this is the normal in current camera frame
+
     return n

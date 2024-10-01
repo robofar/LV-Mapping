@@ -41,6 +41,8 @@ from gaussian_splatting.scene.cameras import CamImage
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 
+from utils.tools import get_time
+
 # the mian gaussain rendering function
 def render(viewpoint_camera: CamImage, 
            cam_pose: torch.Tensor,
@@ -233,8 +235,7 @@ def render(viewpoint_camera: CamImage,
         
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
-        results =  {
-        }
+        results = {}
 
         # additional regularizations
         render_alpha = allmap[1:2]
@@ -246,6 +247,7 @@ def render(viewpoint_camera: CamImage,
         render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
         # render_normal = render_normal / render_alpha
         render_normal = torch.nan_to_num(render_normal, 0, 0)
+        # figure out this rendered normal is in which coordinate system
         
         # get median depth map # what does this mean? # TODO
         render_depth_median = allmap[5:6]
@@ -279,8 +281,10 @@ def render(viewpoint_camera: CamImage,
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
 
-        mask_vis = (render_alpha.detach() > 1e-5)
-        surf_normal = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth
+        mask_vis = (render_alpha.detach() > 1e-3)
+        d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
+
+        # d2n = depth_to_normal(viewpoint_camera, surf_depth) # in world frame
 
         # rendered result
         results.update({
@@ -292,7 +296,7 @@ def render(viewpoint_camera: CamImage,
             'rend_normal': render_normal,
             'rend_dist': render_dist, # distortion
             'surf_depth': surf_depth, # rendered depth
-            'surf_normal': surf_normal, # normal calemoculated from rendered depth
+            'surf_normal': d2n, # normal calemoculated from rendered depth
         })
 
     
@@ -306,36 +310,20 @@ def render(viewpoint_camera: CamImage,
             opacities = opacity,
             scales = scales,
             rotations = rotations)
-
-        # rendered_image = torch.nan_to_num(rendered_image, 0, 0)
-        # rendered_normal = torch.nan_to_num(rendered_normal, 0, 0)
-        # rendered_depth = torch.nan_to_num(rendered_depth, 0, 0)
-        # rendered_opac = torch.nan_to_num(rendered_opac, 0, 0)
-        # radii = torch.nan_to_num(radii, 0, 0)
-
-        # here the rendered_normal is already normalized?
-
-        # print(viewpoint_camera.world_view_transform)
-
-        # this small part is from 2D GS
-        # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
         
-        mask_vis = (rendered_opac.detach() > 1e-5)
-        surf_normal = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface
+        # tic_d2n = get_time()
+        # mask_vis = (rendered_opac.detach() > 1e-3)
+        # d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface # in current camera frame
+        # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
+        # toc_d2n = get_time()
+        # print("D2N time:", (toc_d2n-tic_d2n) * 1000) # could be more than 1ms, disable for now
 
-        # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
-        # They will be excluded from value updates used in the splitting criteria.
-        
-        # if verbose:
-        #     print(screenspace_points)
-        #     print(radii)
-        
         results.update({
             "render": rendered_image, 
             "rend_normal": rendered_normal,
             "surf_depth": rendered_depth,
             "rend_alpha": rendered_opac,
-            'surf_normal': surf_normal, 
+            'surf_normal': None, 
             'rend_dist': None,
             "viewspace_points": screenspace_points, 
             "visibility_filter": radii > 0, 
@@ -422,7 +410,7 @@ def spawn_gaussians(neural_points_data: Dict,
     # ------------------
     # Position (view independent)
 
-    displacement_range = 2.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position)
+    displacement_range = 4.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position)
     if neural_point_free_mask is not None:
         displacement_range[neural_point_free_mask] = 10.0 * neural_point_resolution
 
@@ -435,7 +423,6 @@ def spawn_gaussians(neural_points_data: Dict,
     local_gaussian_count = local_point_count * gaussian_count_per_point
 
     gaussian_xyz = neural_point_position.repeat(1, gaussian_count_per_point) + xyz_displacement # N, 3K
-    
     gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
 
     # ------------------

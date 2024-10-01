@@ -37,7 +37,7 @@ from utils.tools import (
 )
 
 from gaussian_splatting.gaussian_renderer import render
-from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss
+from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss
 from gaussian_splatting.utils.graphics_utils import focal2fov
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
@@ -1097,10 +1097,10 @@ class Mapper:
 
                 # rendered results
                 rendered_rgb_image = render_pkg["render"] # 3, H, W 
-                rend_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
-                surf_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
+                rendered_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
+                rendered_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
                 depth_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal), D2N
-                rend_alpha = render_pkg["rend_alpha"] # 1, H, W accumulated opacity 
+                rendered_alpha = render_pkg["rend_alpha"] # 1, H, W accumulated opacity 
                 dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W 
 
                 # Gaussians information
@@ -1123,8 +1123,8 @@ class Mapper:
                 # T4 = get_time()
 
                 # normalize the normals to norm == 1
-                if rend_normal is not None:
-                    rend_normal = torch.nn.functional.normalize(rend_normal, dim=0) 
+                if rendered_normal is not None:
+                    rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) 
                 if depth_normal is not None:
                     depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
                 
@@ -1134,12 +1134,12 @@ class Mapper:
                 if viewpoint_cam.sky_mask_on: 
                     cur_sky_mask = viewpoint_cam.sky_mask_list[down_rate]
                     non_sky_mask = ~cur_sky_mask
-                    if self.config.lambda_sky > 0 and rend_alpha is not None:
-                        sky_loss = sky_mask_loss(cur_sky_mask, rend_alpha) # sky part has 0 alpha
-                        # sky_loss = sky_bce_loss(cur_sky_mask, rend_alpha) # let the sky part has small opacity, the others have a large opacity
+                    if self.config.lambda_sky > 0 and rendered_alpha is not None:
+                        sky_loss = sky_mask_loss(cur_sky_mask, rendered_alpha) # sky part has 0 alpha
+                        # sky_loss = sky_bce_loss(cur_sky_mask, rendered_alpha) # let the sky part has small opacity, the others have a large opacity
                     
-                    if rend_normal is not None:
-                        rend_normal = rend_normal * non_sky_mask
+                    if rendered_normal is not None:
+                        rendered_normal = rendered_normal * non_sky_mask
                     if depth_normal is not None:
                         depth_normal = depth_normal * non_sky_mask
                     if dist_distortion is not None:
@@ -1156,47 +1156,57 @@ class Mapper:
 
                 # ----------------
                 # Depth rendering loss
-                depth_loss = 0
+                depth_loss = 0.0
                 valid_depth_mask = None
-                if surf_depth is not None and gt_depth_image is not None and self.config.lambda_depth > 0:
-                    valid_depth_mask = (gt_depth_image > eval_depth_min) & (surf_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (surf_depth < eval_depth_max)
+                if rendered_depth is not None and gt_depth_image is not None and self.config.lambda_depth > 0:
+                    valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     # print(gt_depth_image)
-                    rend_depth_valid = surf_depth[valid_depth_mask]
+                    rendered_depth_valid = rendered_depth[valid_depth_mask]
                     if self.config.inverse_depth_loss:
-                        depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rend_depth_valid) # use inverse depth (then we will care more about the close range part)
+                        depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rendered_depth_valid) # use inverse depth (then we will care more about the close range part)
                     else:
-                        depth_loss = l1_loss(gt_depth_image, rend_depth_valid)
+                        depth_loss = l1_loss(gt_depth_image, rendered_depth_valid)
 
                 # ----------------
 
                 # Regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
                 # if valid_depth_mask is not None:
-                #     rend_normal = rend_normal[:, valid_depth_mask]
+                #     rendered_normal = rendered_normal[:, valid_depth_mask]
                 #     depth_normal = depth_normal[:, valid_depth_mask]
                 #     dist_distortion = dist_distortion[:, valid_depth_mask]    
 
-                # Normal-Depth consistency regularization loss
-                normal_loss = 0
-                if rend_normal is not None and depth_normal is not None:
-                    rend_normal_norm = rend_normal.norm(2, dim=0) 
-                    depth_normal_norm = depth_normal.norm(2, dim=0) 
-                    normal_valid_mask = (rend_normal_norm > 0) & (depth_normal_norm > 0)
 
-                    dot_product = (rend_normal * depth_normal).sum(dim=0) # H, W
-                    normal_error = 1.0 - dot_product # dot product 
-                    # normal_error = 1.0 - torch.abs(dot_product) 
+                if rendered_normal is not None:
+                    rendered_normal_norm = rendered_normal.norm(2, dim=0) 
+
+                # Normal-Depth consistency regularization loss
+                normal_depth_consist_loss = 0.0
+                if rendered_normal is not None and depth_normal is not None and self.config.lambda_normal_depth_consist > 0.0:
+                    depth_normal_norm = depth_normal.norm(2, dim=0) 
+                    normal_valid_mask = (rendered_normal_norm > 0) & (depth_normal_norm > 0)
+
+                    dot_product = (rendered_normal.detach() * depth_normal).sum(dim=0) # H, W # we detach here to only use the normal to supervise depth
+                    normal_error = 1.0 - dot_product # dot product  
                     normal_error_valid = torch.masked_select(normal_error, normal_valid_mask)
-                    normal_loss = normal_error_valid.mean()
+                    normal_depth_consist_loss = normal_error_valid.mean() # still does not work well, disable it
+
+                # Normal smoothness loss
+                normal_smoothness_loss = 0.0
+                if rendered_normal is not None and rendered_depth is not None and self.config.lambda_normal_smooth > 0.0:
+                    normal_valid_mask = (rendered_normal_norm > 0)
+                    normal_smoothness_loss = normal_smooth_loss(rendered_normal, rendered_depth, normal_valid_mask, depth_jump_thre_m=self.config.vox_down_m)
 
                 # ----------------
 
                 # Mono normal regularization loss
                 mono_normal_loss = 0
-                if rend_normal is not None and viewpoint_cam.mono_normal_on and self.config.lambda_mono_normal > 0:
+                if rendered_normal is not None and viewpoint_cam.mono_normal_on and self.config.lambda_mono_normal > 0:
                     mono_normal = viewpoint_cam.normal_img_list[down_rate]
-                    dot_product = (rend_normal * mono_normal).sum(dim=0) # H, W
+                    mono_normal_norm = mono_normal.norm(2, dim=0) 
+                    normal_valid_mask = (rendered_normal_norm > 0) & (mono_normal_norm > 0)
+                    dot_product = (rendered_normal * mono_normal).sum(dim=0) # H, W
                     mono_normal_error = 1.0 - dot_product # dot product 
                     mono_normal_error = torch.masked_select(mono_normal_error, normal_valid_mask)
                     mono_normal_loss = mono_normal_error.mean()
@@ -1223,18 +1233,24 @@ class Mapper:
                             print(" Inverse depth rendering loss:", depth_loss.item())
                         else:
                             print(" Depth rendering loss (m):", depth_loss.item())
-                    if normal_loss > 0.0:
-                        print(" Normal reg loss:", normal_loss.item())
+                    if normal_depth_consist_loss > 0.0:
+                        print(" Normal-depth consistency loss:", normal_depth_consist_loss.item())
+                    if normal_smoothness_loss > 0.0:
+                        print(" Normal smoothness loss:", normal_smoothness_loss.item())
                     # print(" Sky loss:", sky_loss.item())
                     if viewpoint_cam.mono_normal_on and mono_normal_loss > 0.0 and self.config.lambda_mono_normal > 0:
                         print(" Mono normal loss:", mono_normal_loss.item())
 
                 depth_loss *= self.config.lambda_depth
                 
-                lambda_normal_linear_ratio = min(self.gs_total_iter / self.gs_iter_window, 1.0)
-                lambda_normal = self.config.lambda_normal * lambda_normal_linear_ratio
-                normal_loss *= lambda_normal # should increase from 0 to config.lambda_normal (ref: gaussian surfel)
+                # lambda_normal_linear_ratio = min(self.gs_total_iter / self.gs_iter_window, 1.0)
+                # lambda_normal_depth_consist = self.config.lambda_normal_depth_consist * lambda_normal_linear_ratio
+                # normal_depth_consist_loss *= lambda_normal_depth_consist # should increase from 0 to config.lambda_normal (ref: gaussian surfel)
                 
+                normal_depth_consist_loss *= self.config.lambda_normal_depth_consist
+
+                normal_smoothness_loss *= self.config.lambda_normal_smooth
+
                 # mono normal loss
                 mono_normal_loss *= self.config.lambda_mono_normal
 
@@ -1409,7 +1425,9 @@ class Mapper:
 
                 # Total loss
                 # TODO: monitor losses by wandb
-                total_loss = rgb_loss + depth_loss + normal_loss + mono_normal_loss + sky_loss + distort_loss \
+                total_loss = rgb_loss + depth_loss \
+                    + normal_depth_consist_loss + normal_smoothness_loss \
+                    + mono_normal_loss + sky_loss + distort_loss \
                     + isotropic_loss + area_loss + opacity_loss \
                     + sdf_consistency_loss + sdf_normal_consistency_loss \
                     + sdf_loss + eikonal_loss
@@ -1517,23 +1535,23 @@ class Mapper:
                 if not self.silence:
                     print("Render time per frame (ms):", (T2_r-T1_r)*1e3, " [", 1.0/(T2_r-T1_r), " Hz ]")
                 
-                renderd_image, rend_normal, surf_depth, depth_normal, rend_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+                renderd_image, rendered_normal, rendered_depth, depth_normal, rendered_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
                 
                 # normalize the normals to norm == 1
-                if rend_normal is not None:
-                    rend_normal = torch.nn.functional.normalize(rend_normal, dim=0) 
+                if rendered_normal is not None:
+                    rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) 
                 if depth_normal is not None:
                     depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
 
                 if cur_viewpoint_cam.sky_mask_on:
                     cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
                     non_sky_mask = ~ cur_sky_mask
-                    if surf_depth is not None:
-                        surf_depth = surf_depth * non_sky_mask
+                    if rendered_depth is not None:
+                        rendered_depth = rendered_depth * non_sky_mask
                     if depth_normal is not None:
                         depth_normal = depth_normal * non_sky_mask
-                    if rend_normal is not None:
-                        rend_normal = rend_normal * non_sky_mask
+                    if rendered_normal is not None:
+                        rendered_normal = rendered_normal * non_sky_mask
 
                 renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
                 renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
@@ -1542,8 +1560,8 @@ class Mapper:
                 if self.config.o3d_vis_on and self.config.vis_in_cv2:
                     cv2.imshow(cam_name + ": Rendered RGB", renderd_image_rgb_np)
 
-                if surf_depth is not None:
-                    rendered_depth_np = surf_depth.detach().cpu().numpy()
+                if rendered_depth is not None:
+                    rendered_depth_np = rendered_depth.detach().cpu().numpy()
                     rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
                     rendered_depth_np = rendered_depth_np[0] # H, W
                     rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
@@ -1552,9 +1570,9 @@ class Mapper:
                     if self.config.o3d_vis_on and self.config.vis_in_cv2:
                         cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
                 
-                if rend_normal is not None:
-                    rend_normal_vis = 0.5 - rend_normal * 0.5  # convert to the normal vis color # surf_normal
-                    rendered_normal_np = (rend_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+                if rendered_normal is not None:
+                    rendered_normal_vis = 0.5 - rendered_normal * 0.5  # convert to the normal vis color # surf_normal
+                    rendered_normal_np = (rendered_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
                     rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
                     if self.config.o3d_vis_on and self.config.vis_in_cv2:
                         cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
@@ -1577,14 +1595,14 @@ class Mapper:
                     if self.config.o3d_vis_on and self.config.vis_in_cv2:
                         cv2.imshow(cam_name + ": Mono Normal", mono_normal_vis_np)
 
-                # print("Max alpha value:", torch.max(rend_alpha).item()) # <= 1
-                # rendered_alpha_np = (rend_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+                # print("Max alpha value:", torch.max(rendered_alpha).item()) # <= 1
+                # rendered_alpha_np = (rendered_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
                 # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
                 # cv2.imshow(cam_name + ": Rendered Alpha", rendered_alpha_np)
 
                 cv2.waitKey(1)
 
-                if render_pcd and surf_depth is not None: # vis with "J"
+                if render_pcd and rendered_depth is not None: # vis with "J"
 
                     # rendered_rgb_image_o3d = o3d.geometry.Image(renderd_image_np)  # with rendered RGB
                     observed_rgb_image_o3d = o3d.geometry.Image(original_img_int8)   # with original RGB (not availbale sometimes)         
@@ -1630,7 +1648,7 @@ class Mapper:
                     print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
                 cur_depth_l1 = cur_depth_rmse = 0.0
-                if cur_viewpoint_cam.depth_on and surf_depth is not None:
+                if cur_viewpoint_cam.depth_on and rendered_depth is not None:
                     # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
                     depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
                     diff_depth = np.abs(original_img_depth - rendered_depth_np) # already abs
@@ -1713,7 +1731,7 @@ class Mapper:
                 render_pkg = render(cur_view_cam, None, neural_points_data, self.decoders, None, background, down_rate=eval_down_rate, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on) # render gaussians 
 
                 # rendered results
-                rendered_rgb_image, surf_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
+                rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
 
                 rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
                 # print(torch.max(rendered_rgb_image), torch.min(rendered_rgb_image)) # why there are value larger than 1?
@@ -1735,12 +1753,12 @@ class Mapper:
                 self.val_ssim_list.append(cur_ssim)
                 self.val_lpips_list.append(cur_lpips)
 
-                if cur_view_cam.depth_on and surf_depth is not None: 
+                if cur_view_cam.depth_on and rendered_depth is not None: 
                     eval_depth_max = self.config.max_range
                     eval_depth_min = self.config.min_range
                     original_img_depth = original_img[3] # torch.tensor
-                    depth_valid_mask = (original_img_depth > eval_depth_min) & (surf_depth > eval_depth_min) & (original_img_depth < eval_depth_max) & (surf_depth < eval_depth_max)
-                    diff_depth = torch.abs(original_img_depth - surf_depth) # already abs
+                    depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
+                    diff_depth = torch.abs(original_img_depth - rendered_depth) # already abs
                     diff_depth[~depth_valid_mask] = 0.0
                     diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                     cur_depth_l1 = np.mean(diff_depth_masked)
@@ -1849,7 +1867,7 @@ class Mapper:
     #         render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
 
     #         # rendered results
-    #         rendered_rgb_image, surf_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
+    #         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
 
     #         rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
     #         # print(torch.max(rendered_rgb_image), torch.min(rendered_rgb_image)) # why there are value larger than 1?
@@ -1859,7 +1877,7 @@ class Mapper:
     #         renderd_image_np = np.ascontiguousarray(renderd_image_np)
     #         rgb_image = o3d.geometry.Image(renderd_image_np)
 
-    #         rendered_depth_np = surf_depth.squeeze(0).detach().cpu().numpy().astype(np.float32) 
+    #         rendered_depth_np = rendered_depth.squeeze(0).detach().cpu().numpy().astype(np.float32) 
     #         rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
     #         depth_image = o3d.geometry.Image(rendered_depth_np)
 

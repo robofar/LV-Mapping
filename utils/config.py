@@ -238,7 +238,8 @@ class Config:
         self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
         self.lambda_area: float = 0.0 # weight for area (volume) regularization # 0.001
         self.lambda_opacity: float = 1e-3 # prefer larger opacity value, the smaller this value, the more likely to have masked gaussians -> fewer gaussian number for rendering
-        self.lambda_normal: float = 0.0 # normal consistency regularization weight # 0.05
+        self.lambda_normal_depth_consist: float = 0.0 # normal consistency regularization weight # 0.05
+        self.lambda_normal_smooth: float = 0.0
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
         self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
@@ -581,9 +582,11 @@ class Config:
             self.gs_init_opacity = config_args["gs"].get("init_opacity", self.gs_init_opacity)
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
+            
             self.lambda_depth = float(config_args["gs"].get("lambda_depth", self.lambda_depth))
             self.lambda_distort = float(config_args["gs"].get("lambda_distort", self.lambda_distort)) # weight for the distance distortion loss
-            self.lambda_normal = float(config_args["gs"].get("lambda_normal", self.lambda_normal)) # weight for the distance/normal consistency loss
+            self.lambda_normal_depth_consist = float(config_args["gs"].get("lambda_normal_depth", self.lambda_normal_depth_consist)) # weight for the distance/normal consistency loss
+            self.lambda_normal_smooth = float(config_args["gs"].get("lambda_normal_smooth", self.lambda_normal_smooth)) # weight for the distance/normal consistency loss
             self.lambda_mono_normal = float(config_args["gs"].get("lambda_mono_normal", self.lambda_mono_normal))
             self.lambda_isotropic = float(config_args["gs"].get("lambda_isotropic", self.lambda_isotropic))
             self.lambda_area = float(config_args["gs"].get("lambda_area", self.lambda_area))
@@ -641,5 +644,5 @@ class Config:
         self.infer_bs = self.bs * 16
         self.consistency_count = int(self.bs / 4)
         self.window_radius = max(self.max_range+0.5, 6.0) # for the sampling data pool, should not be too small
-        self.local_map_radius = min(self.max_range*1.1, self.max_range+5.0) # for the local neural points
+        self.local_map_radius = min(self.max_range*1.1, self.max_range+10.0) # for the local neural points
         self.vis_frame_axis_len = self.max_range / 50.0

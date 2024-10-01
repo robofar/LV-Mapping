@@ -147,6 +147,7 @@ class SLAM_GUI:
         self.mesh = o3d.geometry.TriangleMesh()
         self.scan = o3d.geometry.PointCloud()
         self.sdf_slice = o3d.geometry.PointCloud()
+        self.neural_points = o3d.geometry.PointCloud()
         self.sensor_cad = o3d.geometry.TriangleMesh()
 
         if self.config.sensor_cad_path is not None:
@@ -251,11 +252,18 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.sdf_chbox)
         self.sdf_name = "cur_sdf_slice"
 
-        self.cad_chbox = gui.Checkbox("CAD")
-        self.cad_chbox.checked = False
-        self.cad_chbox.set_on_checked(self._on_cad_chbox)
-        chbox_tile_3dobj.add_child(self.cad_chbox)
-        self.cad_name = "sensor_cad"
+        # self.cad_chbox = gui.Checkbox("CAD")
+        # self.cad_chbox.checked = False
+        # self.cad_chbox.set_on_checked(self._on_cad_chbox)
+        # chbox_tile_3dobj.add_child(self.cad_chbox)
+        # self.cad_name = "sensor_cad"
+
+        # TODO
+        self.neural_point_chbox = gui.Checkbox("Neural Points")
+        self.neural_point_chbox.checked = False
+        self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
+        chbox_tile_3dobj.add_child(self.neural_point_chbox)
+        self.neural_point_name = "neural_points"
 
         self.traj_chbox = gui.Checkbox("Trajectory")
         self.traj_chbox.checked = False
@@ -462,13 +470,20 @@ class SLAM_GUI:
     #     else:
     #         self.widget3d.scene.remove_geometry(name)
 
-    def _on_cad_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.cad_name)
-            self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
-        else:
-            self.widget3d.scene.remove_geometry(self.cad_name)
+    # def _on_cad_chbox(self, is_checked):
+    #     if is_checked:
+    #         self.widget3d.scene.remove_geometry(self.cad_name)
+    #         self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+    #     else:
+    #         self.widget3d.scene.remove_geometry(self.cad_name)
     
+    def _on_neural_point_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.neural_point_name)
+            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.lit_geo) # TODO: add pin-slam mesh
+        else:
+            self.widget3d.scene.remove_geometry(self.neural_point_name)
+
     # TODO: rendering shader is not good
     def _on_mesh_chbox(self, is_checked):
         if is_checked:
@@ -597,6 +612,14 @@ class SLAM_GUI:
                 gaussian_packet.neural_points_data["local_count"] 
             )
 
+            self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
+            self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
+            if self.neural_point_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.neural_point_name)
+                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.lit_geo)
+
+            # show feature PCA color
+
         frustum_size = self.config.max_range*0.005
 
         if gaussian_packet.current_frame is not None: # as Camera class
@@ -688,13 +711,13 @@ class SLAM_GUI:
                 self.widget3d.scene.remove_geometry(self.gt_traj_name)
                 self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
 
-            if gaussian_packet.slam_poses is None:
-                relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.gt_poses[-1]
-                self.sensor_cad.transform(relative_tran)
-                self.last_used_pose = gaussian_packet.gt_poses[-1]
-                if self.cad_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.cad_name)
-                    self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+            # if gaussian_packet.slam_poses is None:
+                # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.gt_poses[-1]
+                # self.sensor_cad.transform(relative_tran)
+                # self.last_used_pose = gaussian_packet.gt_poses[-1]
+                # if self.cad_chbox.checked:
+                #     self.widget3d.scene.remove_geometry(self.cad_name)
+                #     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
 
         if gaussian_packet.slam_poses is not None:
             slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
@@ -707,12 +730,12 @@ class SLAM_GUI:
                 self.widget3d.scene.remove_geometry(self.slam_traj_name)
                 self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
             
-            relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.slam_poses[-1]
-            self.sensor_cad.transform(relative_tran)
-            self.last_used_pose = gaussian_packet.slam_poses[-1]
-            if self.cad_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.cad_name)
-                self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+            # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.slam_poses[-1]
+            # self.sensor_cad.transform(relative_tran)
+            # self.last_used_pose = gaussian_packet.slam_poses[-1]
+            # if self.cad_chbox.checked:
+            #     self.widget3d.scene.remove_geometry(self.cad_name)
+            #     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
         
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -906,7 +929,11 @@ class SLAM_GUI:
             return None # don't show gs rendering results
 
         if self.depth_chbox.checked:
-            depth = results["surf_depth"].detach().cpu().numpy()
+            depth = results["surf_depth"]
+            if depth is None:
+                return None # don't show gs rendering results
+
+            depth = depth.detach().cpu().numpy()
             # max_depth = np.max(depth)
             depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
             depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
@@ -915,6 +942,9 @@ class SLAM_GUI:
 
         elif self.normal_chbox.checked:
             normal = results["rend_normal"]
+            if normal is None:
+                return None # don't show gs rendering results
+
             normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1
             normal_color = 0.5 - normal * 0.5  # convert to the normal vis color
             normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -923,6 +953,8 @@ class SLAM_GUI:
 
         elif self.d2n_chbox.checked:
             d2n = results["surf_normal"]
+            if d2n is None:
+                return None # don't show gs rendering results
             d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
             d2n_color = 0.5 - d2n * 0.5  # convert to the normal vis color
             d2n_color = (d2n_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -930,7 +962,13 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(d2n_color)
 
         elif self.opacity_chbox.checked:
-            opacity = results["rend_alpha"].detach().cpu().numpy()
+            
+            opacity = results["rend_alpha"]
+            
+            if opacity is None:
+                return None # don't show gs rendering results
+
+            opacity = opacity.detach().cpu().numpy()
 
             opacity_color = (colorize_depth_maps(opacity, 0.0, 1.0, cmap="jet")[0]*255.0).astype(np.uint8)
 
@@ -1039,9 +1077,13 @@ class SLAM_GUI:
             def update():
                 if self.button_render.is_on:
                     # print("UPDATE scene")
-                    if self.step % 3 == 0: # 0.03s
+                    if self.step % 3 == 0: # 0.03s # 30 Hz
                         # print("UPDATE scene happens")
-                        self.scene_update() # don't do it so frequently
+                        # self.scene_update() # don't do it so frequently
+                        self.render_gui()
+
+                    if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
+                        self.receive_data(self.q_main2vis)
 
                 if self.step >= 1e9:
                     self.step = 0
