@@ -506,7 +506,7 @@ class SLAMDataset():
 
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
-                                                          self.config.min_range*0.5, self.config.max_range*1.1,
+                                                          self.config.min_range*0.5, self.config.local_map_radius*1.1,
                                                           cam_name, img_down_rate, pred_normal, sky_mask, self.device)
 
         self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)

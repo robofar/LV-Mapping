@@ -1713,6 +1713,10 @@ class Mapper:
         self.val_depth_rmse_list = []
 
     def gs_eval_offline(self, eval_down_rate=0, test_view_only: bool = False, train_view_only: bool = False):
+        
+        # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
+        # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
+        # For PSNR, it may have a difference of 0.1-0.2 PSNR
 
         with torch.no_grad():
             cam_name = self.dataset.loader.main_cam_name
@@ -1778,7 +1782,7 @@ class Mapper:
                 self.val_lpips_list.append(cur_lpips)
 
                 if cur_view_cam.depth_on and rendered_depth is not None: 
-                    eval_depth_max = self.config.max_range
+                    eval_depth_max = self.config.max_range * 0.8
                     eval_depth_min = self.config.min_range
                     original_img_depth = original_img[3] # torch.tensor
                     depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth < eval_depth_max)

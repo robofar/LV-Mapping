@@ -20,6 +20,7 @@ gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
 
 gs_type = "gaussian_surfel"
 # gs_type = "2d_gs"
+# gs_type = "3d_gs"
 
 # 2DGS
 if gs_type == "2d_gs":
@@ -27,6 +28,7 @@ if gs_type == "2d_gs":
 # Gaussian Surfel
 elif gs_type == "gaussian_surfel":
     from diff_gaussian_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+# 3DGS
 elif gs_type == "3d_gs":
     from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 else:
@@ -334,7 +336,7 @@ def render(viewpoint_camera: CamImage,
     elif gs_type == "3d_gs":
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-        rendered_image, radii = rasterizer(
+        rendered_image, radii, depth = rasterizer(
             means3D = means3D,
             means2D = means2D,
             colors_precomp = colors,
@@ -345,7 +347,7 @@ def render(viewpoint_camera: CamImage,
         results.update({
             "render": rendered_image, 
             "rend_normal": None, 
-            "surf_depth": None,
+            "surf_depth": depth,
             "rend_alpha": None, 
             'surf_normal': None, 
             'rend_dist': None,
@@ -441,7 +443,7 @@ def spawn_gaussians(neural_points_data: Dict,
     dist_ratio = 1.0
     if view_distance is not None:
         dist_ratio = view_distance / z_far # N, 1
-        dist_ratio = dist_ratio.repeat(1, 2*gaussian_count_per_point)
+        dist_ratio = dist_ratio.repeat(1, gaussian_scale_mlp.mlp_out_dim)
 
     gaussian_scale = 0.2 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in) + dist_ratio) # N, 2K
     gaussian_scale = torch.clamp(gaussian_scale, max=max_gaussian_scale)
@@ -449,13 +451,17 @@ def spawn_gaussians(neural_points_data: Dict,
     # what should be the maximum size here? $ TODO
     # gaussian_scale = max_gaussian_scale * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
     
-    gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
-    
-    # print("mean scale:", gaussian_scale.mean().item())
-    
-    if gs_type != "2d_gs": # then support 3 dim
+    gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 3 (2) # positive (after activation)
+
+    if gs_type == "gaussian_surfel":
+        gaussian_scale = gaussian_scale[:,:2] # NK, 2 #
         thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
         gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
+
+    elif gs_type == "2d_gs": # support only 2 dim
+        gaussian_scale = gaussian_scale[:,:2] # NK, 2 #
+
+    # else: # 3dgs use this 3dim version
     
     if dist_concat_on and view_distance is not None:
         # print(view_distance)

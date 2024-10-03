@@ -45,10 +45,10 @@ gs:
   img_pool_size: 50 # 15
   eval_on: False
   img_test_pool_size: 0
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   inverse_depth_loss: True
-  lambda_depth: 5.0 # 10.0
+  lambda_depth: 10.0 # 10.0
   # lambda_normal_depth: 0.05
   # lambda_normal_smooth: 0.1
   # lambda_distort: 0.0

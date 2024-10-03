@@ -26,7 +26,8 @@ class Decoder(nn.Module):
 
         super().__init__()
 
-        mlp_out_dim = out_dim * out_k
+        self.mlp_out_dim = out_dim * out_k
+        self.out_dim_per = out_dim
         self.out_k = out_k # for gs, this denotes the gaussian count per neural point
         self.use_leaky_relu = config.mlp_leaky_relu
 
@@ -53,7 +54,7 @@ class Decoder(nn.Module):
             else:
                 layers.append(nn.Linear(hidden_dim, hidden_dim, bias_on))
         self.layers = nn.ModuleList(layers)
-        self.lout = nn.Linear(hidden_dim, mlp_out_dim, bias_on)
+        self.lout = nn.Linear(hidden_dim, self.mlp_out_dim, bias_on)
 
         self.sdf_scale = 1.0
         if config.main_loss_type == "bce":

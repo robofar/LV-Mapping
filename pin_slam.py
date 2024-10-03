@@ -133,9 +133,13 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
 
+    gs_2d = True
+    # scale_dim = 2 if gs_2d else 3
+    scale_dim = 3
+
     gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
     gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0) # (TODO) optimize quat is not very stable, try to use normal 
-    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 2, n_gaussian, 0)
+    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, scale_dim, n_gaussian, 0)
     gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, dist_concat_dim) # concat distance
     gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, view_concat_dim) # concat view direction
 

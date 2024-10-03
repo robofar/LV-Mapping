@@ -198,10 +198,10 @@ class SLAM_GUI:
         self.button.set_on_clicked(self._on_button)
         self.panel.add_child(self.button)
 
-        # self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
-        # self.button_render.is_on = True # default off
-        # # self.button_render.set_on_clicked(self._on_button_render)
-        # self.panel.add_child(self.button_render)
+        self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
+        self.button_render.is_on = True # default off
+        # self.button_render.set_on_clicked(self._on_button_render)
+        self.panel.add_child(self.button_render)
 
 
         self.panel.add_child(gui.Label("Viewpoint Options"))
@@ -1153,15 +1153,15 @@ class SLAM_GUI:
                 break
 
             def update():
-                # if self.button_render.is_on:
-                # print("UPDATE scene")
-                if self.step % 3 == 0: # 0.03s # 30 Hz
-                    # print("UPDATE scene happens")
-                    # self.scene_update() # don't do it so frequently
-                    self.render_gui()
+                if self.button_render.is_on:
+                    # print("UPDATE scene")
+                    if self.step % 3 == 0: # 0.03s # 30 Hz
+                        # print("UPDATE scene happens")
+                        # self.scene_update() # don't do it so frequently
+                        self.render_gui()
 
-                if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
-                    self.receive_data(self.q_main2vis)
+                    if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
+                        self.receive_data(self.q_main2vis)
 
                 if self.step >= 1e9:
                     self.step = 0
