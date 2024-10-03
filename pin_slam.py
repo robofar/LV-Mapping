@@ -60,7 +60,7 @@ parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to 
 parser.add_argument('--output_path', '-o', type=str, default=None, help='Path to the result output directory (this will override the output_root in config file)')
 parser.add_argument('--range', nargs=3, type=int, metavar=('START', 'END', 'STEP'), default=None, help='Specify the start, end and step of the processed frame, for example: --range 10 1000 1')
 parser.add_argument('--data_loader_on', '-d', action='store_true', default=True, help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
-parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
+parser.add_argument('--visualize', '-v', action='store_true', default=True, help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
 parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
 parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
 parser.add_argument('--wandb_on', '-w', action='store_true', help='Turn on the weight & bias logging')
@@ -128,7 +128,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
     n_gaussian = config.spawn_n_gaussian # almost 2D, then 4 already means 1/2 resolution
     hidden_layer_count = 2
-    hidden_layer_dim = 128 # 128
+    hidden_layer_dim = 64 # 64 # 128
 
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
@@ -358,15 +358,16 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
+        # cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
+        cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
             freeze_decoders(mlp_dict, config)
 
-        # conduct local bundle adjustment (with lower frequency)
-        if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
-            mapper.bundle_adjustment(config.ba_iters, config.ba_frame)
+        # # conduct local bundle adjustment (with lower frequency)
+        # if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
+        #     mapper.bundle_adjustment(config.ba_iters, config.ba_frame)
         
         # mapping with fixed poses (every frame)
         if frame_id % config.mapping_freq_frame == 0:
@@ -380,9 +381,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 gs_iter_num = config.gs_iters if frame_id == (config.gs_batch_frame-1) else 0
             else:
                 gs_iter_num = config.gs_iters
-            
-            # mapper.gs_mapping(gs_iter_num) 
-            # sdf_train_loss_on=frame_id>10
+
             mapper.joint_gsdf_mapping(gs_iter_num, eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
         T6 = get_time()
@@ -496,7 +495,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             T9 = get_time()
 
             # add the most recent train frame for vis
-            packet_to_vis: VisPacket = VisPacket(current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
+            packet_to_vis: VisPacket = VisPacket(frame_id = dataset.processed_frame, current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
 
             # spawn gaussians in the current local map
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
@@ -547,11 +546,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         print("Training view")
         mapper.init_gs_eval()
         mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, train_view_only=True)
-        mapper.gs_eval_out()
+        mapper.gs_eval_out(split="train")
         print("Testing view")
         mapper.init_gs_eval()
         mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, test_view_only=True)
-        mapper.gs_eval_out()
+        mapper.gs_eval_out(split="test")
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map

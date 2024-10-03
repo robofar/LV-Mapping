@@ -139,7 +139,7 @@ class Config:
 
         # MLP decoder
         self.mlp_bias_on: bool = True
-        self.mlp_leaky_relu: bool = False
+        self.mlp_leaky_relu: bool = False # False
         self.geo_mlp_level: int = 1
         self.geo_mlp_hidden_dim: int = 64
         self.sem_mlp_level: int = 1
@@ -173,7 +173,7 @@ class Config:
         self.dist_weight_scale: float = 0.8 # weight changing range [0.6, 1.4]
         
         self.numerical_grad: bool = True # use numerical SDF gradient as in the paper Neuralangelo for the Ekional regularization during mapping
-        self.gradient_decimation: int = 10 # use just a part of the points for the ekional loss when using the numerical grad, save computing time
+        self.gradient_decimation: int = 6 # use just a part of the points for the ekional loss when using the numerical grad, save computing time
         self.num_grad_step_ratio: float = 0.2 # step as a ratio of the nerual point resolution, length = num_grad_step_ratio * voxel_size_m
 
         self.ekional_loss_on: bool = True # Ekional regularization (default on)
@@ -223,7 +223,7 @@ class Config:
 
         self.gs_iters: int = 0
         self.gs_bs: int = 5
-        self.gaussian_bs_ratio: float = 4.0 # gaussian_bs = bs * gaussian_bs_ratio
+        self.gaussian_bs_ratio: float = 1.0 # gaussian_bs = bs * gaussian_bs_ratio
         self.gs_keyframe_interval: int = 2
         self.img_pool_size: int = 10 # training views
         self.img_test_pool_size: int = 10 # testing views
@@ -571,6 +571,8 @@ class Config:
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
             self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 5.0)
 
+            self.spawn_n_gaussian = config_args["gs"].get("n_gaussian", self.spawn_n_gaussian)
+
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
@@ -583,6 +585,7 @@ class Config:
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             
+            self.lambda_dssim= float(config_args["gs"].get("lambda_ssim", self.lambda_dssim)) # weight for ssim, set to zero for faster training
             self.lambda_depth = float(config_args["gs"].get("lambda_depth", self.lambda_depth))
             self.lambda_distort = float(config_args["gs"].get("lambda_distort", self.lambda_distort)) # weight for the distance distortion loss
             self.lambda_normal_depth_consist = float(config_args["gs"].get("lambda_normal_depth", self.lambda_normal_depth_consist)) # weight for the distance/normal consistency loss

@@ -78,7 +78,7 @@ class SLAM_GUI:
 
         self.gaussian_nums = []
 
-        # these are only used for the elipsoid rendering 
+        # these are only used for the elliopsoid rendering 
       
         self.g_camera = util.Camera(self.window_h, self.window_w)
         self.window_gl = self.init_glfw() # this has no issue
@@ -119,17 +119,43 @@ class SLAM_GUI:
         )
         self.widget3d.scene.view.set_color_grading(cg_settings)
 
+        self.widget3d.scene.show_skybox(False)
+
         self.window.add_child(self.widget3d)
 
         self.lit = rendering.MaterialRecord()
         self.lit.shader = "unlitLine"
-        self.lit.line_width = 5  # note that this is scaled with respect to pixels,
+        self.lit.line_width = 5 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         self.lit_geo = rendering.MaterialRecord()
         self.lit_geo.shader = "defaultUnlit"
 
+        # scan
+        self.scan_render = rendering.MaterialRecord()
+        self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
+        self.scan_render.point_size = 4 * self.window.scaling
+        self.scan_render.base_color = [0.9, 0.9, 0.9, 1.0]
+
+        # neural points
+        self.neural_points_render = rendering.MaterialRecord()
+        self.neural_points_render.shader = "defaultLit"
+        self.neural_points_render.point_size = 6 * self.window.scaling
+        self.neural_points_render.base_color = [0.9, 0.9, 0.9, 1.0]
+
+        # mesh 
+        self.mesh_render = rendering.MaterialRecord()
+        self.mesh_render.shader = "normals"
+
+
+        # trajectory
+        self.traj_render = rendering.MaterialRecord()
+        self.traj_render.shader = "unlitLine"
+        self.traj_render.line_width = 5 * self.window.scaling  # note that this is scaled with respect to pixels,
+
+
         self.specular_geo = rendering.MaterialRecord()
         self.specular_geo.shader = "defaultLit"
+        # self.specular_geo.mesh_color_option
 
         # how to apply different materials (TODO)
         self.clay_geo = rendering.MaterialRecord()
@@ -172,20 +198,38 @@ class SLAM_GUI:
         self.button.set_on_clicked(self._on_button)
         self.panel.add_child(self.button)
 
-        self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
-        self.button_render.is_on = False # default off
-        # self.button_render.set_on_clicked(self._on_button_render)
-        self.panel.add_child(self.button_render)
+        # self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
+        # self.button_render.is_on = True # default off
+        # # self.button_render.set_on_clicked(self._on_button_render)
+        # self.panel.add_child(self.button_render)
+
 
         self.panel.add_child(gui.Label("Viewpoint Options"))
 
         viewpoint_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         vp_subtile1 = gui.Vert(0.5 * em, gui.Margins(margin))
         vp_subtile2 = gui.Vert(0.5 * em, gui.Margins(margin))
+        
+        # h = gui.Horiz(0.25 * em, gui.Margins(margin)) 
+        # self._arcball_button = gui.Button("Arcball")
+        # self._arcball_button.horizontal_padding_em = 0.5
+        # self._arcball_button.vertical_padding_em = 0
+        # self._arcball_button.set_on_clicked(self._set_mouse_mode_rotate)
+
+        # self._fly_button = gui.Button("Fly")
+        # self._fly_button.horizontal_padding_em = 0.5
+        # self._fly_button.vertical_padding_em = 0
+        # self._fly_button.set_on_clicked(self._set_mouse_mode_fly)
+
+        # h.add_child(self._arcball_button)
+        # h.add_child(self._fly_button)
+
+        # self.panel.add_child(h)
 
         ##Check boxes
         vp_subtile1.add_child(gui.Label("Camera follow options"))
         chbox_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        
         self.followcam_chbox = gui.Checkbox("Follow Camera")
         self.followcam_chbox.checked = True
         chbox_tile.add_child(self.followcam_chbox)
@@ -193,6 +237,12 @@ class SLAM_GUI:
         self.staybehind_chbox = gui.Checkbox("From Behind")
         self.staybehind_chbox.checked = True
         chbox_tile.add_child(self.staybehind_chbox)
+
+        self.fly_chbox = gui.Checkbox("Fly Mode")
+        self.fly_chbox.checked = False
+        self.fly_chbox.set_on_checked(self._set_mouse_mode)
+        chbox_tile.add_child(self.fly_chbox)
+        
         vp_subtile1.add_child(chbox_tile)
 
         ##Combo panels
@@ -213,8 +263,8 @@ class SLAM_GUI:
 
         chbox_tile_3dobj = gui.Horiz(0.5 * em, gui.Margins(margin))
 
-        self.gs_chbox = gui.Checkbox("Gaussian Splatting")
-        self.gs_chbox.checked = True
+        self.gs_chbox = gui.Checkbox("GS Rendering")
+        self.gs_chbox.checked = False
         # self.gs_chbox.set_on_checked(self._on_gs_chbox)
         chbox_tile_3dobj.add_child(self.gs_chbox)
 
@@ -241,7 +291,7 @@ class SLAM_GUI:
         self.mesh_name = "pin_mesh"
 
         self.scan_chbox = gui.Checkbox("Scan")
-        self.scan_chbox.checked = False
+        self.scan_chbox.checked = True
         self.scan_chbox.set_on_checked(self._on_scan_chbox)
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
@@ -272,9 +322,14 @@ class SLAM_GUI:
         self.gt_traj_name = "gt_trajectory"
         self.slam_traj_name = "slam_trajectory"
 
+        # self.sky_chbox = gui.Checkbox("Sky")
+        # self.sky_chbox.checked = False
+        # self.sky_chbox.set_on_checked(self._on_sky_chbox)
+        # chbox_tile_3dobj.add_child(self.sky_chbox)
+
         self.panel.add_child(chbox_tile_3dobj)
 
-        self.panel.add_child(gui.Label("Rendering options"))
+        self.panel.add_child(gui.Label("GS Rendering options"))
         chbox_tile_geometry = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         self.depth_chbox = gui.Checkbox("Depth")
@@ -297,9 +352,9 @@ class SLAM_GUI:
         # self.time_shader_chbox.checked = False
         # chbox_tile_geometry.add_child(self.time_shader_chbox)
 
-        self.elipsoid_chbox = gui.Checkbox("Elipsoid Shader")
-        self.elipsoid_chbox.checked = False
-        chbox_tile_geometry.add_child(self.elipsoid_chbox)
+        self.elliopsoid_chbox = gui.Checkbox("Ellipsoid")
+        self.elliopsoid_chbox.checked = False
+        chbox_tile_geometry.add_child(self.elliopsoid_chbox)
 
         self.panel.add_child(chbox_tile_geometry)
 
@@ -324,6 +379,9 @@ class SLAM_GUI:
         tab_margins = gui.Margins(0, int(np.round(0.5 * em)), 0, 0)
         tabs = gui.TabControl()
         tab_info = gui.Vert(0, tab_margins)
+
+        self.frame_info = gui.Label("Frame: ")
+        tab_info.add_child(self.frame_info)
 
         self.neural_points_info = gui.Label("# Neural points: ")
         tab_info.add_child(self.neural_points_info)
@@ -404,7 +462,7 @@ class SLAM_GUI:
             frustum = create_frustum(C2W, color, size=size)
             self.combo_kf.add_item(name)
             self.frustum_dict[name] = frustum
-            self.widget3d.scene.add_geometry(name, frustum.line_set, self.lit) # add camera frame to visualizer
+            self.widget3d.scene.add_geometry(name, frustum.line_set, self.traj_render) # add camera frame to visualizer
         frustum = self.frustum_dict[name]
         frustum.update_pose(C2W)
         self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
@@ -480,7 +538,7 @@ class SLAM_GUI:
     def _on_neural_point_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.neural_point_name)
-            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.lit_geo) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.neural_point_name)
 
@@ -488,14 +546,14 @@ class SLAM_GUI:
     def _on_mesh_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.lit_geo) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
 
     def _on_scan_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.scan_name)
-            self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
+            self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
         else:
             self.widget3d.scene.remove_geometry(self.scan_name)
 
@@ -509,14 +567,18 @@ class SLAM_GUI:
     def _on_traj_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.gt_traj_name)
-            self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
+            self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
             self.widget3d.scene.remove_geometry(self.slam_traj_name)
-            self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
+            self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
 
         else:
             self.widget3d.scene.remove_geometry(self.gt_traj_name)
             self.widget3d.scene.remove_geometry(self.slam_traj_name)
+
+    def _on_sky_chbox(self, is_checked):
+        self.widget3d.scene.show_skybox(is_checked)
+
 
     def _on_kf_window_chbox(self, is_checked):
         if self.kf_window is None:
@@ -541,7 +603,7 @@ class SLAM_GUI:
 
                 if is_checked:
                     self.widget3d.scene.remove_geometry(name)
-                    self.widget3d.scene.add_geometry(name, line_set, self.lit)
+                    self.widget3d.scene.add_geometry(name, line_set, self.traj_render)
                 else:
                     self.widget3d.scene.remove_geometry(name)
 
@@ -577,6 +639,12 @@ class SLAM_GUI:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cv2.imwrite(f"{filename}.png", img)
 
+    def _set_mouse_mode(self, is_on):
+        if is_on:
+            self.widget3d.set_view_controls(gui.SceneWidget.Controls.FLY)
+        else:
+            self.widget3d.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA_SPHERE)
+
     @staticmethod
     def resize_img(img, width):
         height = int(width * img.shape[0] / img.shape[1])
@@ -605,6 +673,9 @@ class SLAM_GUI:
         self.gaussian_cur = gaussian_packet
         self.init = True
 
+        if gaussian_packet.frame_id is not None:
+            self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
+                
         # TODO: with MLP, think about the random seed issue
         if gaussian_packet.has_neural_points:
             self.neural_points_info.text = "# Neural points: {} (local {})".format(
@@ -616,7 +687,7 @@ class SLAM_GUI:
             self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
             if self.neural_point_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
-                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.lit_geo)
+                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
             # show feature PCA color
 
@@ -677,7 +748,7 @@ class SLAM_GUI:
                 self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
             if self.scan_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.scan_name)
-                self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.lit_geo)
+                self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
 
         if gaussian_packet.sdf_slice_xyz is not None:
             self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
@@ -698,7 +769,7 @@ class SLAM_GUI:
 
             if self.mesh_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.mesh_name)
-                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.specular_geo)
+                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
 
         if gaussian_packet.gt_poses is not None:
             gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
@@ -709,7 +780,7 @@ class SLAM_GUI:
             # print(self.gt_traj)
             if self.traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.gt_traj_name)
-                self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.lit)
+                self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
             # if gaussian_packet.slam_poses is None:
                 # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.gt_poses[-1]
@@ -728,7 +799,7 @@ class SLAM_GUI:
             # print(self.gt_traj)
             if self.traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.slam_traj_name)
-                self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.lit)
+                self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
             
             # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.slam_poses[-1]
             # self.sensor_cad.transform(relative_tran)
@@ -882,6 +953,9 @@ class SLAM_GUI:
     #     return rendering_data
 
     def rasterise(self, current_cam):
+        
+        # TODO: subscribe to current camera, reset local map for rendering
+
         if self.gaussian_cur is None:
             return None
 
@@ -977,7 +1051,7 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.elipsoid_chbox.checked: # important
+        elif self.elliopsoid_chbox.checked: # important
             if self.gaussian_cur is None:
                 return
             glfw.poll_events()
@@ -1052,12 +1126,16 @@ class SLAM_GUI:
     def render_gui(self):
         if not self.init:
             return
-        current_cam = self.get_current_cam()
-        results = self.rasterise(current_cam)
-        if results is None:
-            return
-        # print("Results get")
-        self.render_img = self.render_o3d_image(results, current_cam)
+        current_cam = self.get_current_cam() # TODO, you can also send back it to main
+        
+        if not self.gs_chbox.checked:
+            self.render_img = None
+        else:
+            results = self.rasterise(current_cam)
+            if results is None:
+                return
+            # print("Results get")
+            self.render_img = self.render_o3d_image(results, current_cam)
         # self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
         self.widget3d.scene.set_background([1, 1, 1, 1], self.render_img)
 
@@ -1075,15 +1153,15 @@ class SLAM_GUI:
                 break
 
             def update():
-                if self.button_render.is_on:
-                    # print("UPDATE scene")
-                    if self.step % 3 == 0: # 0.03s # 30 Hz
-                        # print("UPDATE scene happens")
-                        # self.scene_update() # don't do it so frequently
-                        self.render_gui()
+                # if self.button_render.is_on:
+                # print("UPDATE scene")
+                if self.step % 3 == 0: # 0.03s # 30 Hz
+                    # print("UPDATE scene happens")
+                    # self.scene_update() # don't do it so frequently
+                    self.render_gui()
 
-                    if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
-                        self.receive_data(self.q_main2vis)
+                if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
+                    self.receive_data(self.q_main2vis)
 
                 if self.step >= 1e9:
                     self.step = 0

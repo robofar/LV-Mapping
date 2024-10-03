@@ -26,7 +26,14 @@ class WaymoDataset:
         self.cam_front_right_topic_name = "FRONT_RIGHT"
         self.cam_side_left_topic_name = "SIDE_LEFT"
         self.cam_side_right_topic_name = "SIDE_RIGHT"
-        self.cam_names = [self.cam_front_topic_name, self.cam_front_left_topic_name, self.cam_front_right_topic_name, self.cam_side_left_topic_name, self.cam_side_right_topic_name]
+
+        self.main_cam_only: bool = True
+        self.main_cam_name = self.cam_front_topic_name
+
+        if self.main_cam_only:
+            self.cam_names = [self.main_cam_name]
+        else:
+            self.cam_names = [self.cam_front_topic_name, self.cam_front_left_topic_name, self.cam_front_right_topic_name, self.cam_side_left_topic_name, self.cam_side_right_topic_name]
 
         self.K_mats = {}
         self.T_c_l_mats = {}
@@ -119,23 +126,30 @@ class WaymoDataset:
         # points_ts = self.get_timestamps()
 
         # load img
-        img_front = self.read_img(self.img_front_files[idx])
-        img_front_left = self.read_img(self.img_front_left_files[idx])
-        img_front_right = self.read_img(self.img_front_right_files[idx])
-        img_side_left = self.read_img(self.img_side_left_files[idx])
-        img_side_right = self.read_img(self.img_side_right_files[idx])
+        
+        if self.main_cam_only:
+            img_front = self.read_img(self.img_front_files[idx])
+            img_dict = {self.cam_front_topic_name: img_front}
+        else:
+            img_front = self.read_img(self.img_front_files[idx])
+            img_front_left = self.read_img(self.img_front_left_files[idx])
+            img_front_right = self.read_img(self.img_front_right_files[idx])
+            img_side_left = self.read_img(self.img_side_left_files[idx])
+            img_side_right = self.read_img(self.img_side_right_files[idx])
 
-        img_dict = {self.cam_side_left_topic_name: img_side_left,
-                    self.cam_front_left_topic_name: img_front_left, 
-                    self.cam_front_topic_name: img_front,
-                    self.cam_front_right_topic_name: img_front_right,
-                    self.cam_side_right_topic_name: img_side_right}
+            img_dict = {self.cam_side_left_topic_name: img_side_left,
+                        self.cam_front_left_topic_name: img_front_left, 
+                        self.cam_front_topic_name: img_front,
+                        self.cam_front_right_topic_name: img_front_right,
+                        self.cam_side_right_topic_name: img_side_right}
 
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
         
         for cam_name in list(img_dict.keys()):
             points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], 
                                                     self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+
+            img_dict[cam_name] = np.concatenate((img_dict[cam_name], np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -202,7 +216,6 @@ class WaymoDataset:
                 cam_extrinsic = np.array(cam_params["extrinsic"]) # T_b_c
                 self.T_c_l_mats[cam_name] = np.linalg.inv(cam_extrinsic) @ self.lidar_top_extrinsic # T_c_l
 
-        self.main_cam_name = "FRONT"
         main_cam_K_mat = self.K_mats[self.main_cam_name]
         main_cam_extrinsic = self.T_c_l_mats[self.main_cam_name]
 

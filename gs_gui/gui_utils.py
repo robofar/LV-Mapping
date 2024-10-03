@@ -77,6 +77,7 @@ def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02):
 class VisPacket:
     def __init__(
         self,
+        frame_id = None,
         current_frame=None,
         keyframe=None,
         gaussian_xyz=None,
@@ -109,6 +110,8 @@ class VisPacket:
         self.neural_points_data = None
 
         self.local_gaussian_count = 0
+
+        self.frame_id = frame_id
 
         if gaussian_xyz is not None:
             self.has_gaussians = True
@@ -146,7 +149,7 @@ class VisPacket:
                     gtnormal = current_frame.normal_img_list[img_down_rate]
         
             self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
-            self.gtdepth = self.resize_img(gtdepth, self.img_resize_width)
+            self.gtdepth = self.resize_img(gtdepth, self.img_resize_width, is_sparse=True)
             self.gtnormal = self.resize_img(gtnormal, self.img_resize_width)
 
         self.keyframes = keyframes
@@ -227,7 +230,7 @@ class VisPacket:
         self.gt_poses = gt_poses
         self.slam_poses = slam_poses
 
-    def resize_img(self, img, width):
+    def resize_img(self, img, width, is_sparse: bool = False):
         if img is None:
             return None
 
@@ -238,9 +241,11 @@ class VisPacket:
         # or as torch
         height = int(width * img.shape[1] / img.shape[2])
         # img is 3xHxW
-        img = torch.nn.functional.interpolate(
-            img.unsqueeze(0), size=(height, width), mode="bilinear", align_corners=False
-        )
+        if is_sparse:
+            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(height, width), mode='nearest-exact')
+        else:
+            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(height, width), mode="bilinear", align_corners=False)
+
         return img.squeeze(0)
 
     def get_covariance(self, scaling_modifier=1):
@@ -274,6 +279,8 @@ def get_latest_queue(q):
 
 class Packet_vis2main:
     flag_pause = None
+    flag_nextbatch = None
+    cur_cam = None
 
 
 class ParamsGUI:

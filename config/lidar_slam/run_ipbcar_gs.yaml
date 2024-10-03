@@ -5,47 +5,54 @@ setting:
   color_channel: 3
   color_map_on: True
 process:
-  min_range_m: 2.0
+  min_range_m: 3.0
   max_range_m: 80.0
+  vox_down_m: 0.08
   estimate_normal: False
 sampler:
-  surface_sample_range_m: 0.2
+  surface_sample_range_m: 0.3
+  surface_sample_n: 3
+  free_sample_begin_ratio: 0.3
+  free_sample_end_dist_m: 1.0
+  free_front_sample_n: 3
 neuralpoints:
   voxel_size_m: 0.25
   search_alpha: 0.8
   query_nn_k: 8
+  feature_dim: 32
+  color_feature_dim: 16
+decoder:
+  freeze_after_frame: 40
 continual:
-  batch_size_new_sample: 2000
-  pool_capacity: 2e7
+  batch_size_new_sample: 1500
+  pool_capacity: 1e7
   pool_filter_freq: 10
-tracker:
-  source_vox_down_m: 0.8
-  iter_n: 50
+# tracker:
+#   source_vox_down_m: 0.8
+#   iter_n: 50
 pgo:
   map_context: True
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  gs_iters: 20
-  gs_bs: 5
+  gs_iters: 50
+  gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2
-  img_pool_size: 20
-  gs_down_rate: 2
-  gs_vis_down_rate: 2
-  sh_degree: 1
-  init_opacity: 0.99
+  img_pool_size: 50
+  gs_down_rate: 0
+  gs_vis_down_rate: 0
   inverse_depth_loss: True
-  lambda_depth: 0.1
-  lambda_distort: 100.0
-  lambda_normal: 0.05 # not too big 0.05 
-  lambda_isotropic: 1.0 # todo  
-  lambda_sdf_cons: 1.0
-  lambda_sdf_normal_cons: 1.0 # rendered normal seems to be better without this loss
-  lambda_sdf: 0.0
+  lambda_depth: 10.0
+  lambda_opacity: 1e-4 # 1e-3 # increase to have more valid gaussians
+  # lambda_area: 1e-2 # 1e-3
+  lambda_sdf_cons: 0.1
+  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
+  lambda_sdf: 0.1
 optimizer: # mapper
   iters: 15  # iterations per frame
-  batch_size: 16384
+  batch_size: 8192
 eval:
+  o3d_vis_on: True
   sensor_cad_path: ./cad/ipb_car_multicam.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 20

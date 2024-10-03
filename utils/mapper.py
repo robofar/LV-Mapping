@@ -833,9 +833,7 @@ class Mapper:
                 if not self.config.weighted_first:
                     color_pred = torch.sum(color_pred * weight_knn, dim=1)  # N, C
 
-            surface_mask = (
-                torch.abs(sdf_label) < self.config.surface_sample_range_m
-            )  # weight > 0
+            surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
 
             if self.require_gradient:
                 g = get_gradient(coord, sdf_pred)  # to unit m
@@ -1152,7 +1150,10 @@ class Mapper:
                 # ----------------
                 # RGB rendering loss (combining L1 and SSIM)
                 loss_rgb_l1 = l1_loss(rendered_rgb_image, gt_rgb_image)
-                rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(rendered_rgb_image, gt_rgb_image))
+                if self.config.lambda_dssim > 0.0:
+                    rgb_loss = (1.0 - self.config.lambda_dssim) * loss_rgb_l1 + self.config.lambda_dssim * (1.0 - ssim(rendered_rgb_image, gt_rgb_image))
+                else:
+                    rgb_loss = loss_rgb_l1 # l1 only, ssim might take a long time
 
                 # ----------------
                 # Depth rendering loss
@@ -1240,6 +1241,8 @@ class Mapper:
                     # print(" Sky loss:", sky_loss.item())
                     if viewpoint_cam.mono_normal_on and mono_normal_loss > 0.0 and self.config.lambda_mono_normal > 0:
                         print(" Mono normal loss:", mono_normal_loss.item())
+                    if distort_loss > 0:
+                        print(" Ddepth distortion loss:", distort_loss.item())
 
                 depth_loss *= self.config.lambda_depth
                 
@@ -1321,18 +1324,20 @@ class Mapper:
                 # Opacity regularization loss (prefer large value, prefer positive value)
                 # let the opacity to be ideally larger
                 opacity_loss = 0.0
-                if self.config.lambda_opacity > 0 and alpha_all is not None:
-                    opacity_loss = 1.0 - alpha_all.mean() # value between [0, 2]
-                    if not self.silence:
-                        print(" Opacity loss:", opacity_loss.item())
-                    opacity_loss *= self.config.lambda_opacity
+                if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight)
+                    masked_alpha_mask = (alpha_all<0) # now only let those gaussians has negative opacity to increase their opacity
+                    if torch.sum(masked_alpha_mask) > 0: 
+                        opacity_loss = 0.0 - (alpha_all[masked_alpha_mask]).mean() # alpha value between [0, 2]
+                        if not self.silence:
+                            print(" Opacity loss:", opacity_loss.item())
+                        opacity_loss *= self.config.lambda_opacity
 
                 # Gaussian SDF consistency loss
                 sdf_consistency_loss = 0.0
                 sdf_normal_consistency_loss = 0.0
                 if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
-                    # sampled_guassians_xyz = self.neural_points.get_local_xyz[sampled_indices]
-                    # sampled_guassians_normals = rotation2normal(self.neural_points.get_local_rotation[sampled_indices]) # N, 3 # this is definitely normalized
+                    
+                    # no problem with the free mask here
 
                     sampled_guassians_xyz = gaussian_xyz[sampled_indices]
                     sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
@@ -1340,17 +1345,21 @@ class Mapper:
                     sampled_guassians_xyz.requires_grad_(True)
 
                     sampled_guassians_sdf = self.sdf(sampled_guassians_xyz)[0] # sdf, sdf_std
-                    sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one
+                    sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
                     grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
+                    
+                    # print(grad_norm)
+                    # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
+
                     # maybe relax this a bit
-                    # valid_grad_mask = (grad_norm < self.config.reg_max_grad_norm) & (grad_norm > self.config.reg_min_grad_norm)
+                    valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5)
                     # # TODO: why there are fewer and fewer valid points TODO
                     # valid_grad_mask = valid_grad_mask.detach()
-                    # valid_grad_count = torch.sum(valid_grad_mask).item()
-                    # if not self.silence:
-                    #     print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                    valid_grad_count = torch.sum(valid_grad_mask).item()
+                    if not self.silence:
+                        print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
-                    valid_grad_mask = torch.ones_like(sampled_guassians_sdf, device=self.device, dtype=torch.bool)
+                    # valid_grad_mask = torch.ones_like(sampled_guassians_sdf, device=self.device, dtype=torch.bool)
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
@@ -1379,27 +1388,32 @@ class Mapper:
                 # TODO: add 3D color loss
                 sdf_loss = 0.0
                 eikonal_loss = 0.0
+                color_loss = 0.0
+
                 if sdf_loss_on and self.config.lambda_sdf > 0.0:
                     # with batch size bs
-                    coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=not self.ba_done_flag)
+                    coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=True)
                         
                     poses = self.used_poses[ts]
                     origins = poses[:, :3, 3]
-
-                    # transformed to global frame if ba is done
-                    if self.ba_done_flag:
-                        coord = transform_batch_torch(coord, poses)
                         
                     if self.require_gradient:
                         coord.requires_grad_(True)
                         
-                    geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts)
+                    geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on)
                     
                     # predict the scaled sdf with the feature
                     sdf_pred = self.sdf_mlp.sdf(geo_feature) # [N, K, 1]  
 
                     if not self.config.weighted_first:
                         sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
+                    
+                    if self.config.color_on:
+                        color_pred = self.color_mlp.regress_color(color_feature)  # [N, K, C]
+                        if not self.config.weighted_first:
+                            color_pred = torch.sum(color_pred * weight_knn, dim=1)  # N, C
+
+                    surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
@@ -1414,14 +1428,24 @@ class Mapper:
                                 coord[:: self.config.gradient_decimation],
                                 sdf_pred[:: self.config.gradient_decimation],
                                 self.config.voxel_size_m * self.config.num_grad_step_ratio)
-                        eikonal_loss = self.config.weight_e * ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
-                        if not self.silence:
-                            print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
-                        eikonal_loss *= self.config.lambda_sdf
+                        eikonal_loss = ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
+                        
+                    if self.config.color_on and self.config.weight_i > 0:
+                        color_loss = color_diff_loss(
+                            color_pred[surface_mask],
+                            color_label[surface_mask],
+                            weight[surface_mask],
+                            self.config.loss_weight_on,
+                            l2_loss=False,
+                        )
+                        
+                    if not self.silence:
+                        print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
 
-                    sdf_loss *= self.config.lambda_sdf
+                    eikonal_loss *= self.config.weight_e
+                    color_loss *= self.config.weight_i 
+
                 # ----------------
-
 
                 # Total loss
                 # TODO: monitor losses by wandb
@@ -1430,7 +1454,7 @@ class Mapper:
                     + mono_normal_loss + sky_loss + distort_loss \
                     + isotropic_loss + area_loss + opacity_loss \
                     + sdf_consistency_loss + sdf_normal_consistency_loss \
-                    + sdf_loss + eikonal_loss
+                    + self.config.lambda_sdf * (sdf_loss + eikonal_loss + color_loss)
 
                 total_loss.backward() 
 
@@ -1693,8 +1717,8 @@ class Mapper:
         with torch.no_grad():
             cam_name = self.dataset.loader.main_cam_name
             K_mat = self.dataset.K_mats[cam_name]
-            height = self.dataset.loader.cam_heights[cam_name]
-            width = self.dataset.loader.cam_widths[cam_name] 
+            # height = self.dataset.loader.cam_heights[cam_name]
+            # width = self.dataset.loader.cam_widths[cam_name] 
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
 
             background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
@@ -1712,7 +1736,7 @@ class Mapper:
                 T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
                 assert self.config.use_dataloader, "Only data loader version is supported currently"
-                self.dataset.read_frame_with_loader(frame_id, init_pose = False, monodepth_on=True) # because we want to use the sky mask here
+                self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
 
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.set_pose(T_w_c)
@@ -1772,7 +1796,7 @@ class Mapper:
                 # if not self.silence:
                 #     print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
-    def gs_eval_out(self, gs_time_table = None):
+    def gs_eval_out(self, split = "train", gs_time_table = None):
         
         val_pnsr_np = val_ssim_np = val_lpips_np = val_depthl1_np = val_depth_rmse_np = gs_time_mean = 0.0
 
@@ -1817,7 +1841,7 @@ class Mapper:
                     gs_csv_columns[6]: len(self.val_psnr_list),
                 }
             ]
-        gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval.csv")
+        gs_output_csv_path = os.path.join(self.config.run_path, split+"_gs_eval.csv")
         try:
             with open(gs_output_csv_path, "w") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)

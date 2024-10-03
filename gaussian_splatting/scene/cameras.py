@@ -21,7 +21,7 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min=0.01, z_max=100.0,
+    def __init__(self, frame_id: int, image, K_mat, z_min=0.1, z_max=100.0,
         cam_id: str = "cam", img_down_rate = 0, normal_img = None, sky_mask = None, 
         device = "cuda", cam_pose = None, img_width = None, img_height = None):
         

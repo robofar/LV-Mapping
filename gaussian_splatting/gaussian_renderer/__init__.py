@@ -17,10 +17,9 @@ import torch
 
 # we support multiple GS variants: 3d_gs, 2d_gs, gaussian_surfel
 gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
-gs_dim = [3, 2, 3]
 
 gs_type = "gaussian_surfel"
-# gs_type = "3d_gs"
+# gs_type = "2d_gs"
 
 # 2DGS
 if gs_type == "2d_gs":
@@ -77,6 +76,7 @@ def render(viewpoint_camera: CamImage,
     # Set up rasterization configuration (scalar value)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+    z_far = viewpoint_camera.zfar
 
     # TODO: document this part, figure out why
     if cam_pose is not None:
@@ -182,7 +182,7 @@ def render(viewpoint_camera: CamImage,
         # Spawn Gaussians
         gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask = spawn_gaussians(neural_points_data,
             decoders, visible_neural_point_mask, viewpoint_camera.camera_center, 
-            dist_concat_on, view_concat_on, alpha_filter_on)
+            dist_concat_on, view_concat_on, alpha_filter_on, z_far)
     
 
     means3D = gaussian_xyz
@@ -235,7 +235,6 @@ def render(viewpoint_camera: CamImage,
         
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
-        results = {}
 
         # additional regularizations
         render_alpha = allmap[1:2]
@@ -244,10 +243,10 @@ def render(viewpoint_camera: CamImage,
         # transform normal from view space to world space
         # this is the normal of the gaussian at the rendered surface
         render_normal = allmap[2:5]
-        render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
+        # render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1) # to world frame
         # render_normal = render_normal / render_alpha
         render_normal = torch.nan_to_num(render_normal, 0, 0)
-        # figure out this rendered normal is in which coordinate system
+        # figure out this rendered normal is in which coordinate system 
         
         # get median depth map # what does this mean? # TODO
         render_depth_median = allmap[5:6]
@@ -281,10 +280,12 @@ def render(viewpoint_camera: CamImage,
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
 
-        mask_vis = (render_alpha.detach() > 1e-3)
-        d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
+        # mask_vis = (render_alpha.detach() > 1e-3)
+        # d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
 
         # d2n = depth_to_normal(viewpoint_camera, surf_depth) # in world frame
+
+        d2n = None 
 
         # rendered result
         results.update({
@@ -362,7 +363,8 @@ def spawn_gaussians(neural_points_data: Dict,
                     cam_origin: torch.tensor = None, 
                     dist_concat_on: bool = False, 
                     view_concat_on: bool = False,
-                    alpha_filter_on: bool = True):
+                    alpha_filter_on: bool = True,
+                    z_far: float = 100.0):
 
     neural_point_position = neural_points_data["position"]
     neural_point_color = neural_points_data["color"]
@@ -410,16 +412,16 @@ def spawn_gaussians(neural_points_data: Dict,
     # ------------------
     # Position (view independent)
 
-    displacement_range = 4.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position)
+    displacement_range = 1.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position) # 1.0 might be too small maybe
     if neural_point_free_mask is not None:
-        displacement_range[neural_point_free_mask] = 10.0 * neural_point_resolution
+        displacement_range[neural_point_free_mask] = 5.0 * neural_point_resolution
 
     # test this scale here, better to not be too large (FIXME)
     xyz_displacement = displacement_range * torch.tanh(gaussian_xyz_mlp.mlp(geo_feature_in)) # N, 3K # [-1,1]        
     # print(xyz_displacement)
 
-    local_point_count = xyz_displacement.shape[0]
-    gaussian_count_per_point = gaussian_xyz_mlp.out_k
+    local_point_count = xyz_displacement.shape[0] # N
+    gaussian_count_per_point = gaussian_xyz_mlp.out_k # K
     local_gaussian_count = local_point_count * gaussian_count_per_point
 
     gaussian_xyz = neural_point_position.repeat(1, gaussian_count_per_point) + xyz_displacement # N, 3K
@@ -435,21 +437,26 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # ------------------
     # Scale (view dependent or not) ? # TODO
+    max_gaussian_scale = 2.0 * neural_point_resolution
+    dist_ratio = 1.0
+    if view_distance is not None:
+        dist_ratio = view_distance / z_far # N, 1
+        dist_ratio = dist_ratio.repeat(1, 2*gaussian_count_per_point)
 
-    gaussian_scale = neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
+    gaussian_scale = 0.2 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in) + dist_ratio) # N, 2K
+    gaussian_scale = torch.clamp(gaussian_scale, max=max_gaussian_scale)
     # FIXME
     # what should be the maximum size here? $ TODO
-    # gaussian_scale = 1.0 * neural_point_resolution * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
+    # gaussian_scale = max_gaussian_scale * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
     
     gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
     
     # print("mean scale:", gaussian_scale.mean().item())
     
-    thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
-    gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
+    if gs_type != "2d_gs": # then support 3 dim
+        thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
+        gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
     
-
-
     if dist_concat_on and view_distance is not None:
         # print(view_distance)
         geo_feature_in = torch.concat((geo_feature_in, view_distance), dim=1)

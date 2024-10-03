@@ -147,6 +147,7 @@ class NeuralPoints(nn.Module):
         
         # self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)
+        self.free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
         # self.max_radii2D = torch.empty(0, dtype=self.dtype, device=self.device) # maximum projected radius for projected 2D Gaussian, N,
         # self.xyz_gradient_accum = torch.empty(0, dtype=self.dtype, device=self.device)
@@ -196,10 +197,9 @@ class NeuralPoints(nn.Module):
         # self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
-        self.local_free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
-
+        
         # restricted by sdf or not
-        self.free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
+        self.local_free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
         # set neighborhood search region
         self.set_search_neighborhood(
@@ -249,143 +249,6 @@ class NeuralPoints(nn.Module):
         actual_covariance = L @ L.transpose(1, 2)
         symm = strip_symmetric(actual_covariance)
         return symm
-    
-    # for GS
-    # def setup_functions(self):
-    #     self.scaling_activation = torch.exp
-    #     self.scaling_inverse_activation = torch.log
-
-    #     if self.gs_dim_count == 2:
-    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_2dgs # FIXME
-    #     else: # by defult 3DGS
-    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_3dgs
-
-    #     self.opacity_activation = torch.sigmoid
-    #     self.inverse_opacity_activation = inverse_sigmoid
-    #     self.rotation_activation = torch.nn.functional.normalize
-
-    
-    # @property
-    # def get_local_xyz(self):
-    #     # print(self.local_xyz)
-    #     return self.local_neural_points + self.local_xyz
-    
-    # @property
-    # def get_xyz(self):
-    #     return self.neural_points + self.xyz
-    
-    # @property
-    # def get_local_features(self):
-    #     features_dc = self.local_features_dc
-    #     features_rest = self.local_features_rest
-    #     return torch.cat((features_dc, features_rest), dim=1)
-    
-    # @property
-    # def get_features(self):
-    #     return torch.cat((self.features_dc, self.features_rest), dim=1)
-    
-    # # they all need the activation
-    # @property
-    # def get_local_opacity(self):
-    #     return self.opacity_activation(self.local_opacity)
-    
-    # @property
-    # def get_opacity(self):
-    #     return self.opacity_activation(self.opacity)
-    
-    # @property
-    # def get_local_scaling(self):
-    #     return self.scaling_activation(self.local_scaling) #.clamp(max=1)
-    
-    # @property
-    # def get_scaling(self):
-    #     return self.scaling_activation(self.scaling) #.clamp(max=1)
-    
-    # @property
-    # def get_local_rotation(self):
-    #     return self.rotation_activation(self.local_rotation)
-    
-    # @property
-    # def get_rotation(self):
-    #     return self.rotation_activation(self.rotation)
-
-
-    # def get_local_covariance(self, scaling_modifier = 1):
-    #     return self.covariance_activation(self.get_local_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
-
-    # def get_covariance(self, scaling_modifier = 1):
-    #     return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self.rotation)
-    
-
-    # for GS
-    # def training_setup_gs(self, with_pin_feature: bool = True):
-
-    #     if self.config.movable_gs:
-    #         self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
-    #     else:
-    #         self.position_lr_init: float = 0.0 # not movable
-
-    #     self.feature_lr: float = 0.0025 # for SH, color
-    #     self.opacity_lr: float = self.config.gs_opacity_lr # 0.05
-    #     self.scaling_lr: float = self.config.gs_scaling_lr # 0.005
-    #     self.rotation_lr: float = self.config.gs_rotation_lr # 0.1 # 0.001 # ADD to config. TODO
-
-    #     # not very useful
-    #     self.position_lr_final: float = 0.0000016
-    #     self.position_lr_delay_mult: float = 0.01
-    #     self.position_lr_max_steps: float = 30_000
-    #     self.percent_dense: float = 0.01
-    #     self.feature_rest_lr_init: float = 0.0025 / 20.
-    #     self.feature_rest_lr_final_factor: float = 0.1
-    #     self.feature_rest_lr_max_steps: int = -1
-    #     self.feature_extra_lr_init: float = 1e-3
-    #     self.feature_extra_lr_final_factor: float = 0.1
-    #     self.feature_extra_lr_max_steps: int = 30_000
-
-    #     # densification_interval: int = 100
-    #     # opacity_reset_interval: int = 3000
-    #     # densify_from_iter: int = 500
-    #     # densify_until_iter: int = 15_000
-    #     # densify_grad_threshold: float = 0.0002
-
-    #     # TODO: it's also necessary to duplicate, clone, split the gaussians
-
-
-    #     # self.xyz_gradient_accum = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
-    #     # self.denom = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
-
-    #     # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
-    #     # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
-
-    #     l = [
-    #         {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-    #         # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
-    #         {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
-    #         {'params': [self.local_features_rest], 'lr': self.feature_lr / 20.0, "name": "f_rest"},
-    #         {'params': [self.local_opacity], 'lr': self.opacity_lr, "name": "opacity"},
-    #         {'params': [self.local_scaling], 'lr': self.scaling_lr, "name": "scaling"},
-    #         {'params': [self.local_rotation], 'lr': self.rotation_lr, "name": "rotation"}
-    #     ]
-
-    #     if with_pin_feature:
-    #         l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
-
-    #     self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-    #     # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
-    #     #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
-    #     #                                             lr_delay_mult=self.position_lr_delay_mult,
-    #     #                                             max_steps=self.position_lr_max_steps)
-    
-    # For GS
-    def update_learning_rate(self, iteration):
-        ''' Learning rate scheduling per step '''
-        for param_group in self.optimizer.param_groups:
-            if param_group["name"] == "xyz":
-                lr = self.xyz_scheduler_args(iteration)
-                param_group['lr'] = lr
-                return lr
-
-    # TODO: add GS pruning and densification related
 
 
     def print_memory(self):
@@ -958,6 +821,158 @@ class NeuralPoints(nn.Module):
             nn_counts,
             queried_certainty,
         )
+
+    # for GS
+    
+    # @staticmethod
+    # def build_covariance_from_scaling_rotation_2dgs(center, scaling, scaling_modifier, rotation):
+    #     RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0,2,1)
+    #     trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
+    #     trans[:,:3,:3] = RS
+    #     trans[:, 3,:3] = center
+    #     trans[:, 3, 3] = 1
+    #     return trans
+
+    # def build_covariance_from_scaling_rotation_3dgs(center, scaling, scaling_modifier, rotation): # center not used
+    #     L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+    #     actual_covariance = L @ L.transpose(1, 2)
+    #     symm = strip_symmetric(actual_covariance)
+    #     return symm
+    
+
+    # def setup_functions(self):
+    #     self.scaling_activation = torch.exp
+    #     self.scaling_inverse_activation = torch.log
+
+    #     if self.gs_dim_count == 2:
+    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_2dgs # FIXME
+    #     else: # by defult 3DGS
+    #         self.covariance_activation = self.build_covariance_from_scaling_rotation_3dgs
+
+    #     self.opacity_activation = torch.sigmoid
+    #     self.inverse_opacity_activation = inverse_sigmoid
+    #     self.rotation_activation = torch.nn.functional.normalize
+
+    
+    # @property
+    # def get_local_xyz(self):
+    #     # print(self.local_xyz)
+    #     return self.local_neural_points + self.local_xyz
+    
+    # @property
+    # def get_xyz(self):
+    #     return self.neural_points + self.xyz
+    
+    # @property
+    # def get_local_features(self):
+    #     features_dc = self.local_features_dc
+    #     features_rest = self.local_features_rest
+    #     return torch.cat((features_dc, features_rest), dim=1)
+    
+    # @property
+    # def get_features(self):
+    #     return torch.cat((self.features_dc, self.features_rest), dim=1)
+    
+    # # they all need the activation
+    # @property
+    # def get_local_opacity(self):
+    #     return self.opacity_activation(self.local_opacity)
+    
+    # @property
+    # def get_opacity(self):
+    #     return self.opacity_activation(self.opacity)
+    
+    # @property
+    # def get_local_scaling(self):
+    #     return self.scaling_activation(self.local_scaling) #.clamp(max=1)
+    
+    # @property
+    # def get_scaling(self):
+    #     return self.scaling_activation(self.scaling) #.clamp(max=1)
+    
+    # @property
+    # def get_local_rotation(self):
+    #     return self.rotation_activation(self.local_rotation)
+    
+    # @property
+    # def get_rotation(self):
+    #     return self.rotation_activation(self.rotation)
+
+
+    # def get_local_covariance(self, scaling_modifier = 1):
+    #     return self.covariance_activation(self.get_local_xyz, self.get_local_scaling, scaling_modifier, self.local_rotation)
+
+    # def get_covariance(self, scaling_modifier = 1):
+    #     return self.covariance_activation(self.get_xyz, self.get_scaling, scaling_modifier, self.rotation)
+    
+
+    # for GS
+    # def training_setup_gs(self, with_pin_feature: bool = True):
+
+    #     if self.config.movable_gs:
+    #         self.position_lr_init: float = self.config.gs_position_lr # 0.00016 # let the gaussians to move 
+    #     else:
+    #         self.position_lr_init: float = 0.0 # not movable
+
+    #     self.feature_lr: float = 0.0025 # for SH, color
+    #     self.opacity_lr: float = self.config.gs_opacity_lr # 0.05
+    #     self.scaling_lr: float = self.config.gs_scaling_lr # 0.005
+    #     self.rotation_lr: float = self.config.gs_rotation_lr # 0.1 # 0.001 # ADD to config. TODO
+
+    #     # not very useful
+    #     self.position_lr_final: float = 0.0000016
+    #     self.position_lr_delay_mult: float = 0.01
+    #     self.position_lr_max_steps: float = 30_000
+    #     self.percent_dense: float = 0.01
+    #     self.feature_rest_lr_init: float = 0.0025 / 20.
+    #     self.feature_rest_lr_final_factor: float = 0.1
+    #     self.feature_rest_lr_max_steps: int = -1
+    #     self.feature_extra_lr_init: float = 1e-3
+    #     self.feature_extra_lr_final_factor: float = 0.1
+    #     self.feature_extra_lr_max_steps: int = 30_000
+
+    #     # densification_interval: int = 100
+    #     # opacity_reset_interval: int = 3000
+    #     # densify_from_iter: int = 500
+    #     # densify_until_iter: int = 15_000
+    #     # densify_grad_threshold: float = 0.0002
+
+    #     # TODO: it's also necessary to duplicate, clone, split the gaussians
+
+
+    #     # self.xyz_gradient_accum = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
+    #     # self.denom = torch.zeros((self.get_local_xyz.shape[0], 1), device=self.device)
+
+    #     # local_xyz_non_free = self.local_xyz[~self.local_free_gs_mask]
+    #     # local_xyz_free = self.local_xyz[self.local_free_gs_mask]
+
+    #     l = [
+    #         {'params': [self.local_xyz], 'lr': self.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+    #         # {'params': [local_xyz_free], 'lr': self.position_lr_init * self.spatial_lr_scale*100.0, "name": "xyz_free"},
+    #         {'params': [self.local_features_dc], 'lr': self.feature_lr, "name": "f_dc"},
+    #         {'params': [self.local_features_rest], 'lr': self.feature_lr / 20.0, "name": "f_rest"},
+    #         {'params': [self.local_opacity], 'lr': self.opacity_lr, "name": "opacity"},
+    #         {'params': [self.local_scaling], 'lr': self.scaling_lr, "name": "scaling"},
+    #         {'params': [self.local_rotation], 'lr': self.rotation_lr, "name": "rotation"}
+    #     ]
+
+    #     if with_pin_feature:
+    #         l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
+
+    #     self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+    #     # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,
+    #     #                                             lr_final=self.position_lr_final*self.spatial_lr_scale,
+    #     #                                             lr_delay_mult=self.position_lr_delay_mult,
+    #     #                                             max_steps=self.position_lr_max_steps)
+    
+    # # For GS
+    # def update_learning_rate(self, iteration):
+    #     ''' Learning rate scheduling per step '''
+    #     for param_group in self.optimizer.param_groups:
+    #         if param_group["name"] == "xyz":
+    #             lr = self.xyz_scheduler_args(iteration)
+    #             param_group['lr'] = lr
+    #             return lr
     
     # # test global one first
     # def construct_list_of_attributes(self):
@@ -1395,13 +1410,10 @@ class NeuralPoints(nn.Module):
             self.point_colors = self.point_colors[sample_idx]
 
             sample_idx_pad = torch.cat((sample_idx, torch.tensor([-1]).to(sample_idx)))
-            self.geo_features = self.geo_features[
-                sample_idx_pad
-            ]  # with padding in the end
+            # with padding in the end
+            self.geo_features = self.geo_features[sample_idx_pad] 
             if self.color_features is not None:
-                self.color_features = self.color_features[
-                    sample_idx_pad
-                ]  # with padding in the end
+                self.color_features = self.color_features[sample_idx_pad]
 
             # Gaussian related
             # self.xyz = self.xyz[sample_idx]
@@ -1544,7 +1556,6 @@ class NeuralPoints(nn.Module):
     def clear_temp(self, clean_more: bool = False):
         self.buffer_pt_index = None
         self.local_neural_points = None
-        # self.local_neural_points = nn.Parameter()
         self.local_point_orientations = None
         self.local_geo_features = nn.Parameter()
         self.local_color_features = nn.Parameter()
@@ -1553,12 +1564,12 @@ class NeuralPoints(nn.Module):
         self.local_point_colors = None
         
         # gaussain related
-        self.local_xyz = None
-        self.local_opacity = None
-        self.local_rotation = None
-        self.local_scaling = None
-        self.local_features_dc = None
-        self.local_features_rest = None
+        # self.local_xyz = None
+        # self.local_opacity = None
+        # self.local_rotation = None
+        # self.local_scaling = None
+        # self.local_features_dc = None
+        # self.local_features_rest = None
         
         # self.local_valid_color_mask = None
         self.local_valid_gs_mask = None

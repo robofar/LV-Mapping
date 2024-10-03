@@ -24,11 +24,11 @@ you can visualize the neural gaussians as point cloud in the visualizer by press
 we are using the kitti odometry dataset here, you need `image_2` and `velodyne` folder in your sequence base folder
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -dvl
+python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -dvl
+python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -dvls
+python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -vl
 ```
 
 **pass**
@@ -49,7 +49,7 @@ python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./dat
 ## Run on KITTI MOT dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -dvl
+python pin_slam.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -vl
 
 ```
 
@@ -117,13 +117,13 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 
 ```
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -dvl
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -dvl
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -dvl
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -dvl
+python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -vl
 ```
 
 **pass**
@@ -131,9 +131,11 @@ python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/w
 ## Run on IPB car dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -dvl --range 600 1000 1
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl --range 600 1000 1
+
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 
 ```
 
 The light across different cameras seem to be not identical, figure out a way to do the correction
