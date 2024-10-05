@@ -301,7 +301,7 @@ class Mapper:
 
         T1 = get_time()
 
-        # sampling data for training
+        # sampling data for training (only using the actually measured points, no mono priors)
         (
             coord,
             sdf_label,
@@ -364,21 +364,28 @@ class Mapper:
         )
 
         # update gaussians using mono depth predictions # TODO
-        if mono_depth_point_cloud_torch is not None: 
+        if mono_depth_point_cloud_torch is not None and self.config.monodepth_on: 
             # use the mono depth estimation results to do the initialization
             mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
 
             # also need to transform the normal
             
             # we currently use a easy fix for ground robot to use only the points with large height value
-            update_points_z_quantile = torch.quantile(update_points[:, 2], 0.98) # TODO # height ?
-            mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_z_quantile
+            if self.dataset.loader.mono_depth_for_high_z:
+                update_points_min_z_quantile = torch.quantile(update_points[:, 2], 0.98) + self.config.voxel_size_m # TODO # height ?
+                mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_min_z_quantile
+            else: # mono depth for low z
+                update_points_max_z_quantile = torch.quantile(update_points[:, 2], 0.1) + self.config.voxel_size_m
+                mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] < update_points_max_z_quantile
+
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
 
             # voxel downsampling (make it sparse) # TODO: but how sparse
             down_voxel_size = self.config.monodepth_gaussian_res # add to config # TODO
-            idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
-            mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
+            
+            if mono_depth_point_cloud_torch.shape[0] > 0:
+                idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
+                mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
 
             if mono_depth_point_normals_torch is not None:
                 cur_rot_torch = torch.eye(4)
@@ -1203,8 +1210,8 @@ class Mapper:
                         dist_distortion = dist_distortion * non_sky_mask
                     
                     # masked the sky part as the background color
-                    mask_broadcasted = cur_sky_mask.repeat(3,1,1)
-                    gt_rgb_image[mask_broadcasted] = bg_3d.expand_as(gt_rgb_image)[mask_broadcasted]
+                    # mask_broadcasted = cur_sky_mask.repeat(3,1,1)
+                    # gt_rgb_image[mask_broadcasted] = bg_3d.expand_as(gt_rgb_image)[mask_broadcasted]
 
                 T3_3 = get_time()
 
@@ -1818,6 +1825,7 @@ class Mapper:
                     original_rgb_image = original_img[:3]
 
                     if cur_view_cam.sky_mask_on:
+                        # mask the sky part for eval
                         cur_sky_mask = cur_view_cam.sky_mask_list[eval_down_rate] # still torch
                         mask_broadcasted = cur_sky_mask.repeat(3,1,1)
                         original_rgb_image[mask_broadcasted] = bg_3d.expand_as(original_rgb_image)[mask_broadcasted]

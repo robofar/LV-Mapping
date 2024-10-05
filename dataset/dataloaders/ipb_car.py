@@ -54,7 +54,7 @@ class IPBCarDataset:
         # self.main_cam_name = self.cam_left_topic_name
         # self.main_cam_name_calib = "cameraleftimage_raw"
 
-        self.main_cam_only: bool = False
+        self.main_cam_only: bool = True
 
         self.K_mats = {}
         self.dist_coeffs = {}
@@ -86,6 +86,24 @@ class IPBCarDataset:
 
         self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy")) # is this the pose in LiDAR frame? (ask louis)
         # print(self.gt_poses)
+        
+        # main cam parameters
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        H, W = 1024, 2064
+        self.intrinsic.set_intrinsics(
+                                    height=H,
+                                    width=W,
+                                    fx=self.K_mats[self.main_cam_name][0,0],
+                                    fy=self.K_mats[self.main_cam_name][1,1],
+                                    cx=self.K_mats[self.main_cam_name][0,2],
+                                    cy=self.K_mats[self.main_cam_name][1,2])
+
+        self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
+
+        self.cam_widths = {self.main_cam_name: W}
+        self.cam_heights = {self.main_cam_name: H}
+        
+        self.mono_depth_for_high_z: bool = False # complete the low Z part 
 
 
     def __getitem__(self, idx):

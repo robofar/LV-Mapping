@@ -151,7 +151,7 @@ class Config:
 
         # For GS MLPs (FIXME)
         self.dist_concat_on: bool = True
-        self.view_concat_on: bool = True
+        self.view_concat_on: bool = False
 
         # positional encoding related [not used]
         self.use_gaussian_pe: bool = False # use Gaussian Fourier or original log positional encoding
@@ -214,7 +214,7 @@ class Config:
         self.gs_on: bool = False
         self.gs_eval_on: bool = False
         self.monodepth_on: bool = False
-        self.monodepth_gaussian_res: float = self.voxel_size_m * 4.0
+        self.monodepth_gaussian_res: float = self.voxel_size_m * 2.0
 
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
         self.bg_color = [1.0, 1.0, 1.0] # white 
@@ -323,7 +323,7 @@ class Config:
         self.log_freq_frame: int = 0 # save the result log per x frames
         self.mesh_freq_frame: int = 20  # do the reconstruction per x frames
         self.sdfslice_freq_frame: int = 1 # visualize the SDF slice per x frames
-        self.vis_sdf_slice_v: bool = True # also visualize the vertical SDF slice or not (default only horizontal slice)
+        self.vis_sdf_slice_v: bool = False # also visualize the vertical SDF slice or not (default only horizontal slice)
         self.sdf_slice_height: float = -1.0 # initial height of the horizontal SDF slice (m) in sensor frame
         self.eval_traj_align: bool = True # do the SE3 alignment of the trajectory when evaluating the absolute error
         

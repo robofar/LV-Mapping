@@ -143,10 +143,19 @@ class VisPacket:
             if current_frame.original_image_list[img_down_rate] is not None:
                 cur_gt_img = current_frame.original_image_list[img_down_rate]
                 gtcolor = cur_gt_img[:3]
+                if current_frame.sky_mask_on:
+                    # mask the sky part
+                    cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
+                    cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
+                    gtcolor[cur_sky_mask_used] = 1.0
+                
                 if current_frame.depth_on:
                     gtdepth = cur_gt_img[3].unsqueeze(0)
                 if current_frame.mono_normal_on:
                     gtnormal = current_frame.normal_img_list[img_down_rate]
+                    if current_frame.sky_mask_on:
+                        # mask the sky part
+                        gtnormal[cur_sky_mask_used] = 0.0
         
             self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
             self.gtdepth = self.resize_img(gtdepth, self.img_resize_width, is_sparse=True)

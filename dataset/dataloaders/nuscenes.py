@@ -110,6 +110,8 @@ class NuScenesDataset:
 
         self._load_calib() # load calibs
 
+        self.mono_depth_for_high_z: bool = True
+
         # print(len(self.lidar_tokens))
         # print(len(self.cam_front_tokens))
 

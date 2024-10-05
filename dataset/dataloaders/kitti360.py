@@ -96,6 +96,8 @@ class KITTI360Dataset:
                                         cy=self.K_mat_left[1,2])
         self.extrinsic = self.T_c_l
 
+        self.mono_depth_for_high_z: bool = True
+
         # right cam
         self.cam1_dir = os.path.join(self.img_root_dir, f"image_00/{img_type}/")
         self.img1_files = sorted(glob.glob(self.cam1_dir + "*.png"))

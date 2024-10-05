@@ -228,6 +228,8 @@ class WaymoDataset:
                                         cy=main_cam_K_mat[1,2])
         self.extrinsic = main_cam_extrinsic
 
+        self.mono_depth_for_high_z: bool = True
+
         # gt poses still have some problem 
         #     frame_trans = transforms_dict["frames"]
         #     for frame_meta in frame_trans:

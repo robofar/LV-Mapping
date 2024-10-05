@@ -142,9 +142,16 @@ class SLAM_GUI:
         self.neural_points_render.point_size = 4 * self.window.scaling
         self.neural_points_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
+        # sdf slice
+        self.sdf_render = rendering.MaterialRecord()
+        self.sdf_render.shader = "defaultLit"
+        self.sdf_render.point_size = 10 * self.window.scaling
+        self.sdf_render.base_color = [1.0, 1.0, 1.0, 1.0]
+
         # mesh 
         self.mesh_render = rendering.MaterialRecord()
         self.mesh_render.shader = "normals"
+        # self.mesh_render.base_color = [0.5, 0.5, 0.5, 0.5]
 
 
         # trajectory
@@ -560,7 +567,7 @@ class SLAM_GUI:
     def _on_sdf_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.sdf_name)
-            self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.lit_geo)
+            self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
         else:
             self.widget3d.scene.remove_geometry(self.sdf_name)
 
@@ -759,7 +766,7 @@ class SLAM_GUI:
                     self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
 
                 self.widget3d.scene.remove_geometry(self.sdf_name)
-                self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.lit_geo)
+                self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
 
         if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
             self.mesh = o3d.geometry.TriangleMesh(

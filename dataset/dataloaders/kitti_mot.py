@@ -96,6 +96,8 @@ class KITTIMOTDataset:
 
             self.extrinsic = T_c2_l
 
+            self.mono_depth_for_high_z: bool = True
+
         # get poses in IMU frame by loading oxts data
         oxts_file_path = os.path.join(data_dir, "data_tracking_oxts", self.data_split, "oxts", self.sequence_id+".txt")
         poses_imu_w_tracking, _, _ = self.get_poses_calibration(data_dir, oxts_file_path)  # (n_frames, 4, 4) imu pose

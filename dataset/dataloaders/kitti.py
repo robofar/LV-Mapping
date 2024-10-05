@@ -101,6 +101,8 @@ class KITTIOdometryDataset:
                                         cy=calib_data["K_cam2"][1,2])
 
             self.extrinsic = calib_data['T_cam2_velo'] # T_c_l
+            
+            self.mono_depth_for_high_z: bool = True
 
         ###
 

@@ -391,7 +391,7 @@ def spawn_gaussians(neural_points_data: Dict,
                     view_concat_on: bool = False,
                     alpha_filter_on: bool = True,
                     z_far: float = 100.0,
-                    dist_adaptive_scale: bool = True,
+                    dist_adaptive_scale: bool = False,
                     learn_color_residual: bool = False):
 
     neural_point_position = neural_points_data["position"]

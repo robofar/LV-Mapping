@@ -339,8 +339,9 @@ class SLAMDataset():
                         pred_normal = F.interpolate(pred_normal, size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 3, H, W
                         # normal_confidence = F.interpolate(normal_confidence.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).squeeze(0)  # 1, H, W
 
-                        sky_mask = pred_depth > self.config.max_range * 1.2 # mask out the sky # 1, H, W
-                        sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
+                        # sky_dist_thre = self.config.max_range * 1.2 # TODO, sometimes it does not work well
+                        # sky_mask = pred_depth > sky_dist_thre # mask out the sky # 1, H, W
+                        # sky_mask_np = sky_mask.permute(1,2,0).squeeze(-1).detach().cpu().numpy()
 
                         # How to set these threshold to filter unreliable depth
                         # NOTE: confidence does not really play an important role
@@ -349,11 +350,12 @@ class SLAMDataset():
 
                         # pred_depth[invalid_mask] = 0 
                         pred_depth_np = pred_depth.permute(1,2,0).squeeze(-1).detach().cpu().numpy() # H, W
+                        # pred_depth_np[sky_mask_np] = 0.0 # mask sky part
 
                         # pred_depth_np = cv2.erode(pred_depth_np, self.erosion_element) # H, W
 
                         if use_mono_depth_for_gs_init and cur_img_depth_np is not None:
-                            valid_depth_mask = (cur_img_depth_np > self.config.min_range) & (pred_depth_np > self.config.min_range)
+                            valid_depth_mask = (cur_img_depth_np > self.config.min_range) & (pred_depth_np > self.config.min_range) & (cur_img_depth_np < self.config.max_range*0.5)
                             valid_depth_measurement = cur_img_depth_np[valid_depth_mask]
                             valid_depth_count = np.shape(valid_depth_measurement)[0]
                             # print(valid_depth_count)
@@ -361,8 +363,8 @@ class SLAMDataset():
                             pred_depth_with_gt = pred_depth_np[valid_depth_mask]
                             residual_before = pred_depth_with_gt - valid_depth_measurement
                             rmse_before = np.sqrt((np.mean(residual_before**2)))
-                            # if not self.silence:
-                            #     print("mono depth rmse (m): ", rmse_before) # RMSE (m)
+                            if not self.silence:
+                                print("mono depth rmse (m): ", rmse_before) # RMSE (m)
                             
                             # depth least square fitting with regards to the lidar measurement
                             if valid_depth_count > 100: # at least some valid measurements available
@@ -370,13 +372,20 @@ class SLAMDataset():
                                 # sometimes this fitting would fail (TODO)
                                 k, b = coefficients
                                 rmse_after = np.sqrt((residuals[0]/valid_depth_count))
-                                # if not self.silence:
-                                #     print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
+                                if not self.silence:
+                                    print("depth fitting rmse (m): ", rmse_after) # RMSE (m)
                                 pred_depth_np = k * pred_depth_np + b
                             else:
                                 use_mono_depth_for_gs_init = False
+                                
 
                         toc_lidar_align = get_time()
+
+                        # after the alignment, get the sky mask
+                        sky_dist_thre = self.config.max_range * 1.1 
+                        sky_mask_np = pred_depth_np > sky_dist_thre
+                        pred_depth_np[sky_mask_np] = 0.0
+                        sky_mask = torch.tensor(sky_mask_np, dtype=torch.bool, device=self.device).unsqueeze(0) # 1, H, W
 
                         # image edge detection
                         # Convert the image to grayscale (Canny works better on single-channel images)
@@ -393,10 +402,10 @@ class SLAMDataset():
 
                         # pred_depth_np_uint8 = cv2.GaussianBlur(pred_depth_np_uint8, (5, 5), 0)
 
-                        pred_depth_edges = cv2.Canny(pred_depth_np_uint8, 30, 150)
+                        pred_depth_edges = cv2.Canny(pred_depth_np_uint8, 50, 180)
 
                         # Define a kernel (structuring element) for dilation (the size controls thickness)
-                        dilation_kernel = np.ones((9, 9), np.uint8)
+                        dilation_kernel = np.ones((5, 5), np.uint8)
 
                         # Apply dilation to thicken the edges
                         pred_depth_edges = cv2.dilate(pred_depth_edges, dilation_kernel, iterations=1)  # 'iterations' controls how much thickening
@@ -446,40 +455,45 @@ class SLAMDataset():
                         # cur_img_rgb_cvshow = cv2.cvtColor(cur_img_rgb_np, cv2.COLOR_RGB2BGR)
                         # # cv2.imshow(" Sky mask", cur_img_rgb_cvshow)
                         # cv2.imshow(" Invalid mask", cur_img_rgb_cvshow)
-
-                        pred_depth_np[pred_depth_np < self.config.min_range] = 0.0 # remove too close estimations
+                        # FIXME
+                        if self.loader.mono_depth_for_high_z:
+                            pred_depth_np[(pred_depth_np > 0.6*self.config.max_range)] = 0.0 # remove too far away estimations
+                            pred_depth_np[(pred_depth_np < 2.0*self.config.min_range)] = 0.0
+                        else:
+                            pred_depth_np[pred_depth_np < 0.2*self.config.max_range] = 0.0 # remove close estimations
 
                         cur_img_o3d = o3d.geometry.Image(cur_img_rgb_np)
                         pred_depth_o3d = o3d.geometry.Image(pred_depth_np)
                         cur_normal_o3d = o3d.geometry.Image(pred_normal_vis_np)
 
                         # change the depth trunc here
-                        # rgb d
+                        # rgb-d
                         rgbd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_img_o3d, pred_depth_o3d, 
-                            depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
-                        # normal (as rgb) d
-                        nd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_normal_o3d, pred_depth_o3d, 
-                            depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
-                                                                                
+                            depth_scale=1.0, depth_trunc= self.config.local_map_radius, convert_rgb_to_intensity=False)                                                     
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
+                        
+                        # uncomment these !!
+                        # normal (as rgb) d
+                        # nd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_normal_o3d, pred_depth_o3d, 
+                        #     depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
 
-                        normal_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-                            nd_image_o3d, self.loader.intrinsic, self.loader.extrinsic) # in current lidar frame
+                        # normal_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+                        #     nd_image_o3d, self.loader.intrinsic, self.loader.extrinsic) # in current lidar frame
 
-                        points_normal_c = 1.0 - 2 * np.asarray(normal_pcd.colors) # still under camera frame
-                        R_cl = self.loader.extrinsic[:3,:3]
-                        points_normal_l = points_normal_c @ R_cl # n,3 # convert to lidar frame now # R_cl = R_lc'
-                        # print(points_normal_c)
-                        # print(points_normal_l)
+                        # points_normal_c = 1.0 - 2 * np.asarray(normal_pcd.colors) # still under camera frame
+                        # R_cl = self.loader.extrinsic[:3,:3]
+                        # points_normal_l = points_normal_c @ R_cl # n,3 # convert to lidar frame now # R_cl = R_lc'
+                        # # print(points_normal_c)
+                        # # print(points_normal_l)
 
-                        pred_pcd.normals = o3d.utility.Vector3dVector(points_normal_l) # [-1, 1] 
-                        pred_pcd.normalize_normals() # normals norm to 1
+                        # pred_pcd.normals = o3d.utility.Vector3dVector(points_normal_l) # [-1, 1] 
+                        # pred_pcd.normalize_normals() # normals norm to 1
 
                         toc_rgbd2pcd = get_time()
 
                         # downsample and filtering noise
-                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m*4)
+                        pred_pcd = pred_pcd.voxel_down_sample(voxel_size=self.config.vox_down_m*1)
                         # pred_pcd, ind = pred_pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=1.5) # TODO: parameter settings
 
                         toc_pcd_filtering = get_time()
@@ -491,11 +505,11 @@ class SLAMDataset():
                         points_rgb = np.array(pred_pcd.colors, dtype=np.float64) # [0-1]
                         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-                        points_normals = np.array(pred_pcd.normals, dtype=np.float64)
+                        # points_normals = np.array(pred_pcd.normals, dtype=np.float64) # uncomment this
                         
                         if use_mono_depth_for_gs_init:
                             self.cur_point_cloud_mono_depth = torch.tensor(points_xyzrgb, device=self.device, dtype=self.dtype)
-                            self.cur_point_normals_mono_depth = torch.tensor(points_normals, device=self.device, dtype=self.dtype)
+                            # self.cur_point_normals_mono_depth = torch.tensor(points_normals, device=self.device, dtype=self.dtype) # uncomment this
 
                         toc_tocuda = get_time()
 
