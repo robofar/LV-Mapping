@@ -19,7 +19,7 @@ class OptimizationParams:
     scaling_lr: float = 0.005
     rotation_lr: float = 0.001
     percent_dense: float = 0.01
-    lambda_dssim: float = 0.2
+    lambda_ssim: float = 0.2
     densification_interval: int = 100
     opacity_reset_interval: int = 3000
     densify_from_iter: int = 500

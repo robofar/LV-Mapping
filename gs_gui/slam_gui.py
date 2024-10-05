@@ -28,7 +28,7 @@ from gs_gui.gui_utils import (
 from gaussian_splatting.scene.cameras import CamImage
 # from utils.logging_utils import Log
 
-from utils.tools import colorize_depth_maps, setup_seed, get_time
+from utils.tools import colorize_depth_maps, setup_seed, get_time, remove_gpu_cache
 
 # o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -139,7 +139,7 @@ class SLAM_GUI:
         # neural points
         self.neural_points_render = rendering.MaterialRecord()
         self.neural_points_render.shader = "defaultLit"
-        self.neural_points_render.point_size = 6 * self.window.scaling
+        self.neural_points_render.point_size = 4 * self.window.scaling
         self.neural_points_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
         # mesh 
@@ -666,7 +666,9 @@ class SLAM_GUI:
         if q is None:
             return
 
+        # TODO: is this slow?
         gaussian_packet = get_latest_queue(q)
+
         if gaussian_packet is None:
             return
 
@@ -676,16 +678,15 @@ class SLAM_GUI:
         if gaussian_packet.frame_id is not None:
             self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
                 
-        # TODO: with MLP, think about the random seed issue
         if gaussian_packet.has_neural_points:
-            self.neural_points_info.text = "# Neural points: {} (local {})".format(
+            self.neural_points_info.text = "# Neural points: {} (local {})  [PINGS Map size: {:.1f} MB]".format(
                 gaussian_packet.neural_points_data["count"],
-                gaussian_packet.neural_points_data["local_count"] 
+                gaussian_packet.neural_points_data["local_count"],
+                gaussian_packet.neural_points_data["map_memory_mb"]
             )
-
-            self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
-            self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
             if self.neural_point_chbox.checked:
+                self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
+                self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
                 self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
@@ -743,18 +744,20 @@ class SLAM_GUI:
             self.in_normal_widget.update_image(normal_color_o3d)
 
         if gaussian_packet.current_pointcloud_xyz is not None:
-            self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
-            if gaussian_packet.current_pointcloud_rgb is not None:
-                self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
             if self.scan_chbox.checked:
+                self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
+                if gaussian_packet.current_pointcloud_rgb is not None:
+                    self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
+
                 self.widget3d.scene.remove_geometry(self.scan_name)
                 self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
 
         if gaussian_packet.sdf_slice_xyz is not None:
-            self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
-            if gaussian_packet.sdf_slice_rgb is not None:
-                self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
             if self.sdf_chbox.checked:
+                self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
+                if gaussian_packet.sdf_slice_rgb is not None:
+                    self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
+
                 self.widget3d.scene.remove_geometry(self.sdf_name)
                 self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.lit_geo)
 
@@ -762,7 +765,7 @@ class SLAM_GUI:
             self.mesh = o3d.geometry.TriangleMesh(
                 o3d.utility.Vector3dVector(gaussian_packet.mesh_verts),
                 o3d.utility.Vector3iVector(gaussian_packet.mesh_faces),
-            )
+                )
             if gaussian_packet.mesh_verts_rgb is not None:    
                 self.mesh.vertex_colors = o3d.utility.Vector3dVector(gaussian_packet.mesh_verts_rgb)
             self.mesh.compute_vertex_normals()
@@ -772,12 +775,13 @@ class SLAM_GUI:
                 self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
 
         if gaussian_packet.gt_poses is not None:
+            # print(self.gt_traj)
             gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
             self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
             gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
             self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
             self.gt_traj.paint_uniform_color(BLACK)
-            # print(self.gt_traj)
+            
             if self.traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.gt_traj_name)
                 self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
@@ -796,7 +800,7 @@ class SLAM_GUI:
             slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
             self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
             self.slam_traj.paint_uniform_color(RED)
-            # print(self.gt_traj)
+
             if self.traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.slam_traj_name)
                 self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
@@ -903,101 +907,9 @@ class SLAM_GUI:
                                                         
         return current_cam
 
-    
-
-    # TODO: change gaussians functions here
-    # def rasterise(self, current_cam):
-    #     if (
-    #         self.time_shader_chbox.checked # what does this mean? # no idea (FIXME)
-    #         and self.gaussian_cur is not None
-    #         and type(self.gaussian_cur) == VisPacket
-    #     ):
-    #         features = self.gaussian_cur.get_features.clone()
-    #         kf_ids = self.gaussian_cur.unique_kfIDs.float()
-    #         alpha = 0.1
-
-    #         # rgb_kf = imgviz.depth2rgb(
-    #         #     kf_ids.view(-1, 1).cpu().numpy(), colormap="jet", dtype=np.float32
-    #         # )
-            
-    #         # self.gaussian_cur.get_features = alpha * features + (
-    #         #     1 - alpha
-    #         # ) * torch.from_numpy(rgb_kf).to(features.device)
-
-    #         self.gaussian_cur.get_features = alpha * features
-
-    #         # FIXME: the rendering function is here
-    #         with torch.no_grad():
-    #             rendering_data = render(
-    #                 current_cam,
-    #                 None,
-    #                 self.gaussian_cur,
-    #                 # self.pipe,
-    #                 self.background,
-    #                 self.scaling_slider.double_value,
-    #             ) # not used currently
-
-    #         self.gaussian_cur.get_features = features
-    #     else: # this is for the visualizer camera view
-    #         # print("Render visualizer cam view")
-    #         with torch.no_grad():
-    #             rendering_data = render(
-    #                 current_cam,
-    #                 None,
-    #                 self.gaussian_cur,
-    #                 # self.pipe,
-    #                 self.background,
-    #                 self.scaling_slider.double_value,
-    #                 verbose=True
-    #             )
-    #     return rendering_data
-
-    def rasterise(self, current_cam):
-        
-        # TODO: subscribe to current camera, reset local map for rendering
-
-        if self.gaussian_cur is None:
-            return None
-
-        if self.gaussian_cur.neural_points_data is None:
-            return None
-
-        # print("# Local neural point:", self.neural_points.local_count())
-
-        # print(self.decoders["gauss_xyz"])
-
-        with torch.no_grad():
-            # rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
-            #     self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
-            #     self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
-            #     self.background, scaling_modifier=self.scaling_slider.double_value, 
-            #     down_rate=self.gaussian_cur.img_down_rate)
-
-            render_tic = get_time()
-
-            rendering_data = render(current_cam, None, self.gaussian_cur.neural_points_data, self.decoders, 
-                None, self.background, scaling_modifier=self.scaling_slider.double_value, 
-                down_rate=self.config.gs_vis_down_rate, 
-                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on)
-            
-            render_toc = get_time()
-
-            gaussians_all_count = rendering_data["alpha_all"].shape[0]
-            gaussians_valid_count = rendering_data["gaussian_alpha"].shape[0]
-            valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
-            mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
-
-            cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
-            render_time = render_toc - render_tic # s
-            render_freq = 1.0/render_time
-
-            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_view_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
-            self.freq_info.text = "Render FPS: {:.1f}".format(render_freq)
-        
-        return rendering_data
 
     # main rendering function for the 3D visualizer
-    def render_o3d_image(self, results, current_cam):
+    def render_o3d_image(self, results, current_cam, normal_in_world_frame: bool = True):
 
         if not self.gs_chbox.checked:
             return None # don't show gs rendering results
@@ -1019,6 +931,10 @@ class SLAM_GUI:
             if normal is None:
                 return None # don't show gs rendering results
 
+            if normal_in_world_frame: 
+            # transform to world frame
+                normal = -1.0 * (normal.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+                
             normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1
             normal_color = 0.5 - normal * 0.5  # convert to the normal vis color
             normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1052,6 +968,9 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(opacity_color)
 
         elif self.elliopsoid_chbox.checked: # important
+
+            return None # TODO: currently has some issue
+
             if self.gaussian_cur is None:
                 return
             glfw.poll_events()
@@ -1122,27 +1041,77 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(rgb)
         return render_img
 
+    def rasterise(self, current_cam):
+        
+        # TODO: subscribe to current camera, reset local map for rendering
+        # Why the memory of the gaussians are not released (you need to remove the cache)
+
+        if self.gaussian_cur is None:
+            return None
+
+        if self.gaussian_cur.neural_points_data is None:
+            return None
+
+        # print("# Local neural point:", self.neural_points.local_count())
+
+        # print(self.decoders["gauss_xyz"])
+
+        with torch.no_grad():
+            # rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
+            #     self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
+            #     self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
+            #     self.background, scaling_modifier=self.scaling_slider.double_value, 
+            #     down_rate=self.gaussian_cur.img_down_rate)
+
+            # TODO: figure out why the GPU memory cannot be released
+
+            render_tic = get_time()
+
+            rendering_data = render(current_cam, None, self.gaussian_cur.neural_points_data, self.decoders, 
+                None, self.background, scaling_modifier=self.scaling_slider.double_value, 
+                down_rate=self.config.gs_vis_down_rate, 
+                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on)
+            
+            render_toc = get_time()
+
+            gaussians_all_count = rendering_data["alpha_all"].shape[0]
+            gaussians_valid_count = rendering_data["view_gaussian_count"]
+            valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
+            mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
+            cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
+            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_view_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
+
+            render_time = render_toc - render_tic # s
+            render_freq = 1.0/render_time
+            
+            self.freq_info.text = "Render FPS: {:.1f}".format(render_freq)
+        
+        return rendering_data
+
+        # return None
+
     # main function here for render gs
     def render_gui(self):
         if not self.init:
             return
-        current_cam = self.get_current_cam() # TODO, you can also send back it to main
-        
+
         if not self.gs_chbox.checked:
+            if self.render_img is None:
+                return
             self.render_img = None
-        else:
+        else: # gs_chbox checked
+            current_cam = self.get_current_cam() # TODO, you can also send back it to main
             results = self.rasterise(current_cam)
             if results is None:
                 return
             # print("Results get")
             self.render_img = self.render_o3d_image(results, current_cam)
-        # self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
+            results = {} # free memory 
+        ## self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
         self.widget3d.scene.set_background([1, 1, 1, 1], self.render_img)
 
-    def scene_update(self):
-        self.receive_data(self.q_main2vis)
-        self.render_gui()
 
+    # this is used
     def _update_thread(self):
         while True:
             time.sleep(0.01)
@@ -1160,13 +1129,22 @@ class SLAM_GUI:
                         # self.scene_update() # don't do it so frequently
                         self.render_gui()
 
-                    if self.step % 10 == 0: # 0.1s # 10 Hz # receive latest data
+                    if self.step % 50 == 0: # 0.5s # 2 Hz # receive latest data
                         self.receive_data(self.q_main2vis)
+
+                    if self.step % 100 == 0:
+                        remove_gpu_cache() # remove cache regularly
 
                 if self.step >= 1e9:
                     self.step = 0
 
             gui.Application.instance.post_to_main_thread(self.window, update)
+
+    
+    # # not used now
+    # def scene_update(self):
+    #     self.receive_data(self.q_main2vis)
+    #     self.render_gui()
 
 
 def run(params_gui=None):

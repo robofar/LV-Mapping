@@ -38,6 +38,7 @@ from utils.tools import (
     setup_experiment,
     split_chunks,
     transform_torch,
+    remove_gpu_cache,
 )
 from utils.multiprocessing_utils import clone_obj
 from utils.tracker import Tracker
@@ -60,7 +61,7 @@ parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to 
 parser.add_argument('--output_path', '-o', type=str, default=None, help='Path to the result output directory (this will override the output_root in config file)')
 parser.add_argument('--range', nargs=3, type=int, metavar=('START', 'END', 'STEP'), default=None, help='Specify the start, end and step of the processed frame, for example: --range 10 1000 1')
 parser.add_argument('--data_loader_on', '-d', action='store_true', default=True, help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
-parser.add_argument('--visualize', '-v', action='store_true', default=True, help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
+parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
 parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
 parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
 parser.add_argument('--wandb_on', '-w', action='store_true', help='Turn on the weight & bias logging')
@@ -127,19 +128,19 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     #     load_decoder(config, geo_mlp, sem_mlp, color_mlp)
 
     n_gaussian = config.spawn_n_gaussian # almost 2D, then 4 already means 1/2 resolution
-    hidden_layer_count = 2
+    hidden_layer_count = 1 # 1 or 2 ? # TODO
     hidden_layer_dim = 64 # 64 # 128
 
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
 
-    gs_2d = True
-    # scale_dim = 2 if gs_2d else 3
-    scale_dim = 3
+    # gs_2d = True
+    # # scale_dim = 2 if gs_2d else 3
+    # scale_dim = 3
 
     gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
     gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0) # (TODO) optimize quat is not very stable, try to use normal 
-    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, scale_dim, n_gaussian, 0)
+    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
     gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, dist_concat_dim) # concat distance
     gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, view_concat_dim) # concat view direction
 
@@ -218,6 +219,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
         
+        remove_gpu_cache()
+
         # judge pause
         if config.gs_vis_on:
             if not q_vis2main.empty():
@@ -363,7 +366,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
         # cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
-        cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0
+        # we do not do SDF training seperately except for the first frame
+        cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0 
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
@@ -386,7 +390,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             else:
                 gs_iter_num = config.gs_iters
 
-            mapper.joint_gsdf_mapping(gs_iter_num, eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
+            mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
         T6 = get_time()
 
@@ -499,7 +503,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             T9 = get_time()
 
             # add the most recent train frame for vis
-            packet_to_vis: VisPacket = VisPacket(frame_id = dataset.processed_frame, current_frame=mapper.cam_img_train_pool[-1], img_down_rate=config.gs_vis_down_rate) # latest training pool
+            packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame, current_frame=dataset.cur_cam_img[dataset.loader.main_cam_name], img_down_rate=config.gs_vis_down_rate) # latest training pool
 
             # spawn gaussians in the current local map
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
@@ -547,14 +551,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     
     # gs eval 
     if config.gs_on: # TODO: add to a function inside mapper or dataset 
-        print("Training view")
-        mapper.init_gs_eval()
-        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, train_view_only=True)
-        mapper.gs_eval_out(split="train")
-        print("Testing view")
-        mapper.init_gs_eval()
-        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate, test_view_only=True)
-        mapper.gs_eval_out(split="test")
+        print("Begin rendering evaluation")
+        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate)
+        mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map

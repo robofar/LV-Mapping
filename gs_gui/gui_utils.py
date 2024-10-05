@@ -184,6 +184,7 @@ class VisPacket:
             self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
             self.neural_points_data["count"] = neural_points.count()
             self.neural_points_data["local_count"] = neural_points.local_count()
+            self.neural_points_data["map_memory_mb"] = neural_points.cur_memory_mb
 
     def add_gaussians(self,  
                     gaussian_xyz=None,

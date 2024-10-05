@@ -561,8 +561,8 @@ class SLAMDataset():
         # point_ts is already the normalized timestamp in a scan frame # [0,1]
         if self.config.deskew:
             if point_ts is not None and min(point_ts) < 1.0: # not all 1
-                if not self.silence:
-                    print("Pointwise timestamp available")
+                # if not self.silence:
+                #     print("Pointwise timestamp available")
                 self.cur_point_ts_torch = torch.tensor(
                     point_ts, device=self.device, dtype=self.dtype
                 )

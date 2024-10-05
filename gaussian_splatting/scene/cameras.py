@@ -73,6 +73,14 @@ class CamImage:
         self.sky_mask_list = []
         self.normal_img_list = []
 
+        # exposure correction affine transformation parameters
+        self.exposure_a = nn.Parameter(
+            torch.tensor([0.0], requires_grad=True, device=device)
+        )
+        self.exposure_b = nn.Parameter(
+            torch.tensor([0.0], requires_grad=True, device=device)
+        )
+
         if image is not None:
             original_image = image.to(self.device)
 
@@ -175,6 +183,16 @@ class CamImage:
             
             self.R = T_cw[:3, :3] # rotation part
             self.T = T_cw[:3, 3] # translation part
+
+    def free_memory_at_level(self, down_level: int = 0):
+        if len(self.original_image_list) > down_level:
+            self.original_image_list[down_level] = None
+            self.normal_img_list[down_level] = None
+            self.sky_mask_list[down_level] = None
+
+    def free_memory_at_all_levels(self):
+        for l in range(len(self.original_image_list)):
+            self.free_memory_at_level(l)
 
 
 # this is not used

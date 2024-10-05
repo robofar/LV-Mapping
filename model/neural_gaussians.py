@@ -206,6 +206,7 @@ class NeuralPoints(nn.Module):
             num_nei_cells=config.num_nei_cells, search_alpha=config.search_alpha
         )
 
+        self.cur_memory_mb = 0.0
         self.memory_footprint = []
 
         self.to(self.device)
@@ -232,39 +233,22 @@ class NeuralPoints(nn.Module):
         return torch.sum(self.local_free_gs_mask).int()
 
     @property
-    def has_gaussians(self):
+    def has_neural_points(self):
         return (self.count() > 0)
-    
-    @staticmethod
-    def build_covariance_from_scaling_rotation_2dgs(center, scaling, scaling_modifier, rotation):
-        RS = build_scaling_rotation(torch.cat([scaling * scaling_modifier, torch.ones_like(scaling)], dim=-1), rotation).permute(0,2,1)
-        trans = torch.zeros((center.shape[0], 4, 4), dtype=torch.float, device="cuda")
-        trans[:,:3,:3] = RS
-        trans[:, 3,:3] = center
-        trans[:, 3, 3] = 1
-        return trans
-
-    def build_covariance_from_scaling_rotation_3dgs(center, scaling, scaling_modifier, rotation): # center not used
-        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-        actual_covariance = L @ L.transpose(1, 2)
-        symm = strip_symmetric(actual_covariance)
-        return symm
-
 
     def print_memory(self):
         if not self.silence:
-            print("# Global neural point: %d (%d free, %d valid gaussian)" % (self.count(), self.free_count(), self.count(valid_gs_only=True)))
-            print("# Local  neural point: %d (%d free, %d valid gaussian)" % (self.local_count(), self.free_local_count(), self.local_count(valid_gs_only=True)))
+            print("# Global neural point: %d (%d free, %d valid)" % (self.count(), self.free_count(), self.count(valid_gs_only=True)))
+            print("# Local  neural point: %d (%d free, %d valid)" % (self.local_count(), self.free_local_count(), self.local_count(valid_gs_only=True)))
         neural_point_count = self.count()
-        point_dim = (
-            self.config.feature_dim + 3 + 4
-        )  # feature plus neural point position and orientation
+        # feature plus neural point position and orientation
+        point_dim = self.geo_feature_dim + 3 + 4    
         if self.color_features is not None:
-            point_dim += self.config.color_feature_dim  # also include the color feature
-        cur_memory = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
+            point_dim += (self.color_feature_dim + 3)  # also include the color feature
+        self.cur_memory_mb = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
         if not self.silence:
-            print("Memory consumption: %f (MB)" % cur_memory)
-        self.memory_footprint.append(cur_memory)
+            print("Memory consumption: %f (MB)" % self.cur_memory_mb)
+        self.memory_footprint.append(self.cur_memory_mb)
 
     def update(
         self,

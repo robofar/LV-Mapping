@@ -48,7 +48,7 @@ class Config:
         # dataset specific
         self.kitti_correction_on: bool = False # intrinsic vertical angle correction # issue 11
         self.correction_deg: float = 0.0
-        self.stop_frame_thre: int = 10 # determine if the robot is stopped when there's almost no motion in a time peroid # 20
+        self.stop_frame_thre: int = 5 # FIXME # determine if the robot is stopped when there's almost no motion in a time peroid # 20
 
         # motion undistortion
         self.deskew: bool = False
@@ -97,7 +97,7 @@ class Config:
         self.use_mid_ts: bool = False # use the middle of the created and last updated timestamp for adjusting or just use the created timestamp
         self.search_alpha: float = 0.2 # the larger this value is, the larger neighborhood region would be, the more robust to the highly dynamic motion and also the more time-consuming
         self.idw_index: int = 2 # the index for IDW (inverse distance weighting), 2 means square inverse
-        self.buffer_size: int = int(1e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
+        self.buffer_size: int = int(5e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
 
         # shared by both kinds of feature 
         self.feature_dim: int = 8  # length of the feature for each grid feature
@@ -173,7 +173,7 @@ class Config:
         self.dist_weight_scale: float = 0.8 # weight changing range [0.6, 1.4]
         
         self.numerical_grad: bool = True # use numerical SDF gradient as in the paper Neuralangelo for the Ekional regularization during mapping
-        self.gradient_decimation: int = 6 # use just a part of the points for the ekional loss when using the numerical grad, save computing time
+        self.gradient_decimation: int = 10 # 6 # use just a part of the points for the ekional loss when using the numerical grad, save computing time
         self.num_grad_step_ratio: float = 0.2 # step as a ratio of the nerual point resolution, length = num_grad_step_ratio * voxel_size_m
 
         self.ekional_loss_on: bool = True # Ekional regularization (default on)
@@ -233,7 +233,7 @@ class Config:
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
-        self.lambda_dssim: float = 0.2 # weight for ssim
+        self.lambda_ssim: float = 0.2 # weight for ssim
         self.lambda_depth: float = 0.0 # weight for depth rendering
         self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
         self.lambda_area: float = 0.0 # weight for area (volume) regularization # 0.001
@@ -585,7 +585,7 @@ class Config:
             self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             
-            self.lambda_dssim= float(config_args["gs"].get("lambda_ssim", self.lambda_dssim)) # weight for ssim, set to zero for faster training
+            self.lambda_ssim= float(config_args["gs"].get("lambda_ssim", self.lambda_ssim)) # weight for ssim, set to zero for faster training
             self.lambda_depth = float(config_args["gs"].get("lambda_depth", self.lambda_depth))
             self.lambda_distort = float(config_args["gs"].get("lambda_distort", self.lambda_distort)) # weight for the distance distortion loss
             self.lambda_normal_depth_consist = float(config_args["gs"].get("lambda_normal_depth", self.lambda_normal_depth_consist)) # weight for the distance/normal consistency loss

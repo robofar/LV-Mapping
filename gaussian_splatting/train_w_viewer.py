@@ -107,7 +107,7 @@ class Trainer:
             # gt_mask = viewpoint_cam.gt_mask.cuda()
 
             Ll1 = l1_loss(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss = (1.0 - opt.lambda_ssim) * Ll1 + opt.lambda_ssim * (1.0 - ssim(image, gt_image))
 
             # regularization
             # lambda_normal = self.config.lambda_normal if iteration > 7000 else 0.0

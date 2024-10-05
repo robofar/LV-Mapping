@@ -54,6 +54,7 @@ def render(viewpoint_camera: CamImage,
            scaling_modifier: float = 1.0, 
            down_rate: int = 0, 
            verbose: bool = False,
+           train_mode: bool = False,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            alpha_filter_on: bool = True):
@@ -166,6 +167,8 @@ def render(viewpoint_camera: CamImage,
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
+    visible_neural_point_ratio = 0.0
+
     # Use already predicted gaussians
     if neural_points_data is None and decoders is None and gaussians is not None:
         gaussian_xyz = gaussians["gaussian_xyz"]
@@ -177,9 +180,16 @@ def render(viewpoint_camera: CamImage,
 
     else: 
 
+        # get only the visible local neural points
         visible_neural_point_mask = rasterizer.markVisible(neural_points_data["position"])
         # print(visible_neural_point_mask.shape)
         # print(visible_neural_point_mask.sum().item())
+
+        visible_neural_point_ratio = visible_neural_point_mask.sum() / visible_neural_point_mask.shape[0]
+
+        if visible_neural_point_ratio < 0.1 and train_mode: # is 0.05 too small?
+            print("Too small ratio of visible neural points, skip this frame ")
+            return None
 
         # Spawn Gaussians
         gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask = spawn_gaussians(neural_points_data,
@@ -204,6 +214,8 @@ def render(viewpoint_camera: CamImage,
     scales = gaussian_scale
     rotations = gaussian_rot
 
+    gaussian_count = gaussian_xyz.shape[0]
+
     contains_nan = torch.isnan(rotations).any()
     assert ~contains_nan, "NaN in rotation"
 
@@ -212,6 +224,7 @@ def render(viewpoint_camera: CamImage,
     colors = gaussian_color
 
     # Spawned gaussians
+    # if train_mode:
     results = {
         "gaussian_xyz": gaussian_xyz, 
         "gaussian_scale": gaussian_scale, 
@@ -219,7 +232,9 @@ def render(viewpoint_camera: CamImage,
         "gaussian_alpha": gaussian_alpha, 
         "gaussian_color": gaussian_color, 
         "alpha_all": alpha_all,
-        "gaussian_free_mask": gaussian_free_mask
+        "gaussian_free_mask": gaussian_free_mask,
+        "view_gaussian_count": gaussian_count,
+        "visible_neural_point_ratio": visible_neural_point_ratio
     }
 
     # main rasterization function
@@ -355,6 +370,15 @@ def render(viewpoint_camera: CamImage,
             "visibility_filter" : radii > 0,
             "radii": radii})
 
+    # free memory
+    # if not train_mode:
+    #     gaussian_xyz = None
+    #     gaussian_scale = None
+    #     gaussian_rot = None
+    #     gaussian_alpha = None
+    #     gaussian_color = None
+    #     alpha_all = None
+    #     gaussian_free_mask = None
 
     return results
 
@@ -366,7 +390,9 @@ def spawn_gaussians(neural_points_data: Dict,
                     dist_concat_on: bool = False, 
                     view_concat_on: bool = False,
                     alpha_filter_on: bool = True,
-                    z_far: float = 100.0):
+                    z_far: float = 100.0,
+                    dist_adaptive_scale: bool = True,
+                    learn_color_residual: bool = False):
 
     neural_point_position = neural_points_data["position"]
     neural_point_color = neural_points_data["color"]
@@ -392,14 +418,15 @@ def spawn_gaussians(neural_points_data: Dict,
         neural_point_geo_features = neural_point_geo_features[visible_idx]
         neural_point_color_features = neural_point_color_features[visible_idx]
 
-        
-    neural_point_count = neural_point_position.shape[0]
-
+    # if too much neural points, you'd better to feed them to networks in batch
     gaussian_xyz_mlp = decoders["gauss_xyz"] 
     gaussian_scale_mlp = decoders["gauss_scale"] 
     gaussian_rot_mlp = decoders["gauss_rot"] 
     gaussian_alpha_mlp = decoders["gauss_alpha"] 
     gaussian_color_mlp = decoders["gauss_color"] 
+
+    # after visible filtering    
+    neural_point_count = neural_point_position.shape[0]
 
     view_direction = None
     view_distance = None
@@ -441,7 +468,7 @@ def spawn_gaussians(neural_points_data: Dict,
     # Scale (view dependent or not) ? # TODO
     max_gaussian_scale = 2.0 * neural_point_resolution
     dist_ratio = 1.0
-    if view_distance is not None:
+    if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1
         dist_ratio = dist_ratio.repeat(1, gaussian_scale_mlp.mlp_out_dim)
 
@@ -487,18 +514,17 @@ def spawn_gaussians(neural_points_data: Dict,
         color_feature_in = torch.concat((color_feature_in, view_direction), dim=1) # no high freq positional embedding yet
     
     # try to now use only one single feature vector
-    # learn residual now
-
-    # gaussian_rgb_residual = 0.5 * torch.tanh(gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
-    gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K
-    # print(gaussian_rgb_residual)
-    # print(torch.abs(gaussian_rgb_residual).mean().item())
     
-    gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
-    gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
-
-    # or we directlt learn the color value (instead of residual)
-    # gaussian_color = torch.sigmoid(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K
+    ## learn residual now
+    # TODO: compare, but it seems that there's no much difference
+    if learn_color_residual:
+        # gaussian_rgb_residual = 0.5 * torch.tanh(gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
+        gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K
+        gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
+        gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
+    else: 
+        # or we directly learn the color value (instead of residual)
+        gaussian_color = torch.sigmoid(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K
 
     gaussian_color = gaussian_color.view(local_gaussian_count, -1) # NK, 3 # not SH anymore
 
@@ -537,57 +563,3 @@ def spawn_gaussians(neural_points_data: Dict,
     # also consider the entropy loss, let the opacity to be either 0 or 1
 
     return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask
-
-# TODO
-# def prefilter_neural_points(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
-#     """
-#     Find the visble neural points in the camera FOV 
-#     """
-#     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-#     screenspace_points = torch.zeros_like(pc.get_anchor, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
-#     try:
-#         screenspace_points.retain_grad()
-#     except:
-#         pass
-
-#     # Set up rasterization configuration
-#     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
-#     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
-
-#     raster_settings = GaussianRasterizationSettings(
-#         image_height=int(viewpoint_camera.image_height),
-#         image_width=int(viewpoint_camera.image_width),
-#         tanfovx=tanfovx,
-#         tanfovy=tanfovy,
-#         bg=bg_color,
-#         scale_modifier=scaling_modifier,
-#         viewmatrix=viewpoint_camera.world_view_transform,
-#         projmatrix=viewpoint_camera.full_proj_transform,
-#         sh_degree=1,
-#         campos=viewpoint_camera.camera_center,
-#         prefiltered=False,
-#         debug=pipe.debug
-#     )
-
-#     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
-
-#     means3D = pc.get_anchor
-
-
-#     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
-#     # scaling / rotation by the rasterizer.
-#     scales = None
-#     rotations = None
-#     cov3D_precomp = None
-#     if pipe.compute_cov3D_python:
-#         cov3D_precomp = pc.get_covariance(scaling_modifier)
-#     else:
-#         scales = pc.get_scaling
-#         rotations = pc.get_rotation
-
-#     radii_pure = rasterizer.visible_filter(means3D = means3D,
-#         scales = scales[:,:3],
-#         rotations = rotations,
-#         cov3D_precomp = cov3D_precomp)
-
-#     return radii_pure > 0

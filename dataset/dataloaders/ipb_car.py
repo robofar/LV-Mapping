@@ -54,7 +54,7 @@ class IPBCarDataset:
         # self.main_cam_name = self.cam_left_topic_name
         # self.main_cam_name_calib = "cameraleftimage_raw"
 
-        self.main_cam_only: bool = True
+        self.main_cam_only: bool = False
 
         self.K_mats = {}
         self.dist_coeffs = {}
@@ -63,6 +63,8 @@ class IPBCarDataset:
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar", self.lidar_h_topic_name, "points/")
         self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply"))
+
+        # img_size: 2064x1024
 
         # camera left
         self.img_left_dir = os.path.join(data_dir, "camera", self.cam_left_topic_name, "image_raw/")

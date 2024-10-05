@@ -178,7 +178,13 @@ def setup_optimizer(
     lr_gs_scale = 1e-3
     lr_gs_rot = 1e-3
     lr_gs_alpha = 1e-3
-    lr_gs_color = 1e-3
+    lr_gs_color = 1e-2 # better to be larger, like 1e-2
+
+    # lr_gs_xyz = 1e-4
+    # lr_gs_scale = 1e-4
+    # lr_gs_rot = 1e-4
+    # lr_gs_alpha = 1e-4
+    # lr_gs_color = 1e-4
 
     if config.gs_on:
         if mlp_gs_xyz_param is not None:
@@ -221,8 +227,8 @@ def setup_optimizer(
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
     
-    lr_cur_feature = 5e-3 # too small then it does not work for color decoder?
-    # lr_cur_feature = 0.01 
+    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    lr_cur_feature = 0.01 
 
     weight_decay_feature = 0.0
     feat_opt_dict = {
@@ -375,6 +381,10 @@ def load_decoder(config, geo_mlp, sem_mlp, color_mlp):
         color_mlp.load_state_dict(loaded_model["color_mlp"])
         freeze_model(color_mlp)  # fixed the decoder
 
+def remove_gpu_cache():
+    cuda_available = torch.cuda.is_available()
+    if cuda_available:
+        torch.cuda.empty_cache()
 
 def get_time():
     """
@@ -921,14 +931,14 @@ def plot_timing_detail(time_table: np.ndarray, saving_path: str, with_loop=False
             interpolate=True,
         )
 
-    ax1.plot(frame_array, realtime_limit, "--", linewidth=line_width_2, color="k")
+    # ax1.plot(frame_array, realtime_limit, "--", linewidth=line_width_2, color="k")
 
     plt.tick_params(labelsize=12)
     labels = ax1.get_xticklabels() + ax1.get_yticklabels()
     # [label.set_fontname('Times New Roman') for label in labels]
 
     plt.xlim((0, frame_count - 1))
-    plt.ylim((0, 200))
+    plt.ylim((0, 5000)) # 5s
 
     plt.xlabel("Frame ID", font2)
     plt.ylabel("Runtime (ms)", font2)
