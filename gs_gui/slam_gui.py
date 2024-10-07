@@ -726,9 +726,9 @@ class SLAM_GUI:
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
                 self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
-            # show feature PCA color
+            # show feature PCA color (TODO)
 
-        frustum_size = self.config.max_range*0.005
+        frustum_size = self.config.max_range*0.008
 
         if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
             

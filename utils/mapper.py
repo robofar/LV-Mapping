@@ -1041,6 +1041,8 @@ class Mapper:
         
         neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
+        cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
+
         opt = setup_optimizer(
             self.config,
             neural_point_feat,
@@ -1050,7 +1052,7 @@ class Mapper:
             mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
             mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
             mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
-            cams = self.cam_short_term_train_pool,
+            cams = cams_param,
             # TODO: add camera exposures # add all cams in the train pool
         )
 
@@ -1122,9 +1124,10 @@ class Mapper:
 
                 gt_image = viewpoint_cam.original_image_list[train_down_rate]
 
-                cur_exposure_a = viewpoint_cam.exposure_a.item()
-                cur_exposure_b = viewpoint_cam.exposure_b.item()
-                print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
+                if self.config.exposure_correction_on and not self.silence:
+                    cur_exposure_a = viewpoint_cam.exposure_a.item()
+                    cur_exposure_b = viewpoint_cam.exposure_b.item()
+                    print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
                 
                 if gt_image.device != self.device: # this is one very time consuming part
                     gt_image.to(self.device)

@@ -162,8 +162,8 @@ class IPBCarDataset:
     
     # ouster-128 lidar (point-wise timestamp)
     @staticmethod
-    def get_timestamps():
-        timestamps = np.expand_dims(np.floor(np.arange(128 * 2048) / 128) / 2048, axis=1)
+    def get_timestamps(v_beam=128, h_beam=2048):
+        timestamps = np.expand_dims(np.floor(np.arange(v_beam * h_beam) / v_beam) / h_beam, axis=1)
         return timestamps
     
     # frame timestamp

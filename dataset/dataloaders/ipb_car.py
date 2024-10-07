@@ -42,10 +42,10 @@ class IPBCarDataset:
         # for cam_name, select from "left", "right", "front", "rear" all "all"
         self.use_only_colorized_points = True
         
-        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
-        self.lidar_h_topic_name = "os_h" 
-        self.lidar_v_topic_name = "os_v" 
+        self.lidar_h_topic_name = "horizontal" 
+        self.lidar_v_topic_name = "vertical" 
         
         self.cam_left_topic_name = "left"  
         self.cam_right_topic_name = "right" 
@@ -72,19 +72,31 @@ class IPBCarDataset:
         self.T_c_l_mats = {}
 
         # horizontal lidar
-        self.lidar_horizontal_dir = os.path.join(data_dir, "lidar", self.lidar_h_topic_name, "points/")
-        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply"))
+        self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
+        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.bin")) # we use bin here, can not be directly visualized but would be much smaller
+
+        # vertical lidar
+        self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
+        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.bin"))
 
         # img_size: 2064x1024
 
+        self.img_already_undistorted = False
+        
         for cam_name in self.cam_list:
-            cur_cam_dir = os.path.join(data_dir, "camera", cam_name, "image_undistorted/")
+            cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
+            
             if os.path.exists(cur_cam_dir):
-                self.img_already_undistorted = True
-            else:
-                cur_cam_dir = os.path.join(data_dir, "camera", cam_name, "image_raw/")
-                self.img_already_undistorted = False
-            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+                cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+                if len(cur_img_files) == len(self.lidar_horizontal_files):
+                    self.img_already_undistorted = True
+
+            if not self.img_already_undistorted:
+
+                os.makedirs(cur_cam_dir, 0o755, exist_ok=True)
+                cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
+                cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+
             self.img_files[cam_name] = cur_img_files
 
         # read calib
@@ -114,21 +126,24 @@ class IPBCarDataset:
 
 
     def __getitem__(self, idx):
-        # TODO: read ply is a bot too slow, try to use *.bin
+        # TODO: read ply is a bot too slow, try to use *.bin (done)
         points = self.read_point_cloud(self.lidar_horizontal_files[idx]) # lidar_h_points
-        point_ts = self.get_timestamps()
+        # print(np.shape(points)[0])
+        point_ts = self.get_timestamps(v_beam=128, h_beam=2048)
         
-        # if not self.use_only_lidar_h:
-        #     lidar_v_points = self.read_point_cloud(self.lidar_vertical_files[idx])
+        if not self.use_only_lidar_h:
+            lidar_v_points = self.read_point_cloud(self.lidar_vertical_files[idx])
+            # print(np.shape(lidar_v_points)[0])
 
-        #     lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
+            lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
 
-        #     lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
-        #     lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
+            lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
+            lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
 
-        #     points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
+            points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
+            point_ts_v = self.get_timestamps(v_beam=64, h_beam=1024)
 
-        #     point_ts = np.tile(point_ts, (2, 1)) # 2N, 1
+            point_ts = np.concatenate((point_ts, point_ts_v), axis=0)
 
         valid_mask = ~np.all(points[:,:3] == 0, axis=1) 
         points = points[valid_mask]
@@ -162,8 +177,8 @@ class IPBCarDataset:
     
     # ouster-128 lidar (point-wise timestamp)
     @staticmethod
-    def get_timestamps():
-        timestamps = np.expand_dims(np.floor(np.arange(128 * 2048) / 128) / 2048, axis=1)
+    def get_timestamps(v_beam=128, h_beam=2048):
+        timestamps = np.expand_dims(np.floor(np.arange(v_beam * h_beam) / v_beam) / h_beam, axis=1)
         return timestamps
     
     # frame timestamp
@@ -197,16 +212,18 @@ class IPBCarDataset:
         # print(img_associated_idx)
         return img_ts_associated, img_associated_idx        
 
-    # def read_point_cloud(self, scan_file: str):
-    #     points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
-    #     return points # N, 4
-    
+    # read bin format
     def read_point_cloud(self, scan_file: str):
-        pcd = o3d.io.read_point_cloud(scan_file)
-        points = np.array(pcd.points, dtype=np.float64) # N, 3
-        point_count = np.shape(points)[0]
-        points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
-        return points
+        points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
+        return points # N, 4
+    
+    # read ply format
+    # def read_point_cloud(self, scan_file: str):
+    #     pcd = o3d.io.read_point_cloud(scan_file)
+    #     points = np.array(pcd.points, dtype=np.float64) # N, 3
+    #     point_count = np.shape(points)[0]
+    #     points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
+    #     return points
 
     def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
         img = cv2.imread(img_file)
@@ -215,7 +232,12 @@ class IPBCarDataset:
         # tic_undistort = get_time()
         if undistort_on and K_mat is not None and dist_coeffs is not None:
             img = cv2.undistort(img, K_mat, dist_coeffs)
-            cv2.imwrite(img_file.replace("image_raw", "image_undistorted"), img)
+            img_file_split = img_file.split("/")
+            img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+            out_img_file = "/".join(img_file_split)
+            print(out_img_file)
+
+            cv2.imwrite(out_img_file, img)
 
         # toc_undistort = get_time() 
 
@@ -233,14 +255,17 @@ class IPBCarDataset:
             calib_dict = yaml.safe_load(file)
 
             lidar_h_calib = calib_dict["lidarhorizontalpoints"]
-            T_cf_l = np.array(lidar_h_calib["extrinsics"])
+            lidar_v_calib = calib_dict["lidarverticalpoints"]
+            T_cf_lh = np.array(lidar_h_calib["extrinsics"])
+            T_cf_lv = np.array(lidar_v_calib["extrinsics"])
+            self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
 
             for cam_name in self.cam_list:
                 cur_cam_calib_name = "camera{}image_raw".format(cam_name)
                 cur_camera_calib = calib_dict[cur_cam_calib_name]
                 self.K_mats[cam_name] = np.array(cur_camera_calib["K"])
                 self.dist_coeffs[cam_name] = np.array(cur_camera_calib["distortion_coeff"])
-                self.T_c_l_mats[cam_name] = np.linalg.inv(np.array(cur_camera_calib["extrinsics"])) @ T_cf_l 
+                self.T_c_l_mats[cam_name] = np.linalg.inv(np.array(cur_camera_calib["extrinsics"])) @ T_cf_lh 
 
         return calib_dict
     

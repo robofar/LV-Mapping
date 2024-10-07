@@ -38,6 +38,7 @@ loss:
   weight_e: 0.5
 gs:
   monodepth_on: True # True
+  exposure_correction_on: True
   gs_iters: 50 # 100 has good results
   n_gaussian: 8
   gaussian_bs_ratio: 1.0

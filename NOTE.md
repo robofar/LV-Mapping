@@ -136,6 +136,9 @@ python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb
 python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl --range 600 1000 1
 
 python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 1
+
+python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vl --range 50 500 1
+
 ```
 
 The light across different cameras seem to be not identical, figure out a way to do the correction

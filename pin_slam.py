@@ -450,7 +450,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             if config.mesh_freq_frame > 0:
                 if o3d_vis.render_mesh and (frame_id == 0 or frame_id == last_frame or (frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
                     # update map bbx
-                    global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=17) # prime number
+                    global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=31) # prime number
                     dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
                     
                     mesh_path = None # no need to save the mesh
@@ -466,7 +466,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
                     else:
                         aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
-                        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, o3d_vis.mc_res_m * 300) # reconstruct in chunks
+                        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, o3d_vis.mc_res_m*100) # reconstruct in chunks
                         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
             
             if config.sdfslice_freq_frame > 0:

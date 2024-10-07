@@ -27,7 +27,7 @@ continual:
   batch_size_new_sample: 1500
   pool_capacity: 2e7 # this is often the part taken a lot of memory
 tracker:
-  source_vox_down_m: 0.8
+  source_vox_down_m: 0.6
   iter_n: 50
 pgo:
   map_context: True
@@ -35,6 +35,7 @@ pgo:
   virtual_side_count: 6
 gs:
   monodepth_on: False 
+  exposure_correction_on: True
   gs_iters: 50 # 50
   gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 2
@@ -53,7 +54,7 @@ optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
 eval:
-  o3d_vis_on: True
+  o3d_vis_on: False # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 20

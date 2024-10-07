@@ -5,10 +5,9 @@ setting:
   color_channel: 3
 process:
   min_range_m: 0.05
-  max_range_m: 2.5  # distance filter for each frame
+  max_range_m: 5.0  # distance filter for each frame
   min_z_m: -10.0 
   vox_down_m: 0.005 # TODO
-  estimate_normal: True
 sampler:
   surface_sample_range_m: 0.03
   surface_sample_n: 4 # 4
@@ -18,20 +17,25 @@ sampler:
   free_behind_sample_n: 0
 neuralpoints:
   voxel_size_m: 0.03
+  feature_dim: 32
+  color_feature_dim: 16
 gs:
-  gs_iters: 10
-  gs_bs: 5
-  gs_keyframe_interval: 2
-  img_pool_size: 30
+  exposure_correction_on: False
+  gs_iters: 50
+  n_gaussian: 8
+  gaussian_bs_ratio: 1.0
+  gs_keyframe_interval: 5
+  img_pool_size: 20
   gs_down_rate: 0
   gs_vis_down_rate: 0
-  sh_degree: 0
-  lambda_depth: 10.0
-  lambda_distort: 1000.0
-  lambda_normal: 0.05 # not too big 0.05 
+  inverse_depth_loss: True
+  lambda_depth: 10.0 # 10.0
+  # lambda_normal_depth: 0.05
   lambda_isotropic: 100.0
+  # lambda_area: 1e-2 # 1e-3
+  lambda_opacity: 5e-3
   lambda_sdf_cons: 0.0
-  lambda_sdf_normal_cons: 0.0
+  lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss # 0.1
   lambda_sdf: 0.0
 decoder:
   mlp_level: 1
@@ -66,7 +70,8 @@ optimizer:
   # lr_pose_ba: 1e-3
   # you need to train more iterations, lots of the samples are not even learned --> this cause the roughness of the reconstruction
 eval:
-  mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  o3d_vis_on: True
+  mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 9
   sensor_cad_path: ./cad/camera.ply
   skip_top_voxel: 5
