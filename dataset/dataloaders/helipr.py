@@ -33,14 +33,14 @@ from pyquaternion import Quaternion
 from dataset.dataloaders import supported_file_extensions
 
 class HeLiPRDataset:
-    def __init__(self, data_dir: Path, sequence: str, *_, **__):
+    def __init__(self, data_dir: Path, lidar_name: str, *_, **__):
      
-        self.sequence_id = sequence
-        self.sequence_dir = os.path.join(data_dir, "LiDAR", self.sequence_id)
+        self.lidar_name = lidar_name
+        self.sequence_dir = os.path.join(data_dir, "LiDAR", self.lidar_name)
         scan_files = os.listdir(self.sequence_dir)
         scan_timestamps = [int(Path(file).stem) for file in scan_files]
 
-        pose_file = os.path.join(data_dir, "LiDAR_GT", f"{self.sequence_id}_gt.txt")
+        pose_file = os.path.join(data_dir, "LiDAR_GT", f"{self.lidar_name}_gt.txt")
         pose_timestamps, poses = self.read_poses(pose_file)
 
         # Match number of scans with number of references poses available
@@ -64,20 +64,20 @@ class HeLiPRDataset:
             raise ValueError(f"Tried to read point cloud files in {data_dir} but none found")
 
         # Obtain the pointcloud reader for the given data folder
-        if self.sequence_id == "Avia":
+        if self.lidar_name == "Avia":
             self.format_string = "fffBBBL"
             self.intensity_channel = None
             self.time_channel = 6
-        elif self.sequence_id == "Aeva":
+        elif self.lidar_name == "Aeva":
             self.format_string = "ffffflBf"
             self.format_string_no_intensity = "ffffflB"
             self.intensity_channel = 7
             self.time_channel = 5
-        elif self.sequence_id == "Ouster":
+        elif self.lidar_name == "Ouster":
             self.format_string = "ffffIHHH"
             self.intensity_channel = 3
             self.time_channel = 4
-        elif self.sequence_id == "Velodyne":
+        elif self.lidar_name == "Velodyne":
             self.format_string = "ffffHf"
             self.intensity_channel = 3
             self.time_channel = 5
@@ -113,7 +113,7 @@ class HeLiPRDataset:
         list_lines = []
 
         # Special case, see https://github.com/minwoo0611/HeLiPR-File-Player/blob/e8d95e390454ece1415ae9deb51515f63730c10a/src/ROSThread.cpp#L632
-        if self.sequence_id == "Aeva" and int(Path(file_path).stem) <= 1691936557946849179:
+        if self.lidar_name == "Aeva" and int(Path(file_path).stem) <= 1691936557946849179:
             self.intensity_channel = None
             format_string = self.format_string_no_intensity
         else:

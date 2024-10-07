@@ -6,6 +6,7 @@ from datetime import datetime
 import cv2
 import glfw
 import numpy as np
+import copy
 import open3d as o3d
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
@@ -125,7 +126,7 @@ class SLAM_GUI:
 
         self.lit = rendering.MaterialRecord()
         self.lit.shader = "unlitLine"
-        self.lit.line_width = 5 * self.window.scaling  # note that this is scaled with respect to pixels,
+        self.lit.line_width = 3 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         self.lit_geo = rendering.MaterialRecord()
         self.lit_geo.shader = "defaultUnlit"
@@ -160,9 +161,9 @@ class SLAM_GUI:
         self.traj_render.line_width = 5 * self.window.scaling  # note that this is scaled with respect to pixels,
 
 
-        self.specular_geo = rendering.MaterialRecord()
-        self.specular_geo.shader = "defaultLit"
-        # self.specular_geo.mesh_color_option
+        self.cad_render = rendering.MaterialRecord()
+        self.cad_render.shader = "defaultLit"
+        self.cad_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
         # how to apply different materials (TODO)
         self.clay_geo = rendering.MaterialRecord()
@@ -182,10 +183,11 @@ class SLAM_GUI:
         self.sdf_slice = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
         self.sensor_cad = o3d.geometry.TriangleMesh()
+        self.sensor_cad_origin = o3d.geometry.TriangleMesh()
 
         if self.config.sensor_cad_path is not None:
-            self.sensor_cad = o3d.io.read_triangle_mesh(self.config.sensor_cad_path)
-            self.sensor_cad.compute_vertex_normals()
+            self.sensor_cad_origin = o3d.io.read_triangle_mesh(self.config.sensor_cad_path)
+            self.sensor_cad_origin.compute_vertex_normals()
 
         self.odom_traj = o3d.geometry.LineSet()
         self.slam_traj = o3d.geometry.LineSet()
@@ -256,10 +258,16 @@ class SLAM_GUI:
         combo_tile = gui.Vert(0.5 * em, gui.Margins(margin))
 
         ## Jump to the camera viewpoint
-        self.combo_kf = gui.Combobox()
-        self.combo_kf.set_on_selection_changed(self._on_combo_kf)
-        combo_tile.add_child(gui.Label("Viewpoint list"))
-        combo_tile.add_child(self.combo_kf)
+        # self.combo_kf = gui.Combobox()
+        # self.combo_kf.set_on_selection_changed(self._on_combo_kf)
+        # combo_tile.add_child(gui.Label("Camera list"))
+        # combo_tile.add_child(self.combo_kf)
+        # vp_subtile2.add_child(combo_tile)
+
+        self.combo_cams = gui.Combobox()
+        self.combo_cams.set_on_selection_changed(self._on_combo_cams)
+        combo_tile.add_child(gui.Label("Camera list"))
+        combo_tile.add_child(self.combo_cams)
         vp_subtile2.add_child(combo_tile)
 
         viewpoint_tile.add_child(vp_subtile1)
@@ -303,18 +311,6 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
 
-        self.sdf_chbox = gui.Checkbox("SDF")
-        self.sdf_chbox.checked = False
-        self.sdf_chbox.set_on_checked(self._on_sdf_chbox)
-        chbox_tile_3dobj.add_child(self.sdf_chbox)
-        self.sdf_name = "cur_sdf_slice"
-
-        # self.cad_chbox = gui.Checkbox("CAD")
-        # self.cad_chbox.checked = False
-        # self.cad_chbox.set_on_checked(self._on_cad_chbox)
-        # chbox_tile_3dobj.add_child(self.cad_chbox)
-        # self.cad_name = "sensor_cad"
-
         # TODO
         self.neural_point_chbox = gui.Checkbox("Neural Points")
         self.neural_point_chbox.checked = False
@@ -322,19 +318,41 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.neural_point_chbox)
         self.neural_point_name = "neural_points"
 
-        self.traj_chbox = gui.Checkbox("Trajectory")
-        self.traj_chbox.checked = False
-        self.traj_chbox.set_on_checked(self._on_traj_chbox)
-        chbox_tile_3dobj.add_child(self.traj_chbox)
-        self.gt_traj_name = "gt_trajectory"
-        self.slam_traj_name = "slam_trajectory"
-
         # self.sky_chbox = gui.Checkbox("Sky")
         # self.sky_chbox.checked = False
         # self.sky_chbox.set_on_checked(self._on_sky_chbox)
         # chbox_tile_3dobj.add_child(self.sky_chbox)
 
+        chbox_tile_3dobj_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        self.sdf_chbox = gui.Checkbox("SDF")
+        self.sdf_chbox.checked = False
+        self.sdf_chbox.set_on_checked(self._on_sdf_chbox)
+        chbox_tile_3dobj_2.add_child(self.sdf_chbox)
+        self.sdf_name = "cur_sdf_slice"
+
+
+        self.cad_chbox = gui.Checkbox("Robot")
+        self.cad_chbox.checked = False
+        self.cad_chbox.set_on_checked(self._on_cad_chbox)
+        chbox_tile_3dobj_2.add_child(self.cad_chbox)
+        self.cad_name = "sensor_cad"
+
+        self.gt_traj_chbox = gui.Checkbox("GT Trajectory")
+        self.gt_traj_chbox.checked = False
+        self.gt_traj_chbox.set_on_checked(self._on_gt_traj_chbox)
+        chbox_tile_3dobj_2.add_child(self.gt_traj_chbox)
+        self.gt_traj_name = "gt_trajectory"
+
+        self.slam_traj_chbox = gui.Checkbox("SLAM Trajectory")
+        self.slam_traj_chbox.checked = False
+        self.slam_traj_chbox.set_on_checked(self._on_slam_traj_chbox)
+        chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
+        self.slam_traj_name = "slam_trajectory"
+
         self.panel.add_child(chbox_tile_3dobj)
+
+        self.panel.add_child(chbox_tile_3dobj_2)
 
         self.panel.add_child(gui.Label("GS Rendering options"))
         chbox_tile_geometry = gui.Horiz(0.5 * em, gui.Margins(margin))
@@ -467,7 +485,7 @@ class SLAM_GUI:
         frustum = create_frustum(C2W, color, size=size)
         if name not in self.frustum_dict.keys():
             frustum = create_frustum(C2W, color, size=size)
-            self.combo_kf.add_item(name)
+            self.combo_cams.add_item(name)
             self.frustum_dict[name] = frustum
             self.widget3d.scene.add_geometry(name, frustum.line_set, self.traj_render) # add camera frame to visualizer
         frustum = self.frustum_dict[name]
@@ -517,6 +535,15 @@ class SLAM_GUI:
 
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
+    def _on_combo_cams(self, new_val, new_idx):
+        frustum = self.frustum_dict[new_val]
+        viewpoint = (
+                    frustum.view_dir_behind
+                    if self.staybehind_chbox.checked
+                    else frustum.view_dir
+                )
+        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+
     # def _on_gs_chbox(self, is_checked, name=None):
     #     names = self.frustum_dict.keys() if name is None else [name]
     #     for name in names:
@@ -535,12 +562,12 @@ class SLAM_GUI:
     #     else:
     #         self.widget3d.scene.remove_geometry(name)
 
-    # def _on_cad_chbox(self, is_checked):
-    #     if is_checked:
-    #         self.widget3d.scene.remove_geometry(self.cad_name)
-    #         self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
-    #     else:
-    #         self.widget3d.scene.remove_geometry(self.cad_name)
+    def _on_cad_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.cad_name)
+            self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
+        else:
+            self.widget3d.scene.remove_geometry(self.cad_name)
     
     def _on_neural_point_chbox(self, is_checked):
         if is_checked:
@@ -571,16 +598,18 @@ class SLAM_GUI:
         else:
             self.widget3d.scene.remove_geometry(self.sdf_name)
 
-    def _on_traj_chbox(self, is_checked):
+    def _on_gt_traj_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.gt_traj_name)
             self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
-
-            self.widget3d.scene.remove_geometry(self.slam_traj_name)
-            self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
-
         else:
             self.widget3d.scene.remove_geometry(self.gt_traj_name)
+
+    def _on_slam_traj_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.slam_traj_name)
+            self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
+        else:
             self.widget3d.scene.remove_geometry(self.slam_traj_name)
 
     def _on_sky_chbox(self, is_checked):
@@ -701,49 +730,61 @@ class SLAM_GUI:
 
         frustum_size = self.config.max_range*0.005
 
-        if gaussian_packet.current_frame is not None: # as Camera class
-            frustum = self.add_camera(
-                gaussian_packet.current_frame, name="current", color=[0, 1, 0], size=frustum_size
-            )
+        if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
+            
+            for cam in gaussian_packet.cam_list:
+                frustum = self.add_camera(
+                    gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
+                )
             if self.followcam_chbox.checked:
+                selected_cam = self.combo_cams.selected_text
+                selected_frustum = self.frustum_dict[selected_cam]
                 viewpoint = (
-                    frustum.view_dir_behind
+                    selected_frustum.view_dir_behind
                     if self.staybehind_chbox.checked
-                    else frustum.view_dir
+                    else selected_frustum.view_dir
                 )
                 self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-        if gaussian_packet.keyframe is not None: # as Camera class
-            name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
-            frustum = self.add_camera(
-                gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
-            )
+        # not used yet (TODO)
+        # if gaussian_packet.keyframe is not None: # as Camera class
+        #     name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
+        #     frustum = self.add_camera(
+        #         gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
+        #     )
 
-        if gaussian_packet.keyframes is not None:
-            for keyframe in gaussian_packet.keyframes:
-                name = "keyframe_{}".format(keyframe.uid)
-                frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
+        # if gaussian_packet.keyframes is not None:
+        #     for keyframe in gaussian_packet.keyframes:
+        #         name = "keyframe_{}".format(keyframe.uid)
+        #         frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
 
         # if gaussian_packet.kf_window is not None:
         #     self.kf_window = gaussian_packet.kf_window
         #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
 
-        if gaussian_packet.gtcolor is not None:
-            rgb = torch.clamp(gaussian_packet.gtcolor, min=0, max=1.0) * 255
+        selected_cam = self.combo_cams.selected_text
+        selected_frustum = self.frustum_dict[selected_cam]
+
+        selected_gtcolor = gaussian_packet.gtcolor[selected_cam]
+        selected_gtdepth = gaussian_packet.gtdepth[selected_cam]
+        selected_gtnormal = gaussian_packet.gtnormal[selected_cam]
+
+        if selected_gtcolor is not None:
+            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
             rgb = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
             rgb = o3d.geometry.Image(rgb)
             self.in_rgb_widget.update_image(rgb)
 
-        if gaussian_packet.gtdepth is not None:
-            depth = gaussian_packet.gtdepth.contiguous().cpu().numpy() 
+        if selected_gtdepth is not None:
+            depth = selected_gtdepth.contiguous().cpu().numpy() 
             depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
             depth_color = np.transpose(depth_color[0], (1, 2, 0))
             depth_color = np.ascontiguousarray(depth_color)
             depth_color_o3d = o3d.geometry.Image(depth_color)
             self.in_depth_widget.update_image(depth_color_o3d)
 
-        if gaussian_packet.gtnormal is not None:
-            normal = gaussian_packet.gtnormal.contiguous().cpu().numpy() 
+        if selected_gtnormal is not None:
+            normal = selected_gtnormal.contiguous().cpu().numpy() 
             normal_color = 0.5 - normal * 0.5
             normal_color = np.transpose(normal_color, (1, 2, 0))
             normal_color = np.ascontiguousarray(normal_color)
@@ -751,11 +792,10 @@ class SLAM_GUI:
             self.in_normal_widget.update_image(normal_color_o3d)
 
         if gaussian_packet.current_pointcloud_xyz is not None:
+            self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
+            if gaussian_packet.current_pointcloud_rgb is not None:
+                self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
             if self.scan_chbox.checked:
-                self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
-                if gaussian_packet.current_pointcloud_rgb is not None:
-                    self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
-
                 self.widget3d.scene.remove_geometry(self.scan_name)
                 self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
 
@@ -782,24 +822,22 @@ class SLAM_GUI:
                 self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
 
         if gaussian_packet.gt_poses is not None:
-            # print(self.gt_traj)
             gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
             self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
             gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
             self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
             self.gt_traj.paint_uniform_color(BLACK)
             
-            if self.traj_chbox.checked:
+            if self.gt_traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.gt_traj_name)
                 self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
-            # if gaussian_packet.slam_poses is None:
-                # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.gt_poses[-1]
-                # self.sensor_cad.transform(relative_tran)
-                # self.last_used_pose = gaussian_packet.gt_poses[-1]
-                # if self.cad_chbox.checked:
-                #     self.widget3d.scene.remove_geometry(self.cad_name)
-                #     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+            if gaussian_packet.slam_poses is None:
+                if self.cad_chbox.checked:
+                    self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
+                    self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
+                    self.widget3d.scene.remove_geometry(self.cad_name)
+                    self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
 
         if gaussian_packet.slam_poses is not None:
             slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
@@ -808,16 +846,15 @@ class SLAM_GUI:
             self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
             self.slam_traj.paint_uniform_color(RED)
 
-            if self.traj_chbox.checked:
+            if self.slam_traj_chbox.checked:
                 self.widget3d.scene.remove_geometry(self.slam_traj_name)
                 self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
             
-            # relative_tran = np.linalg.inv(self.last_used_pose) @ gaussian_packet.slam_poses[-1]
-            # self.sensor_cad.transform(relative_tran)
-            # self.last_used_pose = gaussian_packet.slam_poses[-1]
-            # if self.cad_chbox.checked:
-            #     self.widget3d.scene.remove_geometry(self.cad_name)
-            #     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.specular_geo)
+            if self.cad_chbox.checked:
+                self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
+                self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
+                self.widget3d.scene.remove_geometry(self.cad_name)
+                self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
         
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -1077,7 +1114,7 @@ class SLAM_GUI:
             rendering_data = render(current_cam, None, self.gaussian_cur.neural_points_data, self.decoders, 
                 None, self.background, scaling_modifier=self.scaling_slider.double_value, 
                 down_rate=self.config.gs_vis_down_rate, 
-                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on)
+                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=False)
             
             render_toc = get_time()
 
@@ -1102,12 +1139,13 @@ class SLAM_GUI:
         if not self.init:
             return
 
+        current_cam = self.get_current_cam() # TODO, you can also send back it to main
+
         if not self.gs_chbox.checked:
             if self.render_img is None:
                 return
             self.render_img = None
         else: # gs_chbox checked
-            current_cam = self.get_current_cam() # TODO, you can also send back it to main
             results = self.rasterise(current_cam)
             if results is None:
                 return

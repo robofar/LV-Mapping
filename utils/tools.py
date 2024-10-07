@@ -134,6 +134,7 @@ def setup_optimizer(
     mlp_gs_rot_param=None,
     mlp_gs_alpha_param=None,
     mlp_gs_color_param=None,
+    cams=None,
     poses=None,
     lr_ratio=1.0,
 ) -> Optimizer:
@@ -151,22 +152,25 @@ def setup_optimizer(
             "params": mlp_sdf_param,
             "lr": lr_cur,
             "weight_decay": weight_decay_mlp,
+            "name": "sdf_mlp_param",
         }
         opt_setting.append(mlp_sdf_param_opt_dict)
-    if config.semantic_on and mlp_sem_param is not None:
-        mlp_sem_param_opt_dict = {
-            "params": mlp_sem_param,
-            "lr": lr_cur,
-            "weight_decay": weight_decay_mlp,
-        }
-        opt_setting.append(mlp_sem_param_opt_dict)
     if config.color_on and mlp_color_param is not None:
         mlp_color_param_opt_dict = {
             "params": mlp_color_param,
             "lr": lr_cur,
             "weight_decay": weight_decay_mlp,
+            "name": "color_mlp_param",
         }
         opt_setting.append(mlp_color_param_opt_dict)
+    if config.semantic_on and mlp_sem_param is not None:
+        mlp_sem_param_opt_dict = {
+            "params": mlp_sem_param,
+            "lr": lr_cur,
+            "weight_decay": weight_decay_mlp,
+            "name": "sem_mlp_param",
+        }
+        opt_setting.append(mlp_sem_param_opt_dict)
     
     # lr_gs_xyz = 1e-2
     # lr_gs_scale = 1e-2
@@ -192,6 +196,7 @@ def setup_optimizer(
                 "params": mlp_gs_xyz_param,
                 "lr": lr_gs_xyz,
                 "weight_decay": weight_decay_mlp,
+                "name": "gs_xyz_mlp_param",
             }
             opt_setting.append(mlp_gs_xyz_param_opt_dict)
         if mlp_gs_scale_param is not None:
@@ -199,6 +204,7 @@ def setup_optimizer(
                 "params": mlp_gs_scale_param,
                 "lr": lr_gs_scale,
                 "weight_decay": weight_decay_mlp,
+                "name": "gs_scale_mlp_param",
             }
             opt_setting.append(mlp_gs_scale_param_opt_dict)
         if mlp_gs_rot_param is not None:
@@ -206,6 +212,7 @@ def setup_optimizer(
                 "params": mlp_gs_rot_param,
                 "lr": lr_gs_rot,
                 "weight_decay": weight_decay_mlp,
+                "name": "gs_rot_mlp_param",
             }
             opt_setting.append(mlp_gs_rot_param_opt_dict)
         if mlp_gs_alpha_param is not None:
@@ -213,6 +220,7 @@ def setup_optimizer(
                 "params": mlp_gs_alpha_param,
                 "lr": lr_gs_alpha,
                 "weight_decay": weight_decay_mlp,
+                "name": "gs_xyz_alpha_param",
             }
             opt_setting.append(mlp_gs_alpha_param_opt_dict)
         if mlp_gs_color_param is not None:
@@ -220,12 +228,32 @@ def setup_optimizer(
                 "params": mlp_gs_color_param,
                 "lr": lr_gs_color,
                 "weight_decay": weight_decay_mlp,
+                "name": "gs_color_mlp_param",
             }
             opt_setting.append(mlp_gs_color_param_opt_dict)
         
     if poses is not None:
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
+
+    lr_exposure = 0.01
+    if cams is not None:
+        for cam in cams:
+            opt_setting.append(
+                {
+                    "params": [cam.exposure_a],
+                    "lr": lr_exposure,
+                    "name": "cam_{}_exposure_a".format(cam.uid),
+                }
+            )
+            opt_setting.append(
+                {
+                    "params": [cam.exposure_b],
+                    "lr": lr_exposure,
+                    "name": "cam_{}_exposure_b".format(cam.uid),
+                }
+            )
+
     
     # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
     lr_cur_feature = 0.01 
@@ -235,6 +263,7 @@ def setup_optimizer(
         "params": neural_point_feat,
         "lr": lr_cur_feature,
         "weight_decay": weight_decay_feature,
+        "name": "neural_point_features",
     }
     opt_setting.append(feat_opt_dict)
 

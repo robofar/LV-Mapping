@@ -57,7 +57,8 @@ def render(viewpoint_camera: CamImage,
            train_mode: bool = False,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
-           alpha_filter_on: bool = True):
+           alpha_filter_on: bool = True,
+           correct_exposure: bool = True):
 
     """
     Render the scene. 
@@ -306,15 +307,14 @@ def render(viewpoint_camera: CamImage,
 
         # rendered result
         results.update({
-            "render": rendered_image,
-            "viewspace_points": means2D,
-            "visibility_filter" : radii > 0,
-            "radii": radii,
             'rend_alpha': render_alpha,
             'rend_normal': render_normal,
             'rend_dist': render_dist, # distortion
             'surf_depth': surf_depth, # rendered depth
             'surf_normal': d2n, # normal calemoculated from rendered depth
+            "viewspace_points": means2D,
+            "visibility_filter" : radii > 0,
+            "radii": radii
         })
 
     
@@ -337,7 +337,6 @@ def render(viewpoint_camera: CamImage,
         # print("D2N time:", (toc_d2n-tic_d2n) * 1000) # could be more than 1ms, disable for now
 
         results.update({
-            "render": rendered_image, 
             "rend_normal": rendered_normal,
             "surf_depth": rendered_depth,
             "rend_alpha": rendered_opac,
@@ -360,7 +359,6 @@ def render(viewpoint_camera: CamImage,
             rotations = rotations)
         
         results.update({
-            "render": rendered_image, 
             "rend_normal": None, 
             "surf_depth": depth,
             "rend_alpha": None, 
@@ -368,17 +366,13 @@ def render(viewpoint_camera: CamImage,
             'rend_dist': None,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
-            "radii": radii})
+            "radii": radii})        
 
-    # free memory
-    # if not train_mode:
-    #     gaussian_xyz = None
-    #     gaussian_scale = None
-    #     gaussian_rot = None
-    #     gaussian_alpha = None
-    #     gaussian_color = None
-    #     alpha_all = None
-    #     gaussian_free_mask = None
+    if correct_exposure:
+        rendered_image = (torch.exp(viewpoint_camera.exposure_a)) * rendered_image + viewpoint_camera.exposure_b # apply this for now
+        # but when evaluating, how to set the values for these parameters
+
+    results.update({"render": rendered_image})
 
     return results
 

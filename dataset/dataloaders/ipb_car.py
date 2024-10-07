@@ -32,30 +32,41 @@ import yaml
 
 from datetime import datetime
 
+from utils.tools import get_time
+
 # for the new test data
 
 class IPBCarDataset:
-    def __init__(self, data_dir, *_, **__):
+    def __init__(self, data_dir, cam_name: str, *_, **__):
         
+        # for cam_name, select from "left", "right", "front", "rear" all "all"
         self.use_only_colorized_points = True
         
         self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "os_h" 
         self.lidar_v_topic_name = "os_v" 
+        
         self.cam_left_topic_name = "left"  
         self.cam_right_topic_name = "right" 
         self.cam_front_topic_name = "front" 
         self.cam_rear_topic_name = "rear"
 
-        self.main_cam_name = self.cam_front_topic_name
-        self.main_cam_name_calib = "camerafrontimage_raw"
+        cam_list_all = [self.cam_left_topic_name, self.cam_right_topic_name, self.cam_front_topic_name, self.cam_rear_topic_name]
 
-        # self.main_cam_name = self.cam_left_topic_name
-        # self.main_cam_name_calib = "cameraleftimage_raw"
+        if cam_name in cam_list_all: 
+            self.main_cam_only = True
+            self.main_cam_name = cam_name
+            self.cam_list = [self.main_cam_name]
+            print("Use {} camera only".format(cam_name))
+        else: 
+            # use all the cameras
+            self.main_cam_only = False
+            self.main_cam_name = self.cam_front_topic_name
+            self.cam_list = cam_list_all
+            print("Use all the cameras")
 
-        self.main_cam_only: bool = True
-
+        self.img_files = {}
         self.K_mats = {}
         self.dist_coeffs = {}
         self.T_c_l_mats = {}
@@ -66,24 +77,20 @@ class IPBCarDataset:
 
         # img_size: 2064x1024
 
-        # camera left
-        self.img_left_dir = os.path.join(data_dir, "camera", self.cam_left_topic_name, "image_raw/")
-        self.img_left_files = sorted(glob.glob(self.img_left_dir + "*.png"))
+        for cam_name in self.cam_list:
+            cur_cam_dir = os.path.join(data_dir, "camera", cam_name, "image_undistorted/")
+            if os.path.exists(cur_cam_dir):
+                self.img_already_undistorted = True
+            else:
+                cur_cam_dir = os.path.join(data_dir, "camera", cam_name, "image_raw/")
+                self.img_already_undistorted = False
+            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+            self.img_files[cam_name] = cur_img_files
 
-        # camera right
-        self.img_right_dir = os.path.join(data_dir, "camera", self.cam_right_topic_name, "image_raw/")
-        self.img_right_files = sorted(glob.glob(self.img_right_dir + "*.png"))
-       
-        # camera front
-        self.img_front_dir = os.path.join(data_dir, "camera", self.cam_front_topic_name, "image_raw/")
-        self.img_front_files = sorted(glob.glob(self.img_front_dir + "*.png"))
-
-        # camera rear
-        self.img_rear_dir = os.path.join(data_dir, "camera", self.cam_rear_topic_name, "image_raw/")
-        self.img_rear_files = sorted(glob.glob(self.img_rear_dir + "*.png"))
-
+        # read calib
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
 
+        # read reference poses (by Louis)
         self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy")) # is this the pose in LiDAR frame? (ask louis)
         # print(self.gt_poses)
         
@@ -107,7 +114,7 @@ class IPBCarDataset:
 
 
     def __getitem__(self, idx):
-        
+        # TODO: read ply is a bot too slow, try to use *.bin
         points = self.read_point_cloud(self.lidar_horizontal_files[idx]) # lidar_h_points
         point_ts = self.get_timestamps()
         
@@ -127,28 +134,15 @@ class IPBCarDataset:
         points = points[valid_mask]
         point_ts = point_ts[valid_mask]
 
-        if self.main_cam_only:
-            img_front = self.read_img(self.img_front_files[idx], True, self.K_mats[self.cam_front_topic_name], self.dist_coeffs[self.cam_front_topic_name])
-            img_dict = {self.cam_front_topic_name: img_front}
-
-            # img_left = self.read_img(self.img_left_files[idx], True, self.K_mats[self.cam_left_topic_name], self.dist_coeffs[self.cam_left_topic_name])
-            # img_dict = {self.cam_left_topic_name: img_left}
-
-        else:
-            img_front = self.read_img(self.img_front_files[idx], True, self.K_mats[self.cam_front_topic_name], self.dist_coeffs[self.cam_front_topic_name])
-            img_left = self.read_img(self.img_left_files[idx], True, self.K_mats[self.cam_left_topic_name], self.dist_coeffs[self.cam_left_topic_name])
-            img_right = self.read_img(self.img_right_files[idx], True, self.K_mats[self.cam_right_topic_name], self.dist_coeffs[self.cam_right_topic_name])
-            img_rear = self.read_img(self.img_rear_files[idx], True, self.K_mats[self.cam_rear_topic_name], self.dist_coeffs[self.cam_rear_topic_name])
-
-            img_dict = {self.cam_front_topic_name: img_front, self.cam_left_topic_name: img_left, 
-                        self.cam_rear_topic_name: img_rear, self.cam_right_topic_name: img_right}
-
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
-        
-        for cam_name in list(img_dict.keys()):
-            # calib seems to be somehow wrong, figure it out. TODO
-            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], self.T_c_l_mats[cam_name], self.K_mats[cam_name])
-            img_dict[cam_name] = np.concatenate((img_dict[cam_name], np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+        undistort_on = not self.img_already_undistorted
+        img_dict = {}
+        for cam_name in self.cam_list:
+            img_cam = self.read_img(self.img_files[cam_name][idx], undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
+            # TODO: to slow, try to speed it up
+            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+            img_cam = np.concatenate((img_cam, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+            img_dict[cam_name] = img_cam
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -156,7 +150,7 @@ class IPBCarDataset:
             points_rgb = points_rgb[with_rgb_mask]
             point_ts = point_ts[with_rgb_mask]
 
-        # # we skip the intensity here for now (and also the color mask)
+        # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
         frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
@@ -216,49 +210,37 @@ class IPBCarDataset:
 
     def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
         img = cv2.imread(img_file)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         # apply undistortion:
+        # tic_undistort = get_time()
         if undistort_on and K_mat is not None and dist_coeffs is not None:
             img = cv2.undistort(img, K_mat, dist_coeffs)
+            cv2.imwrite(img_file.replace("image_raw", "image_undistorted"), img)
+
+        # toc_undistort = get_time() 
+
+        # print("Image undistortion time (ms):", (toc_undistort-tic_undistort)*1e3) # 12 ms / each 
+        # for 4 imgs, takes about 50ms, better to do this offline
+        
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         return img
 
     def read_calib_file(self, yaml_file_path: str) -> dict:
 
-        # TODO: add for other sensors
         calib_dict = {}
         with open(yaml_file_path, 'r') as file:
             calib_dict = yaml.safe_load(file)
 
-            self.T_bacs2opencv = np.asarray(
-                [[0, -1, 0, 0], [-1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]
-            ) # we need to convert to the opencv camera frame
-
             lidar_h_calib = calib_dict["lidarhorizontalpoints"]
             T_cf_l = np.array(lidar_h_calib["extrinsics"])
 
-            camera_front_calib = calib_dict["camerafrontimage_raw"]
-            self.K_mats[self.cam_front_topic_name] = np.array(camera_front_calib["K"])
-            self.dist_coeffs[self.cam_front_topic_name] = np.array(camera_front_calib["distortion_coeff"])
-            # self.T_c_l_mats[self.cam_front_topic_name] = self.T_bacs2opencv @ np.array(lidar_h_calib[self.cam_front_topic_name])
-            self.T_c_l_mats[self.cam_front_topic_name] = T_cf_l
-
-            if not self.main_cam_only:
-                camera_rear_calib = calib_dict["camerarearimage_raw"]
-                self.K_mats[self.cam_rear_topic_name] = np.array(camera_rear_calib["K"])
-                self.dist_coeffs[self.cam_rear_topic_name] = np.array(camera_rear_calib["distortion_coeff"])
-                self.T_c_l_mats[self.cam_rear_topic_name] = np.linalg.inv(np.array(camera_rear_calib["extrinsics"])) @ T_cf_l 
-
-                camera_left_calib = calib_dict["cameraleftimage_raw"]
-                self.K_mats[self.cam_left_topic_name] = np.array(camera_left_calib["K"])
-                self.dist_coeffs[self.cam_left_topic_name] = np.array(camera_left_calib["distortion_coeff"])
-                self.T_c_l_mats[self.cam_left_topic_name] = np.linalg.inv(np.array(camera_left_calib["extrinsics"])) @ T_cf_l 
-
-                camera_right_calib = calib_dict["camerarightimage_raw"]
-                self.K_mats[self.cam_right_topic_name] = np.array(camera_right_calib["K"])
-                self.dist_coeffs[self.cam_right_topic_name] = np.array(camera_right_calib["distortion_coeff"])
-                self.T_c_l_mats[self.cam_right_topic_name] = np.linalg.inv(np.array(camera_right_calib["extrinsics"])) @ T_cf_l 
+            for cam_name in self.cam_list:
+                cur_cam_calib_name = "camera{}image_raw".format(cam_name)
+                cur_camera_calib = calib_dict[cur_cam_calib_name]
+                self.K_mats[cam_name] = np.array(cur_camera_calib["K"])
+                self.dist_coeffs[cam_name] = np.array(cur_camera_calib["distortion_coeff"])
+                self.T_c_l_mats[cam_name] = np.linalg.inv(np.array(cur_camera_calib["extrinsics"])) @ T_cf_l 
 
         return calib_dict
     

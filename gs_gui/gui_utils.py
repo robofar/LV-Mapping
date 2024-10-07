@@ -31,7 +31,7 @@ class Frustum:
         cameraeye = cameraeye[0:3, :].transpose()
         eye = cameraeye[0, :]
 
-        base_behind = np.array([[0.0, -2.5, -15.0]]) * self.size # original z -30.0
+        base_behind = np.array([[0.0, -2.5, -20.0]]) * self.size # original z -30.0
         base_behind_hmg = np.hstack([base_behind, np.ones((base_behind.shape[0], 1))])
         cameraeye_behind = pose @ base_behind_hmg.transpose()
         cameraeye_behind = cameraeye_behind[0:3, :].transpose()
@@ -48,15 +48,15 @@ class Frustum:
         self.up = up
 
 # camera frustum
-def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02): 
+def create_frustum(pose, frusutum_color=[0, 1, 0], size=0.02, h_w_ratio = 0.5, z_ratio = 1.5): 
     points = (
         np.array(
             [
                 [0.0, 0.0, 0],
-                [1.0, -0.5, 2],
-                [-1.0, -0.5, 2],
-                [1.0, 0.5, 2],
-                [-1.0, 0.5, 2],
+                [1.0, -h_w_ratio, z_ratio],
+                [-1.0, -h_w_ratio, z_ratio],
+                [1.0, h_w_ratio, z_ratio],
+                [-1.0, h_w_ratio, z_ratio],
             ]
         )
         * size # too small
@@ -78,7 +78,7 @@ class VisPacket:
     def __init__(
         self,
         frame_id = None,
-        current_frame=None,
+        current_frames=None,
         keyframe=None,
         gaussian_xyz=None,
         gaussian_scale=None,
@@ -132,34 +132,46 @@ class VisPacket:
             self.local_gaussian_count = self.gaussian_xyz.shape[0]
 
         self.keyframe = keyframe
-        self.current_frame = current_frame
+        self.current_frames = current_frames
+        self.cam_list = []
 
-        self.gtcolor = None
-        self.gtdepth = None
-        self.gtnormal = None
+        self.gtcolor = {}
+        self.gtdepth = {}
+        self.gtnormal = {}
 
         self.img_resize_width = 600 # resized for vis
-        if current_frame is not None:
-            if current_frame.original_image_list[img_down_rate] is not None:
-                cur_gt_img = current_frame.original_image_list[img_down_rate]
-                gtcolor = cur_gt_img[:3]
-                if current_frame.sky_mask_on:
-                    # mask the sky part
-                    cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
-                    cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
-                    gtcolor[cur_sky_mask_used] = 1.0
-                
-                if current_frame.depth_on:
-                    gtdepth = cur_gt_img[3].unsqueeze(0)
-                if current_frame.mono_normal_on:
-                    gtnormal = current_frame.normal_img_list[img_down_rate]
+        if current_frames is not None:
+            self.cam_list = list(current_frames.keys())
+            for cam in self.cam_list:
+                current_frame = current_frames[cam]
+                if current_frame.original_image_list[img_down_rate] is not None:
+                    cur_gt_img = current_frame.original_image_list[img_down_rate]
+                    gtcolor = cur_gt_img[:3]
                     if current_frame.sky_mask_on:
                         # mask the sky part
-                        gtnormal[cur_sky_mask_used] = 0.0
-        
-            self.gtcolor = self.resize_img(gtcolor, self.img_resize_width)
-            self.gtdepth = self.resize_img(gtdepth, self.img_resize_width, is_sparse=True)
-            self.gtnormal = self.resize_img(gtnormal, self.img_resize_width)
+                        cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
+                        cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
+                        gtcolor[cur_sky_mask_used] = 1.0
+                    
+                    if current_frame.depth_on:
+                        gtdepth = cur_gt_img[3].unsqueeze(0)
+                    if current_frame.mono_normal_on:
+                        gtnormal = current_frame.normal_img_list[img_down_rate]
+                        if current_frame.sky_mask_on:
+                            # mask the sky part
+                            gtnormal[cur_sky_mask_used] = 0.0
+            
+                gtcolor = self.resize_img(gtcolor, self.img_resize_width)
+
+                # exposure correction for vis
+                with torch.no_grad():
+                    gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
+
+                self.gtcolor[cam] = gtcolor
+
+                self.gtdepth[cam] = self.resize_img(gtdepth, self.img_resize_width, is_sparse=True)
+
+                self.gtnormal[cam] = self.resize_img(gtnormal, self.img_resize_width)
 
         self.keyframes = keyframes
         self.finish = finish

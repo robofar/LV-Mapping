@@ -132,6 +132,9 @@ class Mapper:
         self.cam_img_test_pool = []
         self.test_cam_uid = [] 
 
+        # current exposure parameters for each camera
+        self.cams_exposure_ab = {}
+
         self.gs_total_iter = 0
         self.gs_iter_window = config.gs_bs * config.gs_iters * config.img_pool_size
 
@@ -583,64 +586,63 @@ class Mapper:
 
         T4 = get_time()
 
-        # img related
-        # TODO: add keyframe selection here
-        if self.dataset.cur_cam_img is not None:
-            
-            # set camera poses
-            for cam_name in self.dataset.cam_names: # for each cam in this frame
-                cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
-                T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
-                T_w_c = T_w_l @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
-                cur_view_cam.set_pose(T_w_c) # set camera pose
-            
-            # training views
-            if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
-                # better to use the newly added gaussians ratio (FIXME)
-                # move oldest short-term memory to long-term memory
-                while len(self.cam_short_term_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
-                    oldest_short_term_train_cam = self.cam_short_term_train_pool[0]
-                    oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
-                    self.cam_long_term_train_pool.append(oldest_short_term_train_cam)
-                    self.cam_short_term_train_pool.pop(0) # pop the oldest cam
-
-                # add new observations to short-term memory
-                for cam_name in self.dataset.cam_names:
-                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                    cur_view_cam.train_view = True
-
-                    self.cam_short_term_train_pool.append(cur_view_cam)
-                    self.train_cam_uid.append(cur_view_cam.uid)
-
-                long_term_pool_size = 4*self.config.img_pool_size # TODO, add to config
-                if len(self.cam_long_term_train_pool) > long_term_pool_size:
-                    self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
-                    # make sure the memory are freed
-
-            # also add some testing views (all the others are then testing views)
-            else:
-                for cam_name in self.dataset.cam_names:
-                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                    self.test_cam_uid.append(cur_view_cam.uid)
-
-                if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
-                    self.cam_img_test_pool.pop(0) # pop the oldest cam
-                    
-                cam_name = self.dataset.loader.main_cam_name
-                cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                cur_view_cam.train_view = False
-
-                self.cam_img_test_pool.append(cur_view_cam)
-
-                # print(self.cam_short_term_train_pool_id)
-
         # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
         # print("time for sampling              (ms):", (T2-T1)*1e3)
         # print("time for map updating          (ms):", (T3-T2)*1e3)
         # print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
         # print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
         # print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
+    
+
+    def update_cam_pool(self, frame_id: int):
+        # set camera poses
+        for cam_name in self.dataset.cam_names: # for each cam in this frame
+            cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+            T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
+            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
+            T_w_c = T_w_l @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
+            cur_view_cam.set_pose(T_w_c) # set camera pose
+        
+        # training views
+        if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
+            # better to use the newly added gaussians ratio (FIXME)
+            # move oldest short-term memory to long-term memory
+            while len(self.cam_short_term_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
+                oldest_short_term_train_cam = self.cam_short_term_train_pool[0]
+                oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
+                self.cam_long_term_train_pool.append(oldest_short_term_train_cam)
+                self.cam_short_term_train_pool.pop(0) # pop the oldest cam
+
+            # add new observations to short-term memory
+            for cam_name in self.dataset.cam_names:
+                cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                cur_view_cam.train_view = True
+
+                self.cam_short_term_train_pool.append(cur_view_cam)
+                self.train_cam_uid.append(cur_view_cam.uid)
+
+            long_term_pool_size = 4*self.config.img_pool_size # TODO, add to config
+            if len(self.cam_long_term_train_pool) > long_term_pool_size:
+                self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
+                # make sure the memory are freed
+
+        # also add some testing views (all the others are then testing views)
+        else:
+            for cam_name in self.dataset.cam_names:
+                cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                self.test_cam_uid.append(cur_view_cam.uid)
+
+            if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
+                self.cam_img_test_pool.pop(0) # pop the oldest cam
+                
+            cam_name = self.dataset.loader.main_cam_name
+            cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+            cur_view_cam.train_view = False
+
+            self.cam_img_test_pool.append(cur_view_cam)
+
+            # print(self.cam_short_term_train_pool_id)
+
 
     # get a batch of training samples and labels for map optimization
     def get_batch(self, global_coord=False):
@@ -1047,7 +1049,9 @@ class Mapper:
             mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
             mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
             mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
-            mlp_gs_color_param=list(self.gaussian_color_mlp.parameters())
+            mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
+            cams = self.cam_short_term_train_pool,
+            # TODO: add camera exposures # add all cams in the train pool
         )
 
         neural_points_data = {}
@@ -1067,7 +1071,7 @@ class Mapper:
 
             # print("GS fitting on ")
         
-            # TODO 
+            # TODO: For original GS
             # fastest speed: 20 ms / iter (bs=1) including the gaussian parameter loss
             # fastest speed: 10 ms / iter (bs=1) excluding the gaussian parameter loss (but we need to constriant these gaussians)
 
@@ -1087,27 +1091,12 @@ class Mapper:
             long_term_img_pool_size = len(self.cam_long_term_train_pool)
 
             for iter in tqdm(range(iter_count), disable=self.silence):    
-                
-                # better to firstly get the visible neural points in the camera frustrum
-
-                # TODO: predict the up-to-date GS here
-                # find the neural points in the field of view of the batch
-                # now we firstly test all the neural points in the local map
-
-                # TO THINK
-                # could be diffcult to set the learning rate
-                # could be hard to directly integrate with the visualizer
-                # could be better to set the batch size to 1 and operate per image
-                # and then maybe you can write the gaussian prediction in the render function, then it can be induced by the visualizer
-                # PINGS
 
                 # camera poses already set
                 T1 = get_time()
 
                 # 60 % short term, 40 % long term
-                short_term_train_prob = 0.6
-                # TODO: add to config
-                if random.random() < short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
+                if random.random() < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
                     # short-term memory 
                     cur_img_idx = torch.randperm(short_term_img_pool_size)[0]
                     viewpoint_cam: CamImage = self.cam_short_term_train_pool[cur_img_idx]
@@ -1132,6 +1121,10 @@ class Mapper:
                         print(" Used cam id:", viewpoint_cam.uid)
 
                 gt_image = viewpoint_cam.original_image_list[train_down_rate]
+
+                cur_exposure_a = viewpoint_cam.exposure_a.item()
+                cur_exposure_b = viewpoint_cam.exposure_b.item()
+                print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
                 
                 if gt_image.device != self.device: # this is one very time consuming part
                     gt_image.to(self.device)
@@ -1146,7 +1139,7 @@ class Mapper:
                 T2 = get_time()
 
                 render_pkg = render(viewpoint_cam, None, neural_points_data, self.decoders, None, background, down_rate=train_down_rate, 
-                    train_mode=True, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on) # render gaussians 
+                    train_mode=True, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
 
                 if render_pkg is None:
                     continue
@@ -1611,7 +1604,8 @@ class Mapper:
 
                 T1_r = get_time()
 
-                render_pkg = render(cur_viewpoint_cam, T_w_c, neural_points_data, self.decoders, None, background, scaling_modifier=gaussian_vis_scale, down_rate=vis_down_rate, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on) # render gaussians 
+                render_pkg = render(cur_viewpoint_cam, T_w_c, neural_points_data, self.decoders, None, background, scaling_modifier=gaussian_vis_scale, down_rate=vis_down_rate, 
+                    dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
 
                 # T3 = get_time()
 
@@ -1812,7 +1806,9 @@ class Mapper:
                     neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
 
                     # current values
-                    render_pkg = render(cur_view_cam, None, neural_points_data, self.decoders, None, background, down_rate=eval_down_rate, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on) # render gaussians 
+                    render_pkg = render(cur_view_cam, None, neural_points_data, self.decoders, None, background, 
+                        down_rate=eval_down_rate, dist_concat_on=self.config.dist_concat_on, 
+                        view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
 
                     # rendered results
                     rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W

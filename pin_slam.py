@@ -365,9 +365,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
-        # cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
-        # we do not do SDF training seperately except for the first frame
-        cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0 
+        if config.gs_on:
+            # when train gs we do not do SDF training seperately except for the first frame
+            cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0 
+        else:
+            cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
         if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
@@ -389,6 +391,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 gs_iter_num = config.gs_iters if frame_id == (config.gs_batch_frame-1) else 0
             else:
                 gs_iter_num = config.gs_iters
+
+            mapper.update_cam_pool(frame_id)
 
             mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
@@ -503,7 +507,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             T9 = get_time()
 
             # add the most recent train frame for vis
-            packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame, current_frame=dataset.cur_cam_img[dataset.loader.main_cam_name], img_down_rate=config.gs_vis_down_rate) # latest training pool
+            packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
+                current_frames=dataset.cur_cam_img, 
+                img_down_rate=config.gs_vis_down_rate)
 
             # spawn gaussians in the current local map
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()

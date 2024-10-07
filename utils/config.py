@@ -222,14 +222,15 @@ class Config:
         self.spawn_n_gaussian = 8 # how many gaussians being spawned per neural point
 
         self.gs_iters: int = 0
-        self.gs_bs: int = 5
+        self.gs_bs: int = 1 # not used now
         self.gaussian_bs_ratio: float = 1.0 # gaussian_bs = bs * gaussian_bs_ratio
         self.gs_keyframe_interval: int = 2
-        self.img_pool_size: int = 10 # training views
-        self.img_test_pool_size: int = 10 # testing views
+        self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
+        self.img_pool_size: int = 10 # #short-term training views
+        self.img_test_pool_size: int = 0 # testing views
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
         self.gs_vis_down_rate: int = 0 # for the visualization
-        self.sh_degree: int = 1 # max spherical harmonics level # TODO
+        self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
@@ -572,9 +573,10 @@ class Config:
             self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 5.0)
 
             self.spawn_n_gaussian = config_args["gs"].get("n_gaussian", self.spawn_n_gaussian)
+            self.dist_concat_on = config_args["gs"].get("dist_concat_on", self.dist_concat_on)
+            self.view_concat_on = config_args["gs"].get("view_concat_on", self.view_concat_on)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
-            self.gs_bs = config_args["gs"].get("gs_bs", self.gs_bs) # frame_bs per update
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
@@ -582,7 +584,6 @@ class Config:
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
             self.gs_init_opacity = config_args["gs"].get("init_opacity", self.gs_init_opacity)
-            self.sh_degree = config_args["gs"].get("sh_degree", self.sh_degree)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             
             self.lambda_ssim= float(config_args["gs"].get("lambda_ssim", self.lambda_ssim)) # weight for ssim, set to zero for faster training
