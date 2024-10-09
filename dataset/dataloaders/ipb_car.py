@@ -42,7 +42,7 @@ class IPBCarDataset:
         # for cam_name, select from "left", "right", "front", "rear" all "all"
         self.use_only_colorized_points = True
         
-        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "horizontal" 
         self.lidar_v_topic_name = "vertical" 
@@ -52,7 +52,7 @@ class IPBCarDataset:
         self.cam_front_topic_name = "front" 
         self.cam_rear_topic_name = "rear"
 
-        cam_list_all = [self.cam_left_topic_name, self.cam_right_topic_name, self.cam_front_topic_name, self.cam_rear_topic_name]
+        cam_list_all = [self.cam_front_topic_name, self.cam_left_topic_name, self.cam_rear_topic_name, self.cam_right_topic_name]
 
         if cam_name in cam_list_all: 
             self.main_cam_only = True
@@ -126,10 +126,17 @@ class IPBCarDataset:
 
 
     def __getitem__(self, idx):
+        
+        # tic_read_pc = get_time()
+
         # TODO: read ply is a bot too slow, try to use *.bin (done)
+        # read bin is very fast
         points = self.read_point_cloud(self.lidar_horizontal_files[idx]) # lidar_h_points
         # print(np.shape(points)[0])
         point_ts = self.get_timestamps(v_beam=128, h_beam=2048)
+
+        # toc_read_pc = get_time()
+        # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
         
         if not self.use_only_lidar_h:
             lidar_v_points = self.read_point_cloud(self.lidar_vertical_files[idx])
@@ -151,13 +158,29 @@ class IPBCarDataset:
 
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
         undistort_on = not self.img_already_undistorted
+        
         img_dict = {}
+        depth_img_dict = {}
+
         for cam_name in self.cam_list:
+            
+            # tic_0 = get_time()
+            # slow, but would be hard to speed up
             img_cam = self.read_img(self.img_files[cam_name][idx], undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
-            # TODO: to slow, try to speed it up
+            
+            # toc_1 = get_time()
+            
+            # TODO: a bit slow, try to speed it up
             points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
-            img_cam = np.concatenate((img_cam, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
-            img_dict[cam_name] = img_cam
+
+            # toc_1 = get_time()
+
+            img_dict[cam_name] = img_cam # H, W, 3
+            depth_img_dict[cam_name] = depth_map # H, W, 1
+
+            # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
+            # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
+
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -168,7 +191,7 @@ class IPBCarDataset:
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
 
         return frame_data
 
@@ -226,7 +249,12 @@ class IPBCarDataset:
     #     return points
 
     def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
+        
+        tic_0 = get_time()
         img = cv2.imread(img_file)
+        toc_0 = get_time()
+
+        # print("img reading time (ms):" , (toc_0 -tic_0)*1e3)
 
         # apply undistortion:
         # tic_undistort = get_time()
@@ -235,7 +263,7 @@ class IPBCarDataset:
             img_file_split = img_file.split("/")
             img_file_split[-2] = "data_undistorted" # data --> data_undistorted
             out_img_file = "/".join(img_file_split)
-            print(out_img_file)
+            # print(out_img_file)
 
             cv2.imwrite(out_img_file, img)
 
@@ -271,6 +299,8 @@ class IPBCarDataset:
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
+        tic_0 = get_time()
+
         # points as np.numpy (N,4)
         points[:,3] = 1 # homo coordinate
 
@@ -278,15 +308,19 @@ class IPBCarDataset:
         points_cam = np.matmul(T_c_l, points.T).T # N, 4
         points_cam = points_cam[:,:3] # N, 3
 
+        toc_0 = get_time() # fast
+
         # project to image space
-        u, v, depth= self.persepective_cam2image(points_cam.T, K_mat) 
+        u, v, depth = self.persepective_cam2image(points_cam.T, K_mat) 
         u = u.astype(np.int32)
         v = v.astype(np.int32)
 
         img_height, img_width, _ = np.shape(img)
 
+        toc_1 = get_time() # relatively fast
+
         # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width))
+        depth_map = np.zeros((img_height, img_width, 1)) # H, W, 1
         depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
@@ -298,12 +332,18 @@ class IPBCarDataset:
         v_valid = v[mask]
         u_valid = u[mask]
 
-        depth_map[v_valid,u_valid] = depth[mask]
+        depth_map[v_valid,u_valid, 0] = depth[mask]
 
         # print(np.shape(points_rgb))
 
         points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
         points_rgb[mask, 3] = 0 # has color
+
+        toc_2 = get_time() # slow
+
+        # print("colorize time 1 (ms):" , (toc_0 -tic_0)*1e3)
+        # print("colorize time 2 (ms):" , (toc_1 -toc_0)*1e3)
+        # print("colorize time 3 (ms):" , (toc_2 -toc_1)*1e3)
 
         return points_rgb, depth_map
     
@@ -320,83 +360,3 @@ class IPBCarDataset:
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
-
-# image distortion
-PX_OFFSET_128 = 32 * [48, 32, 16, 0]  # Check os*.json
-PX_OFFSET_32 = 32 * [16]
-color_only_visible = True
-
-def getLUT(points, px_offset=PX_OFFSET_128):
-    H = points.shape[0]
-    W = points.shape[1]
-    # row, col = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
-    row, col = np.ogrid[:H, :W]
-    col = col - np.array(px_offset)[:, None]
-    return row, col
-
-def tccApplyLut(coords, lut):
-    # Apply lut
-    coords_distorted = np.asarray(coords, dtype="float32")
-    coords_int = np.asarray(np.round(coords), dtype="int")
-    coords_int[coords_int[:, 0] < 0, 0] = 0
-    coords_int[coords_int[:, 1] < 0, 1] = 0
-    coords_int[coords_int[:, 0] >= lut.shape[0], 0] = lut.shape[0] - 1
-    coords_int[coords_int[:, 1] >= lut.shape[1], 1] = lut.shape[1] - 1
-
-    coords_distorted[:, 0] += lut[coords_int[:, 0], coords_int[:, 1], 1]
-    coords_distorted[:, 1] += lut[coords_int[:, 0], coords_int[:, 1], 0]
-    return coords_distorted
-
-
-def tccReadLut(lutfilename: str):
-    """Read lookup table create by calibration software tcc.
-
-    Args:
-      lutfilename: Complete filename of lookup table, usual ending is .lut
-                   and .ilut
-
-    Returns:
-      the lookup table as a numpy array of size (no_of_image_rows, no_of_image_column, 2)
-      [:,:,0] is the offset in x (or column) direction, [:,:,1] the offset in y (or row) direction
-    """
-    with open(lutfilename, "rt") as fstream:
-        # Read Header with the identifier "distortiontable"
-        line = fstream.readline()
-        while line[0] == "#":
-            line = fstream.readline()
-
-        if line[0:15] != "distortiontable":
-            print(
-                "ERROR: given filename %s seems not to be a tcc lookup table, wrong header !"
-                % lutfilename
-            )
-            # return
-
-        # Line with basex basey dimx dimy
-        line = fstream.readline()
-        while line[0] == "#":
-            line = fstream.readline()
-
-        basex, basey, dimx, dimy = np.asarray(line.split(), dtype="int")
-
-        # Now the actual lut values
-        lut = np.loadtxt(fstream, comments="#", dtype="float32")
-
-        lut = np.reshape(lut, (dimy, dimx, 2))
-
-        return lut
-
-def project_lidar(K, coors3d, lut, T_laser2cam, T_bacs2opencv):
-    T_laser2cam_opencv = T_bacs2opencv @ T_laser2cam
-    P = K @ T_laser2cam_opencv[0:3, :]
-    Xh = np.hstack((coors3d, np.ones_like(coors3d[:, :1]))).T
-    xh = P @ Xh
-    pos_depth_idx = xh[2, :] > 0
-
-    coors_cam = ((T_bacs2opencv @ T_laser2cam @ Xh)[:3, :]).T
-    depth = np.linalg.norm(coors_cam, axis=-1)
-    xh = xh / np.repeat(xh[2:, :], 3, axis=0)
-    lprojected = xh[[1, 0], :].T  # lproject = [row, column] (nx2)
-
-    lprojected = tccApplyLut(lprojected, lut)
-    return lprojected, depth, pos_depth_idx

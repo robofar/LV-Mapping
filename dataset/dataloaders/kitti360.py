@@ -43,6 +43,8 @@ class KITTI360Dataset:
         self.load_img = False # default
         self.use_only_colorized_points = True
 
+        self.left_cam_name = "cam_left_rect"
+
         lidar_folder = "data_3d_raw"
         img_folder = "data_2d_raw"
         pose_folder = "data_poses"
@@ -126,12 +128,11 @@ class KITTI360Dataset:
 
         # now we use only the left cam
         img = self.read_img(self.img0_files[idx])
-        cam_name = "cam_left_rect"
         
         points_rgb = np.ones_like(points)
 
         # project to the image plane to get the corresponding color
-        points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+        points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img, self.T_c_l_mats[self.left_cam_name], self.K_mats[self.left_cam_name])
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -142,10 +143,10 @@ class KITTI360Dataset:
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
-        img_dict = {cam_name: img}
+        img_dict = {self.left_cam_name: img}
+        depth_img_dict = {self.left_cam_name: depth_map}
 
-        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
         # print(frame_data)
 
         return frame_data
@@ -178,7 +179,7 @@ class KITTI360Dataset:
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width))
+        depth_map = np.zeros((img_height, img_width, 1))
         depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
@@ -190,7 +191,7 @@ class KITTI360Dataset:
         v_valid = v[mask]
         u_valid = u[mask]
 
-        depth_map[v_valid,u_valid] = depth[mask]
+        depth_map[v_valid,u_valid,0] = depth[mask]
 
         # print(np.shape(points_rgb))
 

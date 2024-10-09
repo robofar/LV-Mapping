@@ -54,7 +54,7 @@ def render(viewpoint_camera: CamImage,
            scaling_modifier: float = 1.0, 
            down_rate: int = 0, 
            verbose: bool = False,
-           train_mode: bool = False,
+           replay_mode: bool = False,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            alpha_filter_on: bool = True,
@@ -188,7 +188,7 @@ def render(viewpoint_camera: CamImage,
 
         visible_neural_point_ratio = visible_neural_point_mask.sum() / visible_neural_point_mask.shape[0]
 
-        if visible_neural_point_ratio < 0.1 and train_mode: # is 0.05 too small?
+        if visible_neural_point_ratio < 0.05 and replay_mode: # is 0.05 too small?
             print("Too small ratio of visible neural points, skip this frame ")
             return None
 
@@ -461,12 +461,12 @@ def spawn_gaussians(neural_points_data: Dict,
     # ------------------
     # Scale (view dependent or not) ? # TODO
     max_gaussian_scale = 2.0 * neural_point_resolution
-    dist_ratio = 1.0
+    dist_ratio = 0.0
     if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1
         dist_ratio = dist_ratio.repeat(1, gaussian_scale_mlp.mlp_out_dim)
 
-    gaussian_scale = 0.2 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in) + dist_ratio) # N, 2K
+    gaussian_scale = 0.5 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in) + dist_ratio) # N, 2K
     gaussian_scale = torch.clamp(gaussian_scale, max=max_gaussian_scale)
     # FIXME
     # what should be the maximum size here? $ TODO

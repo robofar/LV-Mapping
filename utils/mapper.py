@@ -33,7 +33,8 @@ from utils.tools import (
     setup_optimizer,
     transform_batch_torch,
     transform_torch,
-    voxel_down_sample_torch
+    voxel_down_sample_torch,
+    remove_gpu_cache,
 )
 
 from gaussian_splatting.gaussian_renderer import render
@@ -1098,17 +1099,24 @@ class Mapper:
                 T1 = get_time()
 
                 # 60 % short term, 40 % long term
-                if random.random() < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
+                dice_number = random.random()
+                if dice_number < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
                     # short-term memory 
                     cur_img_idx = torch.randperm(short_term_img_pool_size)[0]
+                    # if dice_number < 0.1: # train more on the most recent img
+                    #     cur_img_idx = -1 
                     viewpoint_cam: CamImage = self.cam_short_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_short_term
+                    is_replay_mode = False
                     if not self.silence:
                         print(" Train on a cam from short-term memory")
                         print(" Used cam id:", viewpoint_cam.uid)
                 else:
                     # long-term memory
                     cam_outside_local_map = True
+                    is_replay_mode = True
+                    exit_while_loop = False
+                    rand_count = 0
                     while cam_outside_local_map:
                         cur_img_idx = torch.randperm(long_term_img_pool_size)[0]
                         viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
@@ -1116,33 +1124,35 @@ class Mapper:
                         cam_dist_to_cur_local_map_center = torch.norm(viewpoint_cam.camera_center - cur_local_map_center)
                         # print("Distance to local map center: ", cam_dist_to_cur_local_map_center)
                         # if cam is inside local map, we use it for training
+                        if rand_count > 10:
+                            exit_while_loop = True
+                            break
+                        rand_count += 1
                         if cam_dist_to_cur_local_map_center < self.config.max_range: 
                             cam_outside_local_map = False
+                        
+                    if exit_while_loop: # break the for loop then
+                        break
                     if not self.silence:
                         print(" Train on a cam from long-term memory")
                         print(" Used cam id:", viewpoint_cam.uid)
 
-                gt_image = viewpoint_cam.original_image_list[train_down_rate]
+                gt_rgb_image = viewpoint_cam.rgb_image_list[train_down_rate] # 3, H, W
 
                 if self.config.exposure_correction_on and not self.silence:
                     cur_exposure_a = viewpoint_cam.exposure_a.item()
                     cur_exposure_b = viewpoint_cam.exposure_b.item()
                     print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
                 
-                if gt_image.device != self.device: # this is one very time consuming part
-                    gt_image.to(self.device)
-                
                 if viewpoint_cam.depth_on:
-                    gt_rgb_image = gt_image[:3]
-                    gt_depth_image = gt_image[3].unsqueeze(0)
+                    gt_depth_image = viewpoint_cam.depth_image_list[train_down_rate] # 1, H, W
                 else:
-                    gt_rgb_image = gt_image
                     gt_depth_image = None
 
                 T2 = get_time()
 
                 render_pkg = render(viewpoint_cam, None, neural_points_data, self.decoders, None, background, down_rate=train_down_rate, 
-                    train_mode=True, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
+                    replay_mode=is_replay_mode, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
 
                 if render_pkg is None:
                     continue
@@ -1525,7 +1535,7 @@ class Mapper:
                 #     print(" Backward propagation iter time (ms):", (T7-T6)*1e3) # still, this backpropagation is slow, but better to do this in batch
             
             # # filter dynamic gaussains (TODO)
-            filter_gaussian_on = False
+            filter_gaussian_on = False # DO THIS, still ideally to have this
             # this may has some issue
             # if filter_gaussian_on:
             #     local_gaussian_position = self.neural_points.get_local_xyz
@@ -1577,26 +1587,25 @@ class Mapper:
 
                 gaussian_vis_scale = self.config.gaussian_vis_scale 
 
-                original_img = cur_viewpoint_cam.original_image_list[vis_down_rate]
+                rgb_img = cur_viewpoint_cam.rgb_image_list[vis_down_rate]
         
-                original_img_np = original_img.detach().cpu().numpy() # C, H, W
-                original_img_int8 = (np.transpose(original_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
-                original_img_int8 = np.ascontiguousarray(original_img_int8) 
-                original_img_rgb = cv2.cvtColor(original_img_int8, cv2.COLOR_RGB2BGR)
+                rgb_img_np = rgb_img.detach().cpu().numpy() # C, H, W
+                rgb_img_int8 = (np.transpose(rgb_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
+                rgb_img_int8 = np.ascontiguousarray(rgb_img_int8) 
+                rgb_img_vis = cv2.cvtColor(rgb_img_int8, cv2.COLOR_RGB2BGR)
                 if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                    cv2.imshow(cam_name + ": Observed RGB", original_img_rgb)
+                    cv2.imshow(cam_name + ": Observed RGB", rgb_img_vis)
 
                 if cur_viewpoint_cam.depth_on: # how to convert a depth map # TODO
                     # print(np.shape(original_img_depth))
                     # print(original_img_np[3]) # why all 1?
-                    original_img_depth = original_img_np[3]
-                    depth_valid_mask = (original_img_depth > 0)
-                    original_img_depth_color = (colorize_depth_maps(original_img_depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
-                    # print(np.shape(original_img_depth))
-                    original_img_depth_color = np.transpose(original_img_depth_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
-                    original_img_depth_color = cv2.cvtColor(original_img_depth_color, cv2.COLOR_RGB2BGR)
+                    depth_img = cur_viewpoint_cam.depth_image_list[vis_down_rate]
+                    depth_img_np = depth_img.detach().cpu().numpy()
+                    depth_img_np_color = (colorize_depth_maps(depth_img_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                    depth_img_np_color = np.transpose(depth_img_np_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
+                    depth_img_np_color_vis = cv2.cvtColor(depth_img_np_color, cv2.COLOR_RGB2BGR)
                     if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Observed Depth", original_img_depth_color)
+                        cv2.imshow(cam_name + ": Observed Depth", depth_img_np_color_vis)
 
                 # for this validation render frame
                 T_w_l = self.used_poses[val_frame_id] # already in torch tensor, lidar pose for current frame
@@ -1712,12 +1721,11 @@ class Mapper:
                 # self.rendered_pcd_o3d.transform(T_cr) # convert to the coordinate system of current lidar frame
 
                 # cur psnr
-                original_rgb = original_img[:3]
-                cur_pnsr = psnr(renderd_image, original_rgb).mean().item()
-                cur_ssim = ssim(renderd_image, original_rgb).item()
+                cur_pnsr = psnr(renderd_image, rgb_img).mean().item()
+                cur_ssim = ssim(renderd_image, rgb_img).item()
 
                 if lpips_eval_on:
-                    cur_lpips = self.lpips(renderd_image.unsqueeze(0), original_rgb.unsqueeze(0)).item()
+                    cur_lpips = self.lpips(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0)).item()
                 else:
                     cur_lpips = 0.0
 
@@ -1731,8 +1739,8 @@ class Mapper:
                 cur_depth_l1 = cur_depth_rmse = 0.0
                 if cur_viewpoint_cam.depth_on and rendered_depth is not None:
                     # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                    depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
-                    diff_depth = np.abs(original_img_depth - rendered_depth_np) # already abs
+                    depth_valid_mask = (depth_img_np > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
+                    diff_depth = np.abs(depth_img_np - rendered_depth_np) # already abs
                     diff_depth[~depth_valid_mask] = 0.0
                     diff_depth_masked = diff_depth[depth_valid_mask]
                     cur_depth_l1 = np.mean(diff_depth_masked)
@@ -1782,10 +1790,15 @@ class Mapper:
             bg_3d = background.view(3, 1, 1)
 
             for frame_id in tqdm(range(0, self.dataset.processed_frame, 1), desc="GS evaluation"):
+
+                remove_gpu_cache()
                 
                 T_w_l = self.used_poses[frame_id] #
                 # self.neural_points.reset_local_map(T_w_l[:3,3], None, cur_ts=frame_id)
                 self.neural_points.recreate_hash(T_w_l[:3,3], None, True, True, frame_id)
+
+                # done only once, load the cam datas to cur_cam_img
+                self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
 
                 for cam_name in self.dataset.cam_names:
                     K_mat = self.dataset.K_mats[cam_name]
@@ -1794,8 +1807,6 @@ class Mapper:
                     # width = self.dataset.loader.cam_widths[cam_name] 
 
                     T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
-
-                    self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
 
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.set_pose(T_w_c)
@@ -1819,26 +1830,24 @@ class Mapper:
                     rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
                     # print(torch.max(rendered_rgb_image), torch.min(rendered_rgb_image)) # why there are value larger than 1?
 
-                    original_img = cur_view_cam.original_image_list[eval_down_rate]
-
-                    original_rgb_image = original_img[:3]
+                    gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
 
                     if cur_view_cam.sky_mask_on:
                         # mask the sky part for eval
                         cur_sky_mask = cur_view_cam.sky_mask_list[eval_down_rate] # still torch
                         mask_broadcasted = cur_sky_mask.repeat(3,1,1)
-                        original_rgb_image[mask_broadcasted] = bg_3d.expand_as(original_rgb_image)[mask_broadcasted]
+                        gt_rgb_img[mask_broadcasted] = bg_3d.expand_as(gt_rgb_img)[mask_broadcasted]
 
-                    cur_pnsr = psnr(rendered_rgb_image, original_rgb_image).mean().item()
-                    cur_ssim = ssim(rendered_rgb_image, original_rgb_image).item()
-                    cur_lpips = self.lpips(rendered_rgb_image.unsqueeze(0), original_rgb_image.unsqueeze(0)).item()
+                    cur_pnsr = psnr(rendered_rgb_image, gt_rgb_img).mean().item()
+                    cur_ssim = ssim(rendered_rgb_image, gt_rgb_img).item()
+                    cur_lpips = self.lpips(rendered_rgb_image.unsqueeze(0), gt_rgb_img.unsqueeze(0)).item()
 
                     if cur_view_cam.depth_on and rendered_depth is not None: 
                         eval_depth_max = self.config.max_range * 0.8
                         eval_depth_min = self.config.min_range
-                        original_img_depth = original_img[3] # torch.tensor
-                        depth_valid_mask = (original_img_depth > eval_depth_min) & (rendered_depth > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
-                        diff_depth = torch.abs(original_img_depth - rendered_depth) # already abs
+                        gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
+                        depth_valid_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
                         # diff_depth[~depth_valid_mask] = 0.0
                         diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                         cur_depth_l1 = np.mean(diff_depth_masked)

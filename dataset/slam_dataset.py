@@ -272,7 +272,11 @@ class SLAMDataset():
         points = None
         point_ts = None
         img_dict = None
+        depth_dict = None
         imus = None
+
+        # this might still be slow
+        tic_0 = get_time()
 
         if isinstance(frame_data, dict):
             dict_keys = list(frame_data.keys())
@@ -288,37 +292,56 @@ class SLAMDataset():
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
+
+                if "depth" in dict_keys: # have depth img
+                    depth_dict: dict = frame_data["depth"]
+                else:
+                    depth_dict = None
+
                 for cam_name in cam_list:
                     
-                    cur_img_np = img_dict[cam_name] # 3 channel or 4 channel (with depth)
+                    tic_load_cam = get_time() # this part is very slow, but why?
+
+                    cur_img_rgb_np = img_dict[cam_name] # 3 channel (rgb only) # uint8 [0, 255]
 
                     cur_img_depth_np = None
-                    if np.shape(cur_img_np)[-1] == 4:
-                        cur_img_depth_np = cur_img_np[:,:,3]
-                        cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8) # [0,255]
+                    cur_img_depth = None
+                    if depth_dict is not None:
+                        cur_img_depth_np = depth_dict[cam_name] # H, W, 1
+
+                        # cur_img_depth = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.device) # unit: m
+                        cur_img_depth = torch.from_numpy(cur_img_depth_np).float().to(self.device) # unit: m
+                        cur_img_depth = cur_img_depth.permute(2,0,1) # 1, H, W
+                        # cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8) # [0,255]
+
+                        cur_img_depth_np = np.squeeze(cur_img_depth_np) # H, W
                     
-                    cur_img = torch.from_numpy(cur_img_np).float().to(self.device)
-                    cur_img = cur_img.permute(2,0,1) # RGB or RGBD # C, H, W
-                    cur_img[:3] /= 255 # convert RGB channel to [0,1]
+                    # cur_img_rgb = torch.tensor(cur_img_rgb_np, dtype=self.dtype, device=self.device) 
+                    cur_img_rgb = torch.from_numpy(cur_img_rgb_np).float().to(self.device)
+                    cur_img_rgb = cur_img_rgb.permute(2,0,1) # 3, H, W
+                    cur_img_rgb /= 255.0 # convert RGB channel to [0,1]
                     # print(cur_img[3])
 
-                    H, W = cur_img.shape[1], cur_img.shape[2]
+                    H, W = cur_img_rgb.shape[1], cur_img_rgb.shape[2]
                     sky_mask = None # optional sky mask (sky:1, non-sky:0)
                     pred_normal = None # optional normal image 
 
+                    toc_load_cam = get_time()
+
                     # print(cur_img.shape) # for kitti: 376, 1241
                     
+                    # now only support mono depth for single camera (main cam)
                     if monodepth_on and cam_name == self.loader.main_cam_name:
                         
                         use_mono_depth_for_gs_init = True
                         if self.is_rgbd:
                             use_mono_depth_for_gs_init = False
 
-                        mono_depth_input_rgb = cur_img[:3]
+                        mono_depth_input_rgb = cur_img_rgb
                         
                         # down-sample input image to save computation (otherwise it will take more than 100ms)
                         if H*W > 8e5: # 5e5
-                            mono_depth_input_rgb = F.interpolate(mono_depth_input_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                            mono_depth_input_rgb = F.interpolate(cur_img_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                             # For kitti, if downsized, computational time can be decrease to 20ms on my GPU
 
                         tic_metric3d = get_time()
@@ -475,7 +498,7 @@ class SLAMDataset():
                         pred_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                             rgbd_image_o3d, self.loader.intrinsic, self.loader.extrinsic)
                         
-                        # uncomment these !!
+                        # uncomment these for mono depth point cloud with estimated normals
                         # normal (as rgb) d
                         # nd_image_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(cur_normal_o3d, pred_depth_o3d, 
                         #     depth_scale=1.0, depth_trunc=self.config.max_range, convert_rgb_to_intensity=False)
@@ -521,9 +544,17 @@ class SLAMDataset():
                         # print("To CUDA time                (ms):", (toc_tocuda-toc_pcd_filtering)*1e3)  # |
 
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
-                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img, self.K_mats[cam_name], 
-                                                          self.config.min_range*0.5, self.config.local_map_radius*1.1,
-                                                          cam_name, img_down_rate, pred_normal, sky_mask, self.device)
+
+                    # this is actually very fast (1-2 ms)
+                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb, self.K_mats[cam_name], 
+                                                          self.config.min_range*0.2, self.config.local_map_radius*1.1,
+                                                          cam_name, img_down_rate, cur_img_depth, pred_normal, sky_mask, self.device)
+
+                    #print("Time for loading camera {:.2f} (ms)".format((toc_load_cam-tic_load_cam)*1e3))
+                    #print("Time for setting camera {:.2f} (ms)".format((toc_set_cam-tic_set_cam)*1e3))
+        
+        toc_0 = get_time()
+        # print("Time for preprocessing input data to camera {:.2f} (ms)".format((toc_0-tic_0)*1e3))
 
         self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
 

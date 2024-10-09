@@ -39,6 +39,7 @@ loss:
 gs:
   monodepth_on: True # True
   exposure_correction_on: True
+  view_concat_on: True
   gs_iters: 50 # 100 has good results
   n_gaussian: 8
   gaussian_bs_ratio: 1.0

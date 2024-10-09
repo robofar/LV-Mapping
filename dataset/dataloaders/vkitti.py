@@ -126,11 +126,12 @@ class VirtualKITTIDataset:
         depth_image = np.array(depth_image)/self.depth_scale
         depth_image[depth_image > self.max_depth_m] = 0.0
 
-        rgbd_image = np.concatenate((rgb_image, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
+        depth_image = np.expand_dims(depth_image, axis=-1) # H, W, 1
 
-        image_dict = {self.main_cam_name: rgbd_image}
+        image_dict = {self.main_cam_name: rgb_image}
+        depth_img_dict = {self.main_cam_name: depth_image}
 
-        frame_data = {"points": points_xyzrgb, "img": image_dict}
+        frame_data = {"points": points_xyzrgb, "img": image_dict, "depth": depth_img_dict}
         
         return frame_data
 

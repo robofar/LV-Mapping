@@ -5,7 +5,7 @@ setting:
   color_channel: 3
   color_map_on: True
 process:
-  min_range_m: 2.0
+  min_range_m: 2.5
   max_range_m: 60.0
   vox_down_m: 0.08
   estimate_normal: False
@@ -20,7 +20,7 @@ neuralpoints:
   search_alpha: 0.8
   query_nn_k: 8
   feature_dim: 32
-  color_feature_dim: 16
+  color_feature_dim: 16 # 
 decoder:
   freeze_after_frame: 40
 continual:
@@ -34,18 +34,19 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  monodepth_on: False 
-  exposure_correction_on: True
-  gs_iters: 50 # 50
+  monodepth_on: False
+  exposure_correction_on: False
+  view_concat_on: True
+  gs_iters: 100 # 50
   gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 2
-  img_pool_size: 40
+  img_pool_size: 30 # TODO
   gs_down_rate: 1
   gs_vis_down_rate: 1
   inverse_depth_loss: True
   lambda_depth: 10.0
   lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
-  lambda_area: 1e-2 # 1e-3
+  lambda_area: 1e-3 # 1e-3
   lambda_mono_normal: 0.01
   lambda_sdf_cons: 0.2
   lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss

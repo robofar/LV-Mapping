@@ -144,9 +144,8 @@ class VisPacket:
             self.cam_list = list(current_frames.keys())
             for cam in self.cam_list:
                 current_frame = current_frames[cam]
-                if current_frame.original_image_list[img_down_rate] is not None:
-                    cur_gt_img = current_frame.original_image_list[img_down_rate]
-                    gtcolor = cur_gt_img[:3]
+                if current_frame.rgb_image_list[img_down_rate] is not None:
+                    gtcolor = current_frame.rgb_image_list[img_down_rate]
                     if current_frame.sky_mask_on:
                         # mask the sky part
                         cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
@@ -154,7 +153,7 @@ class VisPacket:
                         gtcolor[cur_sky_mask_used] = 1.0
                     
                     if current_frame.depth_on:
-                        gtdepth = cur_gt_img[3].unsqueeze(0)
+                        gtdepth = current_frame.depth_image_list[img_down_rate]
                     if current_frame.mono_normal_on:
                         gtnormal = current_frame.normal_img_list[img_down_rate]
                         if current_frame.sky_mask_on:

@@ -124,6 +124,7 @@ class SLAM_GUI:
 
         self.window.add_child(self.widget3d)
 
+        # not used now
         self.lit = rendering.MaterialRecord()
         self.lit.shader = "unlitLine"
         self.lit.line_width = 3 * self.window.scaling  # note that this is scaled with respect to pixels,
@@ -134,13 +135,13 @@ class SLAM_GUI:
         # scan
         self.scan_render = rendering.MaterialRecord()
         self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
-        self.scan_render.point_size = 4 * self.window.scaling
+        self.scan_render.point_size = 3 * self.window.scaling
         self.scan_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
         # neural points
         self.neural_points_render = rendering.MaterialRecord()
         self.neural_points_render.shader = "defaultLit"
-        self.neural_points_render.point_size = 4 * self.window.scaling
+        self.neural_points_render.point_size = 3 * self.window.scaling
         self.neural_points_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
         # sdf slice
@@ -158,7 +159,7 @@ class SLAM_GUI:
         # trajectory
         self.traj_render = rendering.MaterialRecord()
         self.traj_render.shader = "unlitLine"
-        self.traj_render.line_width = 5 * self.window.scaling  # note that this is scaled with respect to pixels,
+        self.traj_render.line_width = 4 * self.window.scaling  # note that this is scaled with respect to pixels,
 
 
         self.cad_render = rendering.MaterialRecord()
@@ -333,7 +334,7 @@ class SLAM_GUI:
 
 
         self.cad_chbox = gui.Checkbox("Robot")
-        self.cad_chbox.checked = False
+        self.cad_chbox.checked = True
         self.cad_chbox.set_on_checked(self._on_cad_chbox)
         chbox_tile_3dobj_2.add_child(self.cad_chbox)
         self.cad_name = "sensor_cad"
@@ -543,6 +544,32 @@ class SLAM_GUI:
                     else frustum.view_dir
                 )
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+
+        selected_gtcolor = self.gaussian_cur.gtcolor[new_val]
+        selected_gtdepth = self.gaussian_cur.gtdepth[new_val]
+        selected_gtnormal = self.gaussian_cur.gtnormal[new_val]
+
+        if selected_gtcolor is not None:
+            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
+            rgb = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
+            rgb = o3d.geometry.Image(rgb)
+            self.in_rgb_widget.update_image(rgb)
+
+        if selected_gtdepth is not None:
+            depth = selected_gtdepth.contiguous().cpu().numpy() 
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
+            depth_color = np.transpose(depth_color[0], (1, 2, 0))
+            depth_color = np.ascontiguousarray(depth_color)
+            depth_color_o3d = o3d.geometry.Image(depth_color)
+            self.in_depth_widget.update_image(depth_color_o3d)
+
+        if selected_gtnormal is not None:
+            normal = selected_gtnormal.contiguous().cpu().numpy() 
+            normal_color = 0.5 - normal * 0.5
+            normal_color = np.transpose(normal_color, (1, 2, 0))
+            normal_color = np.ascontiguousarray(normal_color)
+            normal_color_o3d = o3d.geometry.Image(normal_color)
+            self.in_normal_widget.update_image(normal_color_o3d)
 
     # def _on_gs_chbox(self, is_checked, name=None):
     #     names = self.frustum_dict.keys() if name is None else [name]
@@ -765,9 +792,9 @@ class SLAM_GUI:
         selected_cam = self.combo_cams.selected_text
         selected_frustum = self.frustum_dict[selected_cam]
 
-        selected_gtcolor = gaussian_packet.gtcolor[selected_cam]
-        selected_gtdepth = gaussian_packet.gtdepth[selected_cam]
-        selected_gtnormal = gaussian_packet.gtnormal[selected_cam]
+        selected_gtcolor = self.gaussian_cur.gtcolor[selected_cam]
+        selected_gtdepth = self.gaussian_cur.gtdepth[selected_cam]
+        selected_gtnormal = self.gaussian_cur.gtnormal[selected_cam]
 
         if selected_gtcolor is not None:
             rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255

@@ -21,8 +21,8 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, image, K_mat, z_min=0.1, z_max=100.0,
-        cam_id: str = "cam", img_down_rate = 0, normal_img = None, sky_mask = None, 
+    def __init__(self, frame_id: int, rgb_image, K_mat, z_min=0.1, z_max=100.0,
+        cam_id: str = "cam", img_down_rate = 0, depth_image = None, normal_img = None, sky_mask = None, 
         device = "cuda", cam_pose = None, img_width = None, img_height = None):
         
         self.frame_id = frame_id
@@ -34,10 +34,10 @@ class CamImage:
 
         self.train_view = False # is used as train view or test view
 
-        if image is not None:
-            image[:3] = image[:3].clamp(0.0, 1.0) # only for the RGB part
-            self.image_width = image.shape[2]
-            self.image_height = image.shape[1]
+        if rgb_image is not None:
+            rgb_image = rgb_image.clamp(0.0, 1.0) # only for the RGB part
+            self.image_width = rgb_image.shape[2]
+            self.image_height = rgb_image.shape[1]
         else:
             self.image_width = img_width
             self.image_height = img_height
@@ -69,7 +69,8 @@ class CamImage:
         self.set_pose(cam_pose)
 
         # pyramid of images
-        self.original_image_list = []
+        self.rgb_image_list = []
+        self.depth_image_list = []
         self.sky_mask_list = []
         self.normal_img_list = []
 
@@ -81,11 +82,11 @@ class CamImage:
             torch.tensor([0.0], requires_grad=True, device=device)
         )
 
-        if image is not None:
-            original_image = image.to(self.device)
-
-            self.channel_count = original_image.shape[0]
-            if self.channel_count == 4:
+        if rgb_image is not None:
+            rgb_image = rgb_image.to(self.device)
+            
+            if depth_image is not None: # 1, H, W
+                depth_image = depth_image.to(self.device)
                 self.depth_on = True
             else:
                 self.depth_on = False
@@ -96,21 +97,18 @@ class CamImage:
             # C can be either 3 or 4
             # NOTE: F.interpolate require 4D input
             # Downsample to Cx(H/2)x(W/2)
-            down_level1_image = F.interpolate(original_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            down_level1_image = F.interpolate(rgb_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
             # Downsample to Cx(H/4)x(W/4)
-            down_level2_image = F.interpolate(down_level1_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
             # Downsample to Cx(H/8)x(W/8)
-            down_level3_image = F.interpolate(down_level2_image[:3].unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+            down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
 
-            if self.depth_on:
-                down_level1_depth = F.interpolate(original_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-                down_level1_image = torch.cat((down_level1_image, down_level1_depth), dim=0)
-
-                down_level2_depth = F.interpolate(down_level1_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-                down_level2_image = torch.cat((down_level2_image, down_level2_depth), dim=0)
-
-                down_level3_depth = F.interpolate(down_level2_image[3].unsqueeze(0).unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-                down_level3_image = torch.cat((down_level3_image, down_level3_depth), dim=0)
+            if self.depth_on:  # 1, H, W
+                down_level1_depth = F.interpolate(depth_image.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+                down_level2_depth = F.interpolate(down_level1_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+                down_level3_depth = F.interpolate(down_level2_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
+            else:
+                down_level1_depth = down_level2_depth = down_level3_depth = None
 
             if sky_mask is not None: # sky_mask 1, H, W
                 self.sky_mask_on = True
@@ -122,7 +120,7 @@ class CamImage:
                 down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
                 self.sky_mask_on = False
 
-            if normal_img is not None: # normal already in device
+            if normal_img is not None: # normal already in device  # sky_mask 3, H, W
                 self.mono_normal_on = True
                 normal_img = normal_img.to(self.device)
                 down_level1_normal = F.interpolate(normal_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
@@ -133,30 +131,37 @@ class CamImage:
                 self.mono_normal_on = False
 
             if img_down_rate > 0:
-                original_image = None
+                rgb_image = None
+                depth_image = None
                 sky_mask = None
                 normal_img = None
-            self.original_image_list.append(original_image)
+            self.rgb_image_list.append(rgb_image)
+            self.depth_image_list.append(depth_image)
             self.sky_mask_list.append(sky_mask)
             self.normal_img_list.append(normal_img)
 
             if img_down_rate > 1:
                 down_level1_image = None
+                down_level1_depth = None
                 down_level1_sky_mask = None
                 down_level1_normal = None
-            self.original_image_list.append(down_level1_image)
+            self.rgb_image_list.append(down_level1_image)
+            self.depth_image_list.append(down_level1_depth)
             self.sky_mask_list.append(down_level1_sky_mask)
             self.normal_img_list.append(down_level1_normal)
 
             if img_down_rate > 2:
                 down_level2_image = None
+                down_level2_depth = None
                 down_level2_sky_mask = None
                 down_level2_normal = None
-            self.original_image_list.append(down_level2_image)
+            self.rgb_image_list.append(down_level2_image)
+            self.depth_image_list.append(down_level2_depth)
             self.sky_mask_list.append(down_level2_sky_mask)
             self.normal_img_list.append(down_level2_normal)
 
-            self.original_image_list.append(down_level3_image)
+            self.rgb_image_list.append(down_level3_image)
+            self.depth_image_list.append(down_level3_depth)
             self.sky_mask_list.append(down_level3_sky_mask)
             self.normal_img_list.append(down_level3_normal)
     
@@ -185,13 +190,14 @@ class CamImage:
             self.T = T_cw[:3, 3] # translation part
 
     def free_memory_at_level(self, down_level: int = 0):
-        if len(self.original_image_list) > down_level:
-            self.original_image_list[down_level] = None
+        if len(self.rgb_image_list) > down_level:
+            self.rgb_image_list[down_level] = None
+            self.depth_image_list[down_level] = None
             self.normal_img_list[down_level] = None
             self.sky_mask_list[down_level] = None
 
     def free_memory_at_all_levels(self):
-        for l in range(len(self.original_image_list)):
+        for l in range(len(self.rgb_image_list)):
             self.free_memory_at_level(l)
 
 
