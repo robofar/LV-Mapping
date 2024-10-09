@@ -58,7 +58,8 @@ def render(viewpoint_camera: CamImage,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            alpha_filter_on: bool = True,
-           correct_exposure: bool = True):
+           correct_exposure: bool = True,
+           learn_color_residual: bool = True):
 
     """
     Render the scene. 
@@ -193,9 +194,12 @@ def render(viewpoint_camera: CamImage,
             return None
 
         # Spawn Gaussians
-        gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask = spawn_gaussians(neural_points_data,
+        spawn_results = spawn_gaussians(neural_points_data,
             decoders, visible_neural_point_mask, viewpoint_camera.camera_center, 
-            dist_concat_on, view_concat_on, alpha_filter_on, z_far)
+            dist_concat_on, view_concat_on, 
+            alpha_filter_on, z_far, learn_color_residual=learn_color_residual)
+
+        gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask = spawn_results
     
 
     means3D = gaussian_xyz
@@ -386,7 +390,7 @@ def spawn_gaussians(neural_points_data: Dict,
                     alpha_filter_on: bool = True,
                     z_far: float = 100.0,
                     dist_adaptive_scale: bool = False,
-                    learn_color_residual: bool = False):
+                    learn_color_residual: bool = True):
 
     neural_point_position = neural_points_data["position"]
     neural_point_color = neural_points_data["color"]
@@ -512,8 +516,9 @@ def spawn_gaussians(neural_points_data: Dict,
     ## learn residual now
     # TODO: compare, but it seems that there's no much difference
     if learn_color_residual:
-        # gaussian_rgb_residual = 0.5 * torch.tanh(gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
-        gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K
+        residual_range = 0.05
+        gaussian_rgb_residual = residual_range * torch.tanh(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K [-residual_range, residual_range]
+        # gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K # better restrict this to a very samll value
         gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
         gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
     else: 
