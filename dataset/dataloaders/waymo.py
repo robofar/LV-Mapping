@@ -127,6 +127,10 @@ class WaymoDataset:
 
         # load img
         
+        # TODO: follow IPB car loader
+        img_dict = {}
+        depth_img_dict = {}
+
         if self.main_cam_only:
             img_front = self.read_img(self.img_front_files[idx])
             img_dict = {self.cam_front_topic_name: img_front}
@@ -149,7 +153,7 @@ class WaymoDataset:
             points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_dict[cam_name], 
                                                     self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
-            img_dict[cam_name] = np.concatenate((img_dict[cam_name], np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
+            # img_dict[cam_name] = np.concatenate((img_dict[cam_name], np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
 
         if self.use_only_colorized_points:
             with_rgb_mask = (points_rgb[:, 3] == 0)
@@ -159,7 +163,7 @@ class WaymoDataset:
         # # # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-        frame_data = {"points": points, "img": img_dict}
+        frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
 
         return frame_data
 
@@ -257,7 +261,7 @@ class WaymoDataset:
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width))
+        depth_map = np.zeros((img_height, img_width, 1))
         depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
@@ -269,7 +273,7 @@ class WaymoDataset:
         v_valid = v[mask]
         u_valid = u[mask]
 
-        depth_map[v_valid,u_valid] = depth[mask]
+        depth_map[v_valid,u_valid,0] = depth[mask]
 
         # print(np.shape(points_rgb))
 

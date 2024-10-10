@@ -145,7 +145,7 @@ class NeuralPoints(nn.Module):
         # self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
         # self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
-        # self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
+        self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)
         self.free_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
 
@@ -194,7 +194,7 @@ class NeuralPoints(nn.Module):
         # self.local_opacity = nn.Parameter()
 
         # this is just for vis
-        # self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
+        self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
         # this is for gs (as a kind of pruning)
         self.local_valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device)
         
@@ -290,21 +290,20 @@ class NeuralPoints(nn.Module):
 
             update_mask = (hash_idx == -1) | (dist2 > 3 * cur_resolution**2)
 
-            # if sample_colors is not None:
-            #     # FIXME (we do not need valid_color_mask any more)
-            #     # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
-            #     # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
-            #     # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
-            #     sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
+            if sample_colors is not None:
+                # FIXME (we do not need valid_color_mask any more)
+                # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
+                # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
+                # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
+                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
 
-            #     color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
-            #     hash_idx_color_update = hash_idx[color_update_mask]
-            #     self.features_dc[hash_idx_color_update] = sample_colors[color_update_mask].view(-1, 1, 3) # N, 1, 3
+                color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
+                hash_idx_color_update = hash_idx[color_update_mask]
+                self.point_colors[hash_idx_color_update] = sample_colors[color_update_mask] # N, 3
 
-
-            #     self.valid_color_mask[hash_idx_color_update] = 1 # valid again now
+                self.valid_color_mask[hash_idx_color_update] = 1 # valid again now
                 
-                # print("# Color update count:", color_update_mask.sum().item()) 
+            # print("# Color update count:", color_update_mask.sum().item()) 
 
             if self.temporal_local_map_on: # only done for the slam mode
                 # the voxel is not occupied before or the case when hash collision happens
@@ -467,14 +466,14 @@ class NeuralPoints(nn.Module):
         ## ----------------
         
         ## Mask
-        # if added_colors is not None:
-        #     # FIXME
-        #     # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
-        #     new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
+        if added_colors is not None:
+            # FIXME
+            # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
+            new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
 
-        #     self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
-        # else:
-        #     self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)
+            self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
+        else:
+            self.valid_color_mask = torch.cat((self.valid_color_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0)
 
         self.valid_gs_mask = torch.cat((self.valid_gs_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0) # all True
 
@@ -542,7 +541,7 @@ class NeuralPoints(nn.Module):
         # self.local_rotation = nn.Parameter(self.rotation[local_mask])
         # self.local_opacity = nn.Parameter(self.opacity[local_mask])
 
-        # self.local_valid_color_mask = self.valid_color_mask[local_mask]
+        self.local_valid_color_mask = self.valid_color_mask[local_mask]
         self.local_valid_gs_mask = self.valid_gs_mask[local_mask]
         self.local_free_gs_mask = self.free_gs_mask[local_mask]
 
@@ -1284,7 +1283,7 @@ class NeuralPoints(nn.Module):
             # self.rotation = self.rotation[~prune_mask]
             # self.opacity = self.opacity[~prune_mask]
         
-            # self.valid_color_mask = self.valid_color_mask[~prune_mask]
+            self.valid_color_mask = self.valid_color_mask[~prune_mask]
             self.valid_gs_mask = self.valid_gs_mask[~prune_mask]
             self.free_gs_mask = self.free_gs_mask[~prune_mask]
 
@@ -1407,7 +1406,7 @@ class NeuralPoints(nn.Module):
             # self.rotation = self.rotation[sample_idx]
             # self.opacity = self.opacity[sample_idx]
 
-            # self.valid_color_mask = self.valid_color_mask[sample_idx]
+            self.valid_color_mask = self.valid_color_mask[sample_idx]
             self.valid_gs_mask = self.valid_gs_mask[sample_idx]
             self.free_gs_mask = self.free_gs_mask[sample_idx]
 
@@ -1555,7 +1554,7 @@ class NeuralPoints(nn.Module):
         # self.local_features_dc = None
         # self.local_features_rest = None
         
-        # self.local_valid_color_mask = None
+        self.local_valid_color_mask = None
         self.local_valid_gs_mask = None
         
         self.local_mask = None

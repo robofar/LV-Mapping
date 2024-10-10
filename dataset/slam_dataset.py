@@ -614,6 +614,7 @@ class SLAMDataset():
                     point_ts, device=self.device, dtype=self.dtype
                 )
             else: # point_ts not available, guess the ts
+                # this sometimes does not work
                 point_count = self.cur_point_cloud_torch.shape[0]
                 if point_count == 64 * 1024:
                      # for Ouster 64-beam LiDAR
@@ -1408,8 +1409,11 @@ def read_point_cloud(
             points = np.hstack((points, colors))
         elif "intensity" in keys and color_channel == 1:
             intensity = pc_load["intensity"]  # if they are available
-            # print(intensity)
             points = np.hstack((points, intensity))
+        elif "reflectivity" in keys and color_channel == 1:
+            intensity = pc_load["reflectivity"]  # if they are available
+            points = np.hstack((points, intensity))
+
     elif ".pcd" in filename:  # currently cannot be readed by o3d.t.io
         pc_load = o3d.io.read_point_cloud(filename)
         points = np.asarray(pc_load.points, dtype=np.float64)

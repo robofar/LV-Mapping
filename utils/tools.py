@@ -236,7 +236,7 @@ def setup_optimizer(
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
 
-    lr_exposure = 0.01
+    lr_exposure = 0.001 # TODO: 0.01
     if cams is not None:
         for cam in cams:
             opt_setting.append(

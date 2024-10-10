@@ -132,10 +132,10 @@ class KITTIMOTDataset:
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-            img = np.concatenate((img, np.expand_dims(depth_map, axis=-1)), axis=-1) # 4 channels
             img_dict = {self.main_cam_name: img}
+            depth_img_dict = {self.main_cam_name: depth_map}
 
-            frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+            frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
         else:
             frame_data = {"points": points, "point_ts": point_ts}
 
@@ -264,7 +264,7 @@ class KITTIMOTDataset:
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width))
+        depth_map = np.zeros((img_height, img_width, 1))
         depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
@@ -276,7 +276,7 @@ class KITTIMOTDataset:
         v_valid = v[mask]
         u_valid = u[mask]
 
-        depth_map[v_valid,u_valid] = depth[mask]
+        depth_map[v_valid,u_valid,0] = depth[mask]
 
         # print(np.shape(points_rgb))
 

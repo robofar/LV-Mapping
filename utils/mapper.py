@@ -1152,7 +1152,7 @@ class Mapper:
                 T2 = get_time()
 
                 render_pkg = render(viewpoint_cam, None, neural_points_data, self.decoders, None, background, down_rate=train_down_rate, 
-                    replay_mode=is_replay_mode, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
+                    replay_mode=is_replay_mode, dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=self.config.exposure_correction_on) # render gaussians 
 
                 if render_pkg is None:
                     continue
@@ -1186,7 +1186,8 @@ class Mapper:
                 local_gaussian_count = gaussian_xyz.shape[0]
                 gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
 
-                
+                # alpha_valid_part = alpha_all[gaussian_alpha_mask]
+
                 T3_1 = get_time()
 
                 # normalize the normals to norm == 1
@@ -1342,7 +1343,7 @@ class Mapper:
                 true_count = torch.sum(constraint_mask).item() # TODO: for isotropic and area loss, we actually also need to consider free gaussians
 
                 if not self.silence:
-                    print(" # Gaussians for 3D losses in current view:", true_count)
+                    print(" # Gaussians for 3D losses in current view:", true_count) # non-free visible gaussians
 
                 true_indices = torch.where(constraint_mask)[0]
                 gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
@@ -1389,6 +1390,8 @@ class Mapper:
 
                     sampled_guassians_xyz.requires_grad_(True)
 
+                    sampled_guassians_alpha = gaussian_alpha[sampled_indices]
+
                     sampled_guassians_sdf = self.sdf(sampled_guassians_xyz)[0] # sdf, sdf_std
                     sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
                     grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
@@ -1404,7 +1407,15 @@ class Mapper:
                     if not self.silence:
                         print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
-                    # valid_grad_mask = torch.ones_like(sampled_guassians_sdf, device=self.device, dtype=torch.bool)
+                    # also consider the certainty
+                    static_mask = (sampled_guassians_sdf < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m)
+
+                    invalid_gaussian_mask = (~valid_grad_mask) | (~static_mask) # dynamic or unstable
+
+                    invalid_gaussian_alpha = sampled_guassians_alpha[invalid_gaussian_mask]
+
+                    opacity_loss += (invalid_gaussian_alpha.mean() * self.config.lambda_opacity)
+                    # TODO: does this really work?
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
@@ -1617,7 +1628,7 @@ class Mapper:
                 T1_r = get_time()
 
                 render_pkg = render(cur_viewpoint_cam, T_w_c, neural_points_data, self.decoders, None, background, scaling_modifier=gaussian_vis_scale, down_rate=vis_down_rate, 
-                    dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=True) # render gaussians 
+                    dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=self.config.exposure_correction_on) # render gaussians 
 
                 # T3 = get_time()
 

@@ -192,17 +192,13 @@ class BonnRGBDDataset:
         points_rgb = np.array(pcd.colors, dtype=np.float64)
         points_xyzrgb = np.hstack((points_xyz, points_rgb))
 
-        im_color = np.array(im_color)
+        rgb_image = np.array(im_color)
 
-        depth_image = np.array(im_depth)/self.depth_scale
+        depth_image = np.expand_dims(np.array(im_depth)/self.depth_scale, axis=-1)
 
-        # print(np.array(im_depth))
+        image_dict = {self.main_cam_name: rgb_image}
+        depth_img_dict = {self.main_cam_name: depth_image}
 
-        # depth_image = np.array(im_depth)
-        rgbd_image = np.concatenate((im_color, np.expand_dims(depth_image, axis=-1)), axis=-1) # 4 channels
-
-        im_rgbd_dict = {self.main_cam_name: rgbd_image}
-
-        frame_data = {"points": points_xyzrgb, "img": im_rgbd_dict}
+        frame_data = {"points": points_xyzrgb, "img": image_dict, "depth": depth_img_dict}
 
         return frame_data 

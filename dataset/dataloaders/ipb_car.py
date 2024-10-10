@@ -40,9 +40,9 @@ class IPBCarDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
         
         # for cam_name, select from "left", "right", "front", "rear" all "all"
-        self.use_only_colorized_points = True
+        self.use_only_colorized_points = False
         
-        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "horizontal" 
         self.lidar_v_topic_name = "vertical" 
@@ -73,11 +73,11 @@ class IPBCarDataset:
 
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
-        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.bin")) # we use bin here, can not be directly visualized but would be much smaller
+        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply")) # we use bin here, can not be directly visualized but would be much smaller
 
         # vertical lidar
         self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
-        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.bin"))
+        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
 
         # img_size: 2064x1024
 
@@ -103,7 +103,9 @@ class IPBCarDataset:
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
 
         # read reference poses (by Louis)
-        self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy")) # is this the pose in LiDAR frame? (ask louis)
+        if os.path.exists(os.path.join(data_dir, "poses")):
+            self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy")) # is this the pose in LiDAR frame? (ask louis)
+        
         # print(self.gt_poses)
         
         # main cam parameters
@@ -129,17 +131,15 @@ class IPBCarDataset:
         
         # tic_read_pc = get_time()
 
-        # TODO: read ply is a bot too slow, try to use *.bin (done)
+        # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
         # read bin is very fast
-        points = self.read_point_cloud(self.lidar_horizontal_files[idx]) # lidar_h_points
-        # print(np.shape(points)[0])
-        point_ts = self.get_timestamps(v_beam=128, h_beam=2048)
+        points, point_ts = self.read_point_cloud_ply(self.lidar_horizontal_files[idx]) # lidar_h_points
 
         # toc_read_pc = get_time()
         # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
         
         if not self.use_only_lidar_h:
-            lidar_v_points = self.read_point_cloud(self.lidar_vertical_files[idx])
+            lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
             # print(np.shape(lidar_v_points)[0])
 
             lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
@@ -148,9 +148,8 @@ class IPBCarDataset:
             lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
 
             points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
-            point_ts_v = self.get_timestamps(v_beam=64, h_beam=1024)
 
-            point_ts = np.concatenate((point_ts, point_ts_v), axis=0)
+            point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
 
         valid_mask = ~np.all(points[:,:3] == 0, axis=1) 
         points = points[valid_mask]
@@ -191,6 +190,7 @@ class IPBCarDataset:
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
+        # frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
         frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
 
         return frame_data
@@ -199,10 +199,11 @@ class IPBCarDataset:
         return len(self.lidar_horizontal_files)
     
     # ouster-128 lidar (point-wise timestamp)
-    @staticmethod
-    def get_timestamps(v_beam=128, h_beam=2048):
-        timestamps = np.expand_dims(np.floor(np.arange(v_beam * h_beam) / v_beam) / h_beam, axis=1)
-        return timestamps
+    # this does not work well
+    # @staticmethod
+    # def get_timestamps(v_beam=128, h_beam=2048):
+    #     timestamps = np.expand_dims(np.floor(np.arange(v_beam * h_beam) / v_beam) / h_beam, axis=1)
+    #     return timestamps
     
     # frame timestamp
     def read_timestamps(self, file_path):
@@ -237,16 +238,33 @@ class IPBCarDataset:
 
     # read bin format
     def read_point_cloud(self, scan_file: str):
-        points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
-        return points # N, 4
+        points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4)).astype(np.float64)
+        return points[:, :4] # N, 4
     
     # read ply format
-    # def read_point_cloud(self, scan_file: str):
-    #     pcd = o3d.io.read_point_cloud(scan_file)
-    #     points = np.array(pcd.points, dtype=np.float64) # N, 3
-    #     point_count = np.shape(points)[0]
-    #     points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
-    #     return points
+    def read_point_cloud_ply(self, scan_file: str):
+
+        # tic_read_pc = get_time()
+
+        pc_load = o3d.t.io.read_point_cloud(scan_file)
+        pc_load = {k: v.numpy() for k, v in pc_load.point.items()}
+
+        keys = list(pc_load.keys())
+        # print("available attributes:", keys)
+        
+        points = pc_load["positions"]
+
+        assert "t" in keys, "The point cloud ply file must have the t field for point wise timestamp"
+
+        ts = pc_load["t"] # already in seconds
+
+        point_count = np.shape(points)[0]
+        points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
+        
+        # toc_read_pc = get_time()
+        # print("pc reading time ply (ms): {:.2f}".format((toc_read_pc -tic_read_pc)*1e3))
+
+        return points, ts
 
     def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
         

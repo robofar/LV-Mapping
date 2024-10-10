@@ -148,7 +148,7 @@ The light across different cameras seem to be not identical, figure out a way to
 ## Run on R3Live dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -dvls
+python pin_slam.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -vl
 ```
 
 **pass**

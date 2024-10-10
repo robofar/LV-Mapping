@@ -423,6 +423,8 @@ def spawn_gaussians(neural_points_data: Dict,
     gaussian_alpha_mlp = decoders["gauss_alpha"] 
     gaussian_color_mlp = decoders["gauss_color"] 
 
+    sdf_mlp = decoders["sdf"]
+
     # after visible filtering    
     neural_point_count = neural_point_position.shape[0]
 

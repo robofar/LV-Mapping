@@ -66,6 +66,7 @@ class NewerCollegeDataset:
         return points.astype(np.float64), timestamps
 
     @staticmethod
+    # this might be wrong (TODO)
     def get_timestamps():
         H = 64
         W = 1024

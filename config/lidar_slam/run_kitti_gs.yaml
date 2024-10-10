@@ -28,6 +28,7 @@ neuralpoints:
   query_nn_k: 8
   feature_dim: 32
   color_feature_dim: 16
+  weighted_first: False
 decoder:
   freeze_after_frame: 40
 loss:
@@ -42,7 +43,7 @@ gs:
   view_concat_on: True
   gs_iters: 50 # 100 has good results
   n_gaussian: 8
-  gaussian_bs_ratio: 1.0
+  gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2 # 2
   img_pool_size: 15 # 15
   eval_on: False
