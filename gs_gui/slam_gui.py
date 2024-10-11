@@ -194,7 +194,15 @@ class SLAM_GUI:
         self.slam_traj = o3d.geometry.LineSet()
         self.gt_traj = o3d.geometry.LineSet()
 
-        self.last_used_pose = np.eye(4)
+        self.range_circle = o3d.geometry.LineSet()
+        circle_points = generate_circle(radius=30.0, num_points=100)
+
+        lines = [[i, (i + 1) % len(circle_points)] for i in range(len(circle_points))]
+        self.range_circle_origin = o3d.geometry.LineSet(
+            points=o3d.utility.Vector3dVector(circle_points),
+            lines=o3d.utility.Vector2iVector(lines),
+        )
+        self.range_circle_origin.paint_uniform_color(LIGHTBLUE)
 
         bounds = self.widget3d.scene.bounding_box
         self.widget3d.setup_camera(60.0, bounds, bounds.get_center())
@@ -350,6 +358,13 @@ class SLAM_GUI:
         self.slam_traj_chbox.set_on_checked(self._on_slam_traj_chbox)
         chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
         self.slam_traj_name = "slam_trajectory"
+
+        self.range_circle_chbox = gui.Checkbox("Range Circle")
+        self.range_circle_chbox.checked = False
+        self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
+        chbox_tile_3dobj_2.add_child(self.range_circle_chbox)
+        self.range_circle_name = "range_circle"
+
 
         self.panel.add_child(chbox_tile_3dobj)
 
@@ -639,6 +654,13 @@ class SLAM_GUI:
         else:
             self.widget3d.scene.remove_geometry(self.slam_traj_name)
 
+    def _on_range_circle_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.range_circle_name)
+            self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+        else:
+            self.widget3d.scene.remove_geometry(self.range_circle_name)
+
     def _on_sky_chbox(self, is_checked):
         self.widget3d.scene.show_skybox(is_checked)
 
@@ -860,11 +882,18 @@ class SLAM_GUI:
                 self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
             if gaussian_packet.slam_poses is None:
+
                 if self.cad_chbox.checked:
                     self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
                     self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
                     self.widget3d.scene.remove_geometry(self.cad_name)
                     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
+                
+                if self.range_circle_chbox.checked:
+                    self.range_circle = copy.deepcopy(self.range_circle_origin)
+                    self.range_circle.transform(gaussian_packet.gt_poses[-1])
+                    self.widget3d.scene.remove_geometry(self.range_circle_name)
+                    self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
 
         if gaussian_packet.slam_poses is not None:
             slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
@@ -882,7 +911,13 @@ class SLAM_GUI:
                 self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
                 self.widget3d.scene.remove_geometry(self.cad_name)
                 self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
-        
+
+            if self.range_circle_chbox.checked:
+                self.range_circle = copy.deepcopy(self.range_circle_origin)
+                self.range_circle.transform(gaussian_packet.slam_poses[-1])
+                self.widget3d.scene.remove_geometry(self.range_circle_name)
+                self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+    
         if gaussian_packet.finish:
             print("Received terminate signal")
             # clean up the pipe
@@ -1231,6 +1266,15 @@ def main():
     app.initialize()
     win = SLAM_GUI()
     app.run()
+
+def generate_circle(radius=1.0, num_points=100):
+    angles = np.linspace(0, 2 * np.pi, num_points)
+    # Circle in the XY plane
+    x = radius * np.cos(angles)
+    y = radius * np.sin(angles)
+    z = np.zeros(num_points)  # Z-coordinates are 0 for a flat circle in XY-plane
+    circle_points = np.vstack((x, y, z)).T  # Shape (num_points, 3)
+    return circle_points
 
 
 if __name__ == "__main__":
