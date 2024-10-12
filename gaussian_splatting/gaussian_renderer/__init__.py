@@ -420,6 +420,9 @@ def spawn_gaussians(neural_points_data: Dict,
 
         visible_idx = torch.nonzero(visble_mask)
         visible_idx = torch.cat((visible_idx.view(-1), torch.tensor([-1]).to(visible_idx)))
+
+        # print(" Current Visible neural point count: {:d}".format(torch.sum(visble_mask).item()))
+
         neural_point_geo_features = neural_point_geo_features[visible_idx]
         neural_point_color_features = neural_point_color_features[visible_idx]
 
@@ -430,7 +433,7 @@ def spawn_gaussians(neural_points_data: Dict,
     gaussian_alpha_mlp = decoders["gauss_alpha"] 
     gaussian_color_mlp = decoders["gauss_color"] 
 
-    sdf_mlp = decoders["sdf"]
+    # sdf_mlp = decoders["sdf"] #not used yet
 
     # after visible filtering    
     neural_point_count = neural_point_position.shape[0]
@@ -453,7 +456,7 @@ def spawn_gaussians(neural_points_data: Dict,
         displacement_range[neural_point_free_mask] = 5.0 * neural_point_resolution
 
     # test this scale here, better to not be too large (FIXME)
-    xyz_displacement = displacement_range * torch.tanh(gaussian_xyz_mlp.mlp(geo_feature_in)) # N, 3K # [-1,1]        
+    xyz_displacement = displacement_range * torch.tanh(gaussian_xyz_mlp.mlp_batch(geo_feature_in)) # N, 3K # [-1,1]        
     # print(xyz_displacement)
 
     local_point_count = xyz_displacement.shape[0] # N
@@ -465,7 +468,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # ------------------
     # Rotation (view independent)
-    gaussian_rot = gaussian_rot_mlp.mlp(geo_feature_in) # N, 4K
+    gaussian_rot = gaussian_rot_mlp.mlp_batch(geo_feature_in) # N, 4K
     gaussian_rot = gaussian_rot.view(local_gaussian_count, -1) # NK , 4
     gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
     gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
@@ -479,11 +482,11 @@ def spawn_gaussians(neural_points_data: Dict,
         dist_ratio = view_distance / z_far # N, 1
         dist_ratio = dist_ratio.repeat(1, gaussian_scale_mlp.mlp_out_dim)
 
-    gaussian_scale = 0.5 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp(geo_feature_in) + dist_ratio) # N, 2K
+    gaussian_scale = 0.5 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp_batch(geo_feature_in) + dist_ratio) # N, 2K
     gaussian_scale = torch.clamp(gaussian_scale, max=max_gaussian_scale)
     # FIXME
     # what should be the maximum size here? $ TODO
-    # gaussian_scale = max_gaussian_scale * torch.sigmoid(gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
+    # gaussian_scale = max_gaussian_scale * torch.sigmoid(gaussian_scale_mlp.mlp_batch(geo_feature_in)) # N, 2K
     
     gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 3 (2) # positive (after activation)
 
@@ -504,10 +507,10 @@ def spawn_gaussians(neural_points_data: Dict,
     # ------------------
     # Opacity (view dependent)
 
-    # gaussian_alpha = torch.sigmoid(gaussian_alpha_mlp.mlp(geo_feature_in) 
-    gaussian_alpha = torch.tanh(gaussian_alpha_mlp.mlp(geo_feature_in)) 
-    # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(gaussian_alpha_mlp.mlp(geo_feature_in)) 
-    # gaussian_alpha = 0.5-0.5*torch.tanh(gaussian_alpha_mlp.mlp(geo_feature_in)) # N, K  #[-1,1] --> [0,1]
+    # gaussian_alpha = torch.sigmoid(gaussian_alpha_mlp.mlp_batch(geo_feature_in) 
+    gaussian_alpha = torch.tanh(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) 
+    # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) 
+    # gaussian_alpha = 0.5-0.5*torch.tanh(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) # N, K  #[-1,1] --> [0,1]
 
     gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
     
@@ -527,13 +530,13 @@ def spawn_gaussians(neural_points_data: Dict,
     if learn_color_residual:
         # by doing so, we can somehow restrict the color to not diverge much from the initial guess, so that the view-dependent color would not give very random results
         residual_range = 0.2
-        gaussian_rgb_residual = residual_range * torch.tanh(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K [-residual_range, residual_range]
-        # gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K # better restrict this to a very samll value
+        gaussian_rgb_residual = residual_range * torch.tanh(gaussian_color_mlp.mlp_batch(color_feature_in)) # N, 3K [-residual_range, residual_range]
+        # gaussian_rgb_residual = gaussian_color_mlp.mlp_batch(color_feature_in) # N, 3K # better restrict this to a very samll value
         gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
         gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
     else: 
         # or we directly learn the color value (instead of residual)
-        gaussian_color = torch.sigmoid(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K
+        gaussian_color = torch.sigmoid(gaussian_color_mlp.mlp_batch(color_feature_in)) # N, 3K
 
     gaussian_color = gaussian_color.view(local_gaussian_count, -1) # NK, 3 # not SH anymore
 

@@ -771,9 +771,16 @@ class SLAM_GUI:
                 gaussian_packet.neural_points_data["valid_local_count"],
                 gaussian_packet.neural_points_data["map_memory_mb"]
             )
+            # done every time, could be a bit time consuming here
+            self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
+            neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+            neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
+
+            neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black
+            
+            self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors)
+
             if self.neural_point_chbox.checked:
-                self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
-                self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
                 self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
@@ -1013,7 +1020,7 @@ class SLAM_GUI:
         K_mat[0,2] = cx
         K_mat[1,2] = cy
 
-        current_cam = CamImage(-1, None, K_mat, 0.01, 100.0, 
+        current_cam = CamImage(-1, None, K_mat, self.config.min_range*0.2, self.config.local_map_radius*1.1,
             img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
 
         # print(current_cam.camera_center)

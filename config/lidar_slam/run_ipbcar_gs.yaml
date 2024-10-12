@@ -25,7 +25,7 @@ decoder:
   freeze_after_frame: 40
 continual:
   batch_size_new_sample: 1500
-  pool_capacity: 1e7 # this is often the part taken a lot of memory
+  pool_capacity: 2e7 # this is often the part taken a lot of memory
 tracker:
   source_vox_down_m: 0.6
   iter_n: 50

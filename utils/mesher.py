@@ -114,7 +114,7 @@ class Mesher:
                     query_geo_feature=query_sdf or query_sem,
                     query_color_feature=query_color,
                 )
-
+                        
                 pred_mask = nn_count >= 1  # only query sdf here
                 if query_sdf:
                     if self.config.weighted_first:

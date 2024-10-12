@@ -1784,18 +1784,18 @@ class Mapper:
 
         return 
 
-    def check_invalid_neural_points(self, stability_threshold = 5.0):
+    def check_invalid_neural_points(self, stability_threshold = 1.0):
         local_neural_points = self.neural_points.local_neural_points
         stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
 
-        print("Begin to check the validity")
-        print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
-            self.neural_points.local_count()))
+        # print("Begin to check the validity")
+        # print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
+        #     self.neural_points.local_count()))
 
         stable_neural_points = local_neural_points[stable_neural_points_mask]
 
         # this is a bit too much large, better to do it in batch
-        stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=self.config.query_nn_k)
+        stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=3) # self.config.query_nn_k
 
         static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
 

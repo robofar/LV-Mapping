@@ -547,7 +547,7 @@ class SLAMDataset():
 
                     # this is actually very fast (1-2 ms)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb, self.K_mats[cam_name], 
-                                                          self.config.min_range*0.2, self.config.local_map_radius*1.1,
+                                                          self.config.min_range*0.5, self.config.local_map_radius*1.1,
                                                           cam_name, img_down_rate, cur_img_depth, pred_normal, sky_mask, self.device)
 
                     #print("Time for loading camera {:.2f} (ms)".format((toc_load_cam-tic_load_cam)*1e3))

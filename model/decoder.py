@@ -3,6 +3,7 @@
 # @author    Yue Pan     [yue.pan@igg.uni-bonn.de]
 # Copyright (c) 2024 Yue Pan, all rights reserved
 
+import math
 
 import torch
 import torch.nn as nn
@@ -30,6 +31,7 @@ class Decoder(nn.Module):
         self.out_dim_per = out_dim
         self.out_k = out_k # for gs, this denotes the gaussian count per neural point
         self.use_leaky_relu = config.mlp_leaky_relu
+        self.bs = config.bs # bs or infer_bs, for batch mlp
 
         bias_on = config.mlp_bias_on
 
@@ -82,6 +84,22 @@ class Decoder(nn.Module):
                     h = F.relu(l(h))
         out = self.lout(h)
         # no relu, for last linear one
+
+        return out
+
+    def mlp_batch(self, features):
+
+        count = features.shape[0]
+        iter_n = math.ceil(count / self.bs)
+        
+        out = torch.zeros(count, self.mlp_out_dim).to(features)
+
+        for n in range(iter_n):
+            head = n * self.bs
+            tail = min((n + 1) * self.bs, count)
+            batch_features = features[head:tail, :]
+            batch_out = self.mlp(batch_features)
+            out[head:tail,:] = batch_out
 
         return out
 
