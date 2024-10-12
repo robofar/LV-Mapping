@@ -162,7 +162,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # non-blocking visualizer
     if config.o3d_vis_on:
         o3d_vis = MapVisualizer(config) 
-
+    
+    q_main2vis = q_vis2main = None
     if config.gs_vis_on:
         # communicator between the processes
         q_main2vis = mp.Queue() 
@@ -396,6 +397,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
             mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
+            # TODO: check its time consuming, can be done once per x frames 
+
+            with torch.no_grad():  # eval step
+                mapper.check_invalid_neural_points()
+
         T6 = get_time()
 
         # regular saving logs
@@ -557,8 +563,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     
     # gs eval 
     if config.gs_on: # TODO: add to a function inside mapper or dataset 
+        
         print("Begin rendering evaluation")
-        mapper.gs_eval_offline(eval_down_rate=config.gs_vis_down_rate)
+
+        mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate)
         mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     

@@ -614,7 +614,7 @@ class SLAMDataset():
                     point_ts, device=self.device, dtype=self.dtype
                 )
             else: # point_ts not available, guess the ts
-                # this sometimes does not work
+                # this sometimes does not work (FIXME): some isse here, better to directly read the ts
                 point_count = self.cur_point_cloud_torch.shape[0]
                 if point_count == 64 * 1024:
                      # for Ouster 64-beam LiDAR

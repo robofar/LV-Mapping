@@ -403,8 +403,15 @@ def spawn_gaussians(neural_points_data: Dict,
     if "free_mask" in list(neural_points_data.keys()):
         neural_point_free_mask = neural_points_data["free_mask"]
 
+    neural_point_valid_mask = None
+    if "valid_mask" in list(neural_points_data.keys()):
+        neural_point_valid_mask = neural_points_data["valid_mask"]
+
 
     if visble_mask is not None:
+        if neural_point_valid_mask is not None:
+            visble_mask = visble_mask & neural_point_valid_mask # only visble and also valid neural points will be used 
+
         neural_point_position = neural_point_position[visble_mask]
         neural_point_color = neural_point_color[visble_mask]
 
@@ -518,7 +525,8 @@ def spawn_gaussians(neural_points_data: Dict,
     ## learn residual now
     # TODO: compare, but it seems that there's no much difference
     if learn_color_residual:
-        residual_range = 0.05
+        # by doing so, we can somehow restrict the color to not diverge much from the initial guess, so that the view-dependent color would not give very random results
+        residual_range = 0.2
         gaussian_rgb_residual = residual_range * torch.tanh(gaussian_color_mlp.mlp(color_feature_in)) # N, 3K [-residual_range, residual_range]
         # gaussian_rgb_residual = gaussian_color_mlp.mlp(color_feature_in) # N, 3K # better restrict this to a very samll value
         gaussian_color = neural_point_color.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K

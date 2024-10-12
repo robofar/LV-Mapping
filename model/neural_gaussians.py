@@ -579,15 +579,15 @@ class NeuralPoints(nn.Module):
         self.point_certainties[local_mask[:-1]] = self.local_point_certainties
         self.point_ts_update[local_mask[:-1]] = self.local_point_ts_update
 
-    def assign_local_gaussians_to_global(self):
-        local_mask = self.local_mask
-        # self.xyz[local_mask[:-1]] = self.local_xyz.data
-        # self.features_dc[local_mask[:-1]] = self.local_features_dc.data
-        # self.features_rest[local_mask[:-1]] = self.local_features_rest.data
-        # self.scaling[local_mask[:-1]] = self.local_scaling.data
-        # self.rotation[local_mask[:-1]] = self.local_rotation.data
-        # self.opacity[local_mask[:-1]] = self.local_opacity.data
-        self.valid_gs_mask[local_mask[:-1]] = self.local_valid_gs_mask
+    # def assign_local_gaussians_to_global(self):
+    #     local_mask = self.local_mask
+    #     # self.xyz[local_mask[:-1]] = self.local_xyz.data
+    #     # self.features_dc[local_mask[:-1]] = self.local_features_dc.data
+    #     # self.features_rest[local_mask[:-1]] = self.local_features_rest.data
+    #     # self.scaling[local_mask[:-1]] = self.local_scaling.data
+    #     # self.rotation[local_mask[:-1]] = self.local_rotation.data
+    #     # self.opacity[local_mask[:-1]] = self.local_opacity.data
+    #     self.valid_gs_mask[local_mask[:-1]] = self.local_valid_gs_mask
 
     # not use the free gaussians (neural points)
     def query_feature(

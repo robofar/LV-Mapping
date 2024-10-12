@@ -649,7 +649,7 @@ class Config:
             self.save_mesh = config_args["eval"].get('save_mesh', self.save_mesh)
 
         # associated parameters
-        self.infer_bs = self.bs * 16
+        self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
         self.window_radius = max(self.max_range+0.5, 6.0) # for the sampling data pool, should not be too small
         self.local_map_radius = min(self.max_range*1.1, self.max_range+10.0) # for the local neural points

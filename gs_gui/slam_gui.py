@@ -764,14 +764,16 @@ class SLAM_GUI:
             self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
                 
         if gaussian_packet.has_neural_points:
-            self.neural_points_info.text = "# Neural points: {} (local {})  [PINGS Map size: {:.1f} MB]".format(
+            self.neural_points_info.text = "# Neural points: {} (local {}), # Valid: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
                 gaussian_packet.neural_points_data["count"],
                 gaussian_packet.neural_points_data["local_count"],
+                gaussian_packet.neural_points_data["valid_count"],
+                gaussian_packet.neural_points_data["valid_local_count"],
                 gaussian_packet.neural_points_data["map_memory_mb"]
             )
             if self.neural_point_chbox.checked:
                 self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
-                # self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
+                self.neural_points.colors = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["color"].detach().cpu().numpy())
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
                 self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
@@ -814,9 +816,12 @@ class SLAM_GUI:
         selected_cam = self.combo_cams.selected_text
         selected_frustum = self.frustum_dict[selected_cam]
 
-        selected_gtcolor = self.gaussian_cur.gtcolor[selected_cam]
-        selected_gtdepth = self.gaussian_cur.gtdepth[selected_cam]
-        selected_gtnormal = self.gaussian_cur.gtnormal[selected_cam]
+        if selected_cam in list(self.gaussian_cur.gtcolor.keys()):
+            selected_gtcolor = self.gaussian_cur.gtcolor[selected_cam]
+            selected_gtdepth = self.gaussian_cur.gtdepth[selected_cam]
+            selected_gtnormal = self.gaussian_cur.gtnormal[selected_cam]
+        else:
+            selected_gtcolor = selected_gtdepth = selected_gtnormal = None
 
         if selected_gtcolor is not None:
             rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
@@ -889,9 +894,10 @@ class SLAM_GUI:
                     self.widget3d.scene.remove_geometry(self.cad_name)
                     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
                 
-                if self.range_circle_chbox.checked:
-                    self.range_circle = copy.deepcopy(self.range_circle_origin)
-                    self.range_circle.transform(gaussian_packet.gt_poses[-1])
+                self.range_circle = copy.deepcopy(self.range_circle_origin)
+                self.range_circle.transform(gaussian_packet.gt_poses[-1])
+
+                if self.range_circle_chbox.checked:    
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
 
@@ -912,9 +918,10 @@ class SLAM_GUI:
                 self.widget3d.scene.remove_geometry(self.cad_name)
                 self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
 
-            if self.range_circle_chbox.checked:
-                self.range_circle = copy.deepcopy(self.range_circle_origin)
-                self.range_circle.transform(gaussian_packet.slam_poses[-1])
+            self.range_circle = copy.deepcopy(self.range_circle_origin)
+            self.range_circle.transform(gaussian_packet.slam_poses[-1])
+
+            if self.range_circle_chbox.checked: 
                 self.widget3d.scene.remove_geometry(self.range_circle_name)
                 self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
     
@@ -1236,7 +1243,7 @@ class SLAM_GUI:
                         # self.scene_update() # don't do it so frequently
                         self.render_gui()
 
-                    if self.step % 50 == 0: # 0.5s # 2 Hz # receive latest data
+                    if self.step % 20 == 0: # 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis)
 
                     if self.step % 100 == 0:

@@ -40,9 +40,9 @@ class IPBCarDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
         
         # for cam_name, select from "left", "right", "front", "rear" all "all"
-        self.use_only_colorized_points = False
+        self.use_only_colorized_points = True
         
-        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.lidar_h_topic_name = "horizontal" 
         self.lidar_v_topic_name = "vertical" 
@@ -84,18 +84,19 @@ class IPBCarDataset:
         self.img_already_undistorted = False
         
         for cam_name in self.cam_list:
-            cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
+            cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
+            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
             
-            if os.path.exists(cur_cam_dir):
-                cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
-                if len(cur_img_files) == len(self.lidar_horizontal_files):
-                    self.img_already_undistorted = True
+            # if os.path.exists(cur_cam_dir):
+            #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+            #     if len(cur_img_files) == len(self.lidar_horizontal_files):
+            #         self.img_already_undistorted = True
 
-            if not self.img_already_undistorted:
+            # if not self.img_already_undistorted:
 
-                os.makedirs(cur_cam_dir, 0o755, exist_ok=True)
-                cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
-                cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+            #     os.makedirs(cur_cam_dir, 0o755, exist_ok=True)
+            #     cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
+            #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
 
             self.img_files[cam_name] = cur_img_files
 
@@ -137,7 +138,15 @@ class IPBCarDataset:
 
         # toc_read_pc = get_time()
         # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
+
+        valid_mask = ~np.all(np.abs(points[:,:3]) < 1.0, axis=1) 
+        points = points[valid_mask]
+        point_ts = point_ts[valid_mask]
         
+
+        # TODO: it's not correct to firstly combine the two point clouds are then apply undistortion
+        # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
+        # For multiple-LiDAR cases, you still have something to deal with
         if not self.use_only_lidar_h:
             lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
             # print(np.shape(lidar_v_points)[0])
@@ -147,16 +156,15 @@ class IPBCarDataset:
             lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
             lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
 
-            points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
+            valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < 1.0, axis=1) 
+            lidar_v_points = lidar_v_points[valid_mask]
+            lidar_v_points_ts = lidar_v_points_ts[valid_mask]
 
+            points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
             point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
 
-        valid_mask = ~np.all(points[:,:3] == 0, axis=1) 
-        points = points[valid_mask]
-        point_ts = point_ts[valid_mask]
 
         points_rgb = np.ones_like(points) # N,4, last channel for the mask
-        undistort_on = not self.img_already_undistorted
         
         img_dict = {}
         depth_img_dict = {}
@@ -165,7 +173,20 @@ class IPBCarDataset:
             
             # tic_0 = get_time()
             # slow, but would be hard to speed up
-            img_cam = self.read_img(self.img_files[cam_name][idx], undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
+
+            cur_img_file = self.img_files[cam_name][idx]
+
+            img_file_split = cur_img_file.split("/")
+            img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+            cur_img_file_distorted = "/".join(img_file_split)
+
+            if os.path.exists(cur_img_file_distorted):
+                undistort_on = False # if already exists the undistorted file, then use it
+                cur_img_file = cur_img_file_distorted
+            else:
+                undistort_on = True # otherwise, do the distortion and save the file
+
+            img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
             
             # toc_1 = get_time()
             
@@ -189,6 +210,8 @@ class IPBCarDataset:
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+        # print(point_ts) # correct
 
         # frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
         frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}

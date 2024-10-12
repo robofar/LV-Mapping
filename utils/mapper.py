@@ -45,6 +45,8 @@ from gaussian_splatting.utils.general_utils import rotation2normal
 from gaussian_splatting.utils.sh_utils import RGB2SH, SH2RGB
 from gaussian_splatting.scene.cameras import CamImage
 
+from gs_gui.gui_utils import VisPacket
+
 class Mapper:
     def __init__(
         self,
@@ -461,8 +463,8 @@ class Mapper:
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
             pool_relatve = self.global_coord_pool - frame_origin_torch
             # print(pool_relatve.shape)
-            pool_relative_dist = torch.sum(pool_relatve**2, dim=-1)
-            dist_mask = pool_relative_dist < self.config.window_radius**2
+            pool_relative_dist = torch.norm(pool_relatve, dim=1)
+            dist_mask = pool_relative_dist < self.config.window_radius
 
             filter_mask = dist_mask
 
@@ -1063,7 +1065,9 @@ class Mapper:
         neural_points_data["geo_feature"] = self.neural_points.local_geo_features
         neural_points_data["color_feature"] = self.neural_points.local_color_features
         neural_points_data["resolution"] = self.neural_points.resolution
-        neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
+        neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask # but now this is actually per neural point
+        neural_points_data["valid_mask"] = self.neural_points.local_valid_gs_mask # but now this is actually per neural point
+        # also have a valid mask for the neural points
         
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
@@ -1392,7 +1396,7 @@ class Mapper:
 
                     sampled_guassians_alpha = gaussian_alpha[sampled_indices]
 
-                    sampled_guassians_sdf = self.sdf(sampled_guassians_xyz)[0] # sdf, sdf_std
+                    sampled_guassians_sdf, _, valid_nnk_mask = self.sdf(sampled_guassians_xyz, min_nn_count=self.config.query_nn_k) # sdf, sdf_std, valid_mask
                     sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
                     grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
                     
@@ -1400,7 +1404,7 @@ class Mapper:
                     # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                     # maybe relax this a bit
-                    valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5)
+                    valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
                     # # TODO: why there are fewer and fewer valid points TODO
                     # valid_grad_mask = valid_grad_mask.detach()
                     valid_grad_count = torch.sum(valid_grad_mask).item()
@@ -1414,8 +1418,15 @@ class Mapper:
 
                     invalid_gaussian_alpha = sampled_guassians_alpha[invalid_gaussian_mask]
 
-                    opacity_loss += (invalid_gaussian_alpha.mean() * self.config.lambda_opacity)
+                    invalid_gaussiam_opacity_loss = invalid_gaussian_alpha.mean()
+
+                    # do not add this for now, think about other ways
+                    # print(" Invalid gaussian count {:d}".format(torch.sum(invalid_gaussian_mask).item()))
+                    # print(" Invalid gaussian opacity loss {:.3f}".format(invalid_gaussiam_opacity_loss.item()))
+
+                    # opacity_loss += (invalid_gaussiam_opacity_loss * 0.5 * self.config.lambda_opacity)
                     # TODO: does this really work?
+                    # we let these part to be more transparent, but there's seems to have some problem with the poles
 
                     sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
@@ -1558,7 +1569,7 @@ class Mapper:
             #     self.neural_points.local_valid_gs_mask = local_gaussians_static_mask 
             #     # self.neural_points.local_valid_gs_mask = self.neural_points.local_valid_gs_mask & local_gaussians_static_mask # TODO
 
-            self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
+            # self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)
@@ -1773,6 +1784,30 @@ class Mapper:
 
         return 
 
+    def check_invalid_neural_points(self, stability_threshold = 5.0):
+        local_neural_points = self.neural_points.local_neural_points
+        stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
+
+        print("Begin to check the validity")
+        print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
+            self.neural_points.local_count()))
+
+        stable_neural_points = local_neural_points[stable_neural_points_mask]
+
+        # this is a bit too much large, better to do it in batch
+        stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=self.config.query_nn_k)
+
+        static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+
+        valid_stable_mask = static_mask & valid_nnk_mask
+
+        self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
+
+        # set back the mask to the global map
+        local_mask = self.neural_points.local_mask
+        self.neural_points.valid_gs_mask[local_mask[:-1]] = self.neural_points.local_valid_gs_mask
+        
+
     def init_gs_eval(self):
         # clear the lists for evaluation
         self.train_psnr_list = []
@@ -1787,11 +1822,13 @@ class Mapper:
         self.test_depthl1_list = []
         self.test_depth_rmse_list = []
 
-    def gs_eval_offline(self, eval_down_rate=0):
+    def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, eval_down_rate=0):
         
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
         # For PSNR, it may have a difference of 0.1-0.2 PSNR
+
+        # TODO: the memory bank may still have some problem
 
         assert self.config.use_dataloader, "Only data loader version is supported currently"
 
@@ -1806,7 +1843,9 @@ class Mapper:
                 
                 T_w_l = self.used_poses[frame_id] #
                 # self.neural_points.reset_local_map(T_w_l[:3,3], None, cur_ts=frame_id)
-                self.neural_points.recreate_hash(T_w_l[:3,3], None, True, True, frame_id)
+                self.neural_points.recreate_hash(T_w_l[:3,3], None, True, True, frame_id) # and at the same time reset local map
+
+                # check if this is correct
 
                 # done only once, load the cam datas to cur_cam_img
                 self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
@@ -1829,6 +1868,9 @@ class Mapper:
                     neural_points_data["color_feature"] = self.neural_points.local_color_features
                     neural_points_data["resolution"] = self.neural_points.resolution
                     neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
+                    neural_points_data["valid_mask"] = self.neural_points.local_valid_gs_mask
+                    
+                    # better to add this to visualizer to check if there's something wrong. (FIXME)
 
                     # current values
                     render_pkg = render(cur_view_cam, None, neural_points_data, self.decoders, None, background, 
@@ -1853,6 +1895,12 @@ class Mapper:
                     cur_ssim = ssim(rendered_rgb_image, gt_rgb_img).item()
                     cur_lpips = self.lpips(rendered_rgb_image.unsqueeze(0), gt_rgb_img.unsqueeze(0)).item()
 
+                    if not self.silence:
+                        print("Camera id: {}".format(cur_view_cam.uid))
+                        print("Current view PSNR  ↑ :", f"{cur_pnsr:.3f}")
+                        print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
+                        print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
+
                     if cur_view_cam.depth_on and rendered_depth is not None: 
                         eval_depth_max = self.config.max_range * 0.8
                         eval_depth_min = self.config.min_range
@@ -1863,6 +1911,10 @@ class Mapper:
                         diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                         cur_depth_l1 = np.mean(diff_depth_masked)
                         cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
+                        if not self.silence:
+                            print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
+                            print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
+
 
                     if cur_view_cam.uid in self.train_cam_uid:
                         # as train views
@@ -1881,6 +1933,22 @@ class Mapper:
                         if cur_view_cam.depth_on and rendered_depth is not None: 
                             self.test_depthl1_list.append(cur_depth_l1)
                             self.test_depth_rmse_list.append(cur_depth_rmse)
+
+                if q_main2vis is not None:
+                    # add the eval frame to vis
+                    
+                    packet_to_vis= VisPacket(frame_id=frame_id,
+                        current_frames=self.dataset.cur_cam_img, 
+                        img_down_rate=self.config.gs_vis_down_rate)
+                    
+                    packet_to_vis.add_neural_points_data(self.neural_points)
+
+                    q_main2vis.put(packet_to_vis)
+
+                if q_vis2main is not None:
+                    if not q_vis2main.empty():
+                        while q_vis2main.get().flag_pause:
+                            continue
 
 
     def gs_eval_out(self):
@@ -2257,11 +2325,10 @@ class Mapper:
         self.ba_done_flag = True
 
     # short-hand function
-    def sdf(self, x, get_std=False):
-        geo_feature, _, weight_knn, _, _ = self.neural_points.query_feature(x)
-        sdf_pred = self.sdf_mlp.sdf(
-            geo_feature
-        )  # predict the scaled sdf with the feature # [N, K, 1]
+    def sdf(self, x, get_std=False, min_nn_count=1, accumulate_stability=False):
+        geo_feature, _, weight_knn, nn_count, _ = self.neural_points.query_feature(x, training_mode=accumulate_stability) # we do not add stability here
+        sdf_pred = self.sdf_mlp.sdf(geo_feature)    
+        # predict the scaled sdf with the feature # [N, K, 1]
         sdf_std = None
         if not self.config.weighted_first:
             sdf_pred_mean = torch.sum(sdf_pred * weight_knn, dim=1)  # N
@@ -2271,7 +2338,37 @@ class Mapper:
                 )
                 sdf_std = torch.sqrt(sdf_var).squeeze(1)
             sdf_pred = sdf_pred_mean.squeeze(1)
-        return sdf_pred, sdf_std
+
+        valid_mask = (nn_count >= min_nn_count)
+
+        return sdf_pred, sdf_std, valid_mask
+
+    # short-hand function
+    def sdf_batch(self, x, bs, get_std=False, min_nn_count=1, accumulate_stability=False):
+
+        count = x.shape[0]
+        iter_n = math.ceil(count / bs)
+
+        sdf_pred = torch.zeros(count, dtype=self.dtype, device=self.device)
+
+        if get_std:
+            sdf_std = torch.zeros(count, dtype=self.dtype, device=self.device)
+        else:
+            sdf_std = None
+
+        valid_mask = torch.ones(count, dtype=bool, device=self.device)
+        
+        for n in tqdm(range(iter_n), disable=self.silence):
+            head = n * bs
+            tail = min((n + 1) * bs, count)
+            batch_x = x[head:tail, :]
+            batch_sdf, batch_sdf_std, batch_valid_mask = self.sdf(batch_x, get_std, min_nn_count, accumulate_stability)
+            sdf_pred[head:tail] = batch_sdf
+            if batch_sdf_std is not None and sdf_std is not None:
+                sdf_std[head:tail] = batch_sdf_std
+            valid_mask[head:tail] = batch_valid_mask
+
+        return sdf_pred, sdf_std, valid_mask
 
     # TODO
     def get_gaussians(self, x):
@@ -2314,6 +2411,8 @@ class Mapper:
             gradient_x = (sdf_x_pos - sdf_x_neg) / (2 * eps)
             gradient_y = (sdf_y_pos - sdf_y_neg) / (2 * eps)
             gradient_z = (sdf_z_pos - sdf_z_neg) / (2 * eps)
+
+            # TODO: consider valid mask
 
         else:
             x_pos = x + eps_x
