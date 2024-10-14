@@ -1102,15 +1102,19 @@ class Mapper:
                 # camera poses already set
                 T1 = get_time()
 
+                cam_count = len(self.dataset.cam_names)
+                
                 # firstly train with the most recent observations? # TODO
 
-                # 60 % short term, 40 % long term
+                lastest_train_prob = 0.2 # TODO: add to config
+
+                # 60 % short term (20% latest), 40 % long term
                 dice_number = random.random()
                 if dice_number < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
                     # short-term memory 
                     cur_img_idx = torch.randperm(short_term_img_pool_size)[0]
-                    # if dice_number < 0.1: # train more on the most recent img
-                    #     cur_img_idx = -1 
+                    if dice_number < lastest_train_prob: # train more on the most recent imgs
+                        cur_img_idx = -torch.randperm(cam_count)[0]
                     viewpoint_cam: CamImage = self.cam_short_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_short_term
                     is_replay_mode = False

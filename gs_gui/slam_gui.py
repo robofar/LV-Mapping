@@ -1054,10 +1054,9 @@ class SLAM_GUI:
             if normal_in_world_frame: 
             # transform to world frame
                 normal = -1.0 * (normal.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
-            
-            normal_norm = normal.norm(2, dim=0) 
-
+        
             # normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+            normal_norm = normal.norm(2, dim=0) 
             normal_color = 0.5 * (normal_norm - normal) #   # convert to the normal vis color
             # normal_color = 0.5 * (1 - normal)
             normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
@@ -1073,8 +1072,9 @@ class SLAM_GUI:
             # transform to world frame
                 d2n = -1.0 * (d2n.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
 
-            d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
-            d2n_color =  0.5 * (1 - d2n) # convert to the normal vis color
+            # d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
+            d2n_norm = d2n.norm(2, dim=0) 
+            d2n_color =  0.5 * (d2n_norm - d2n) # convert to the normal vis color
             d2n_color = (d2n_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             d2n_color = np.ascontiguousarray(d2n_color)
             render_img = o3d.geometry.Image(d2n_color)

@@ -164,6 +164,11 @@ python pin_slam.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_sla
 
 ```
 python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
+
+rgbd_dataset_freiburg2_xyz
+
+python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_long_office_household -i ./data/TUM/ -vl --range 0 500 2
+
 ```
 
 **pass**

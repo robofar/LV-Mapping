@@ -8,46 +8,48 @@ process:
   max_range_m: 5.0  # distance filter for each frame
   min_z_m: -10.0 
   vox_down_m: 0.005 # TODO
+  dynamic_sdf_ratio_thre: 1.0
 sampler:
   surface_sample_range_m: 0.03
-  surface_sample_n: 4 # 4
+  surface_sample_n: 3 # 4
   free_sample_begin_ratio: 0.5
   free_sample_end_dist_m: 0.1 # 1.0
-  free_front_sample_n: 1
-  free_behind_sample_n: 0
+  free_front_sample_n: 2
+  free_behind_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.03
+  voxel_size_m: 0.05
+  search_alpha: 0.5
   feature_dim: 32
   color_feature_dim: 16
 gs:
-  exposure_correction_on: False
+  exposure_correction_on: True
   gs_iters: 50
-  n_gaussian: 8
-  gaussian_bs_ratio: 1.0
-  gs_keyframe_interval: 5
-  img_pool_size: 20
+  gaussian_bs_ratio: 2.0
+  gs_keyframe_interval: 2
+  img_pool_size: 50
   gs_down_rate: 0
   gs_vis_down_rate: 0
-  inverse_depth_loss: True
-  lambda_depth: 10.0 # 10.0
-  # lambda_normal_depth: 0.05
-  lambda_isotropic: 100.0
-  # lambda_area: 1e-2 # 1e-3
-  lambda_opacity: 5e-3
-  lambda_sdf_cons: 0.0
-  lambda_sdf_normal_cons: 0.0 # rendered normal seems to be better without this loss # 0.1
-  lambda_sdf: 0.0
+  dist_concat_on: False
+  inverse_depth_loss: False
+  lambda_depth: 5.0 # 10.0
+  lambda_normal_depth: 0.05
+  # lambda_isotropic: 100.0
+  lambda_area: 1e-3 # 1e-3
+  lambda_opacity: 1e-3
+  lambda_sdf_cons: 0.5
+  lambda_sdf_normal_cons: 0.5 # rendered normal seems to be better without this loss # 0.1
+  lambda_sdf: 0.1
 decoder:
   mlp_level: 1
   mlp_hidden_dim: 64
   freeze_after_frame: 40
 loss:
-  sigma_sigmoid_m: 0.005
-  loss_weight_on: True # False
+  sigma_sigmoid_m: 0.02
+  loss_weight_on: False # False
   dist_weight_scale: 0.6
   behind_dropoff_on: True
   ekional_loss_on: True
-  weight_e: 0.2 # TODO 0.5
+  weight_e: 5.0
 continual: # the data sample pool
   batch_size_new_sample: 3000 # don't split current and history
   pool_capacity: 2e7
@@ -63,15 +65,14 @@ continual: # the data sample pool
 #   GM_dist: 0.05
 #   eigenvalue_check: False
 optimizer:
-  mapping_freq_frame: 2
   iters: 15  # iterations per frame
-  batch_size: 16384 # 16384 # 16384 # 8192
+  batch_size: 8192 # 16384 # 16384 # 8192
   # ba_freq_frame: 20
   # lr_pose_ba: 1e-3
   # you need to train more iterations, lots of the samples are not even learned --> this cause the roughness of the reconstruction
 eval:
   o3d_vis_on: True
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 9
+  mesh_min_nn: 19
   sensor_cad_path: ./cad/camera.ply
-  skip_top_voxel: 5
+  skip_top_voxel: 0

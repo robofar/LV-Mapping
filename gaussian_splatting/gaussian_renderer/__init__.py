@@ -262,28 +262,34 @@ def render(viewpoint_camera: CamImage,
         # They will be excluded from value updates used in the splitting criteria.
 
         # additional regularizations
-        render_alpha = allmap[1:2]
+        rendered_alpha = allmap[1:2]
 
         # get normal map
         # transform normal from view space to world space
         # this is the normal of the gaussian at the rendered surface
-        render_normal = allmap[2:5] # in camera frame # normalized render normal, the same as gaussian surfel
-        # render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1) # to world frame
-        # render_normal = render_normal / render_alpha
-        render_normal = torch.nan_to_num(render_normal, 0, 0)
+        rendered_normal = allmap[2:5] # in camera frame # normalized render normal, the same as gaussian surfel, the alpha blended results
+        # rendered_normal = (rendered_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1) # to world frame
+        # rendered_normal = rendered_normal / rendered_alpha
+        rendered_normal = torch.nan_to_num(rendered_normal, 0, 0) 
+
+        rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
+
+        # not the same, but why?
+        # print(rendered_normal_norm)
+        # print(rendered_alpha)
         
         # get median depth map # what does this mean? # TODO
-        render_depth_median = allmap[5:6]
-        render_depth_median = torch.nan_to_num(render_depth_median, 0, 0) # gaussian depth (camera to ray-splat intersection) when aplha (most close to) = 0.5
+        rendered_depth_median = allmap[5:6]
+        rendered_depth_median = torch.nan_to_num(rendered_depth_median, 0, 0) # gaussian depth (camera to ray-splat intersection) when aplha (most close to) = 0.5
 
         # get expected depth map
-        render_depth_expected = allmap[0:1] # this is normalized depth
+        rendered_depth_expected = allmap[0:1] # this is normalized depth
         
-        render_depth_expected = render_depth_expected / render_alpha # alpha blending of the gaussian depth (camera to ray-splat intersection), this is denormalized
-        render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
+        rendered_depth_expected = rendered_depth_expected / rendered_alpha.detach() # alpha normalized alpha blending of the gaussian depth (camera to ray-splat intersection)
+        rendered_depth_expected = torch.nan_to_num(rendered_depth_expected, 0, 0)
         
         # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)
-        render_dist = allmap[6:7]
+        rendered_dist = allmap[6:7]
 
         # print(render_dist)
 
@@ -292,31 +298,33 @@ def render(viewpoint_camera: CamImage,
         # for bounded scene, use median depth, i.e., depth_ratio = 1; 
         # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
 
-        # what's the depth_ratio? TODO
-        # TODO: read the paper again
-
-        depth_ratio = 0 # unbounded scene, in this case, just render_depth_expected (mean)
-        # depth_ratio = 1 # bounded scene, in this case, just render_depth_median
-        surf_depth = render_depth_expected * (1-depth_ratio) + (depth_ratio) * render_depth_median
+        # depth_ratio = 0 # unbounded scene, in this case, just rendered_depth_expected (mean)
+        # # depth_ratio = 1 # bounded scene, in this case, just rendered_depth_median
+        # surf_depth = rendered_depth_expected * (1-depth_ratio) + (depth_ratio) * rendered_depth_median
         
+        surf_depth = rendered_depth_expected
+
         # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
         # surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
         # surf_normal = surf_normal.permute(2,0,1)
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
 
-        mask_vis = (render_alpha.detach() > 1e-3)
+        mask_vis = (rendered_alpha.detach() > 1e-3)
         d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
 
-        # d2n = depth_to_normal(viewpoint_camera, surf_depth) # in world frame
+        # does not look good here
+        # d2n = depth_to_normal(viewpoint_camera, surf_depth) # in world frame # why use this, there's not much difference
+        # d2n = (d2n.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3])).permute(2,0,1) # back to camera frame
 
+        d2n = d2n * rendered_alpha.detach() # 
         # d2n = None 
 
         # rendered result
         results.update({
-            'rend_alpha': render_alpha,
-            'rend_normal': render_normal,
-            'rend_dist': render_dist, # distortion
+            'rend_alpha': rendered_alpha,
+            'rend_normal': rendered_normal,
+            'rend_dist': rendered_dist, # distortion
             'surf_depth': surf_depth, # rendered depth
             'surf_normal': d2n, # normal calemoculated from rendered depth # in cam frame
             "viewspace_points": means2D,
@@ -355,6 +363,8 @@ def render(viewpoint_camera: CamImage,
         mask_vis = (rendered_alpha.detach() > 1e-3)
         d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface # in camera frame
         
+        d2n = d2n * rendered_alpha.detach()
+
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
         # toc_d2n = get_time()
         # print("D2N time:", (toc_d2n-tic_d2n) * 1000) # could be more than 1ms, disable for now
@@ -373,7 +383,7 @@ def render(viewpoint_camera: CamImage,
     elif gs_type == "3d_gs":
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-        rendered_image, radii, depth = rasterizer(
+        rendered_image, radii, rendered_depth = rasterizer(
             means3D = means3D,
             means2D = means2D,
             colors_precomp = colors,
@@ -383,7 +393,7 @@ def render(viewpoint_camera: CamImage,
         
         results.update({
             "rend_normal": None, 
-            "surf_depth": depth,
+            "surf_depth": rendered_depth,
             "rend_alpha": None, 
             'surf_normal': None, 
             'rend_dist': None,
