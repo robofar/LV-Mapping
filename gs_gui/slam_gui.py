@@ -776,7 +776,7 @@ class SLAM_GUI:
             neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
             neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
-            neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black
+            neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black for vis
             
             self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors)
 
@@ -1054,9 +1054,12 @@ class SLAM_GUI:
             if normal_in_world_frame: 
             # transform to world frame
                 normal = -1.0 * (normal.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
-                
-            normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1
-            normal_color = 0.5 - normal * 0.5  # convert to the normal vis color
+            
+            normal_norm = normal.norm(2, dim=0) 
+
+            # normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+            normal_color = 0.5 * (normal_norm - normal) #   # convert to the normal vis color
+            # normal_color = 0.5 * (1 - normal)
             normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             normal_color = np.ascontiguousarray(normal_color)
             render_img = o3d.geometry.Image(normal_color)
@@ -1065,8 +1068,13 @@ class SLAM_GUI:
             d2n = results["surf_normal"]
             if d2n is None:
                 return None # don't show gs rendering results
+            
+            if normal_in_world_frame: 
+            # transform to world frame
+                d2n = -1.0 * (d2n.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+
             d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
-            d2n_color = 0.5 - d2n * 0.5  # convert to the normal vis color
+            d2n_color =  0.5 * (1 - d2n) # convert to the normal vis color
             d2n_color = (d2n_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             d2n_color = np.ascontiguousarray(d2n_color)
             render_img = o3d.geometry.Image(d2n_color)
@@ -1194,11 +1202,16 @@ class SLAM_GUI:
             
             render_toc = get_time()
 
-            gaussians_all_count = rendering_data["alpha_all"].shape[0]
-            gaussians_valid_count = rendering_data["view_gaussian_count"]
-            valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
-            mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
-            cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
+            if rendering_data is not None:
+                gaussians_all_count = rendering_data["alpha_all"].shape[0]
+                gaussians_valid_count = rendering_data["view_gaussian_count"]
+                valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
+                mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
+                cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
+            else:
+                cur_view_gaussian_count = 0
+                mean_valid_count = 0
+
             self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_view_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
 
             render_time = render_toc - render_tic # s
@@ -1250,7 +1263,7 @@ class SLAM_GUI:
                         # self.scene_update() # don't do it so frequently
                         self.render_gui()
 
-                    if self.step % 20 == 0: # 0.2s # 5 Hz # receive latest data
+                    if self.step % 50 == 0: # 0.5s # 2 Hz # receive latest data
                         self.receive_data(self.q_main2vis)
 
                     if self.step % 100 == 0:

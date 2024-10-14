@@ -31,7 +31,7 @@ class Decoder(nn.Module):
         self.out_dim_per = out_dim
         self.out_k = out_k # for gs, this denotes the gaussian count per neural point
         self.use_leaky_relu = config.mlp_leaky_relu
-        self.bs = config.bs # bs or infer_bs, for batch mlp
+        self.bs = config.infer_bs # bs or infer_bs, for batch mlp
 
         bias_on = config.mlp_bias_on
 

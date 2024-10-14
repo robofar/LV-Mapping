@@ -81,10 +81,14 @@ def depth2normal(depth, mask, camera):
     p[..., 0:1] -= camera.prcppoint[0] * camera.image_width
     p[..., 1:2] -= camera.prcppoint[1] * camera.image_height
     p *= camD
-    K00 = fov2focal(camera.FoVy, camera.image_height)
-    K11 = fov2focal(camera.FoVx, camera.image_width)
+    # K00 = fov2focal(camera.FoVy, camera.image_height)
+    # K11 = fov2focal(camera.FoVx, camera.image_width)
+
+    K00 = camera.fx
+    K11 = camera.fy 
+
     K = torch.tensor([K00, 0, 0, K11]).reshape([2,2])
-    Kinv = torch.inverse(K).to(device)
+    Kinv = torch.inverse(K).to(torch.float32).to(device)
     # print(p.shape, Kinv.shape)
     p = p @ Kinv.t() # unprojected to 3D, still in camera frame
     camPos = torch.cat([p, camD], -1)
@@ -94,7 +98,6 @@ def depth2normal(depth, mask, camera):
     p = torch.nn.functional.pad(camPos[None], [0, 0, 1, 1, 1, 1], mode='replicate')
     mask = torch.nn.functional.pad(mask[None].to(torch.float32), [0, 0, 1, 1, 1, 1], mode='replicate').to(torch.bool)
     
-
     p_c = (p[:, 1:-1, 1:-1, :]      ) * mask[:, 1:-1, 1:-1, :]
     p_u = (p[:,  :-2, 1:-1, :] - p_c) * mask[:,  :-2, 1:-1, :]
     p_l = (p[:, 1:-1,  :-2, :] - p_c) * mask[:, 1:-1,  :-2, :]

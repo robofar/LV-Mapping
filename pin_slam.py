@@ -129,7 +129,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
     n_gaussian = config.spawn_n_gaussian # almost 2D, then 4 already means 1/2 resolution
     hidden_layer_count = 1 # 1 or 2 ? # TODO
-    hidden_layer_dim = 64 # 64 # 128
+    hidden_layer_dim = 64 # 64 # 128 # now this is small enough
 
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
@@ -584,11 +584,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, output_mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
     neural_points.clear_temp() # clear temp data for output
     if config.save_map:
-        if config.gs_on:
-            gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here
-            neural_points.save_gaussian_ply(gs_map)
-        else:
-            save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
+        # if config.gs_on:
+        #     gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here (now we don't save gaussian map anymore)
+        #     neural_points.save_gaussian_ply(gs_map)
+        # else:
+        save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
     if config.save_merged_pc:
         dataset.write_merged_point_cloud() # replay: save merged point cloud map
     

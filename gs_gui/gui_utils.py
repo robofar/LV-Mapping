@@ -31,7 +31,7 @@ class Frustum:
         cameraeye = cameraeye[0:3, :].transpose()
         eye = cameraeye[0, :]
 
-        base_behind = np.array([[0.0, -2.5, -20.0]]) * self.size # original z -30.0
+        base_behind = np.array([[0.0, -2.5, -30.0]]) * self.size # original z -30.0
         base_behind_hmg = np.hstack([base_behind, np.ones((base_behind.shape[0], 1))])
         cameraeye_behind = pose @ base_behind_hmg.transpose()
         cameraeye_behind = cameraeye_behind[0:3, :].transpose()

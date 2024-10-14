@@ -12,20 +12,20 @@ process:
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 2
-  free_sample_begin_ratio: 0.3
+  free_sample_begin_ratio: 0.2
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.3
-  search_alpha: 0.8
-  query_nn_k: 8
+  voxel_size_m: 0.4
+  search_alpha: 0.5
+  query_nn_k: 6
   feature_dim: 32
   color_feature_dim: 16 # 
 decoder:
   freeze_after_frame: 40
 continual:
-  batch_size_new_sample: 1500
-  pool_capacity: 2e7 # this is often the part taken a lot of memory
+  batch_size_new_sample: 1000
+  pool_capacity: 1e7 # this is often the part that takes a lot of memory
 tracker:
   source_vox_down_m: 0.6
   iter_n: 50
@@ -40,14 +40,15 @@ gs:
   gs_iters: 50 # 50
   gaussian_bs_ratio: 4.0
   gs_keyframe_interval: 2
-  img_pool_size: 30 # TODO
+  img_pool_size: 40 # TODO
   gs_down_rate: 1
   gs_vis_down_rate: 1
   inverse_depth_loss: True
-  lambda_depth: 10.0
-  lambda_opacity: 5e-3 # 1e-3 # increase to have more valid gaussians
-  lambda_area: 1e-3 # 1e-3
+  lambda_depth: 20.0
+  lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
+  # lambda_area: 1e-3 # 1e-3
   lambda_mono_normal: 0.01
+  # lambda_normal_depth: 0.1
   lambda_sdf_cons: 0.2
   lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0 # 0.1 # what should this value be like
