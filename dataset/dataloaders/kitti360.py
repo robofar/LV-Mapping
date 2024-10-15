@@ -180,7 +180,7 @@ class KITTI360Dataset:
 
         # prepare depth map for visualization
         depth_map = np.zeros((img_height, img_width, 1))
-        depth_img = np.zeros((img_height, img_width, 3))
+        #
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters

@@ -40,7 +40,7 @@ class IPBCarDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
         
         # for cam_name, select from "left", "right", "front", "rear" all "all"
-        self.use_only_colorized_points = True
+        self.use_only_colorized_points = False
         
         self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
@@ -362,7 +362,6 @@ class IPBCarDataset:
 
         # prepare depth map for visualization
         depth_map = np.zeros((img_height, img_width, 1)) # H, W, 1
-        depth_img = np.zeros((img_height, img_width, 3))
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters

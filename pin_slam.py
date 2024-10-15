@@ -355,6 +355,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # IV: Mapping and bundle adjustment
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
+        dataset.voxel_downsample_points_for_mapping()
+        
         if frame_id < 5 or (not dataset.lose_track and not dataset.stop_status):
             mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals,
                                  dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0),
@@ -424,6 +426,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         cur_mesh = None
         cur_sdf_slice = None
 
+        # set the point cloud for visualization
         dataset.update_o3d_map()
         frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
 
@@ -433,9 +436,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
 
             o3d_vis.cur_frame_id = frame_id # frame id in the data folder
-            
-            if config.track_on and frame_id > 0 and (not o3d_vis.vis_pc_color) and (weight_pc_o3d is not None): 
-                dataset.cur_frame_o3d = weight_pc_o3d
 
             T7 = get_time()
 

@@ -267,9 +267,11 @@ class Config:
 
         # tracking (odometry estimation)
         self.track_on: bool = True
+        # default without color
         self.photometric_loss_on: bool = False # add the color (or intensity) [photometric loss] to the tracking loss
         self.photometric_loss_weight: float = 0.01 # weight for the photometric loss in tracking
         self.consist_wieght_on: bool = False # weight for color (intensity) consistency for the measured and queried value
+        
         self.source_vox_down_m: float = 0.8 # downsample voxel resolution for source point cloud
         self.uniform_motion_on: bool = True # use uniform motion (constant velocity) model for the transformation inital guess
         self.reg_min_grad_norm: float = 0.4 # min norm of SDF gradient for valid source point

@@ -160,7 +160,7 @@ class VisPacket:
                             # mask the sky part
                             gtnormal[cur_sky_mask_used] = 0.0
             
-                gtcolor = self.resize_img(gtcolor, self.img_resize_width)
+                gtcolor = self.resize_img(gtcolor)
 
                 # exposure correction for vis
                 with torch.no_grad():
@@ -168,9 +168,9 @@ class VisPacket:
 
                 self.gtcolor[cam] = gtcolor
 
-                self.gtdepth[cam] = self.resize_img(gtdepth, self.img_resize_width, is_sparse=True)
+                self.gtdepth[cam] = self.resize_img(gtdepth, is_sparse=True)
 
-                self.gtnormal[cam] = self.resize_img(gtnormal, self.img_resize_width)
+                self.gtnormal[cam] = self.resize_img(gtnormal)
 
         self.keyframes = keyframes
         self.finish = finish
@@ -254,21 +254,24 @@ class VisPacket:
         self.gt_poses = gt_poses
         self.slam_poses = slam_poses
 
-    def resize_img(self, img, width, is_sparse: bool = False):
+    def resize_img(self, img, resize_width = None, is_sparse: bool = False):
         if img is None:
             return None
+        
+        if resize_width is None:
+            return img
 
         # check if img is numpy
         if isinstance(img, np.ndarray):
-            height = int(width * img.shape[0] / img.shape[1])
-            return cv2.resize(img, (width, height))
+            height = int(resize_width * img.shape[0] / img.shape[1])
+            return cv2.resize(img, (resize_width, height))
         # or as torch
-        height = int(width * img.shape[1] / img.shape[2])
+        resize_height = int(resize_width * img.shape[1] / img.shape[2])
         # img is 3xHxW
         if is_sparse:
-            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(height, width), mode='nearest-exact')
+            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(resize_height, resize_width), mode='nearest-exact')
         else:
-            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(height, width), mode="bilinear", align_corners=False)
+            img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(resize_height, resize_width), mode="bilinear", align_corners=False)
 
         return img.squeeze(0)
 

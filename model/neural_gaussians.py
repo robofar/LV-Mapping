@@ -486,8 +486,8 @@ class NeuralPoints(nn.Module):
     def reset_local_map(
         self,
         sensor_position: torch.Tensor,
-        sensor_orientation: torch.Tensor,
-        cur_ts: int,
+        sensor_orientation: torch.Tensor = None,
+        cur_ts: int = 0,
         use_travel_dist: bool = True,
         diff_ts_local: int = 50,
     ):
@@ -1336,7 +1336,7 @@ class NeuralPoints(nn.Module):
     def recreate_hash(
         self,
         sensor_position: torch.Tensor,
-        sensor_orientation: torch.Tensor,
+        sensor_orientation: torch.Tensor = None,
         kept_points: bool = True,
         with_ts: bool = True,
         cur_ts=0,

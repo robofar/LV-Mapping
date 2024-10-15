@@ -36,6 +36,7 @@ from utils.tools import (
     tranmat_close_to_identity,
     transform_torch,
     voxel_down_sample_torch,
+    project_points_to_cam_torch,
 )
 from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
@@ -198,6 +199,8 @@ class SLAMDataset():
 
         self.static_mask = None
 
+        self.train_voxel_m = self.config.vox_down_m
+      
         # current frame's data
         self.cur_point_cloud_torch = None
         self.cur_point_ts_torch = None
@@ -316,13 +319,13 @@ class SLAMDataset():
 
                         cur_img_depth_np = np.squeeze(cur_img_depth_np) # H, W
                     
-                    # cur_img_rgb = torch.tensor(cur_img_rgb_np, dtype=self.dtype, device=self.device) 
-                    cur_img_rgb = torch.from_numpy(cur_img_rgb_np).float().to(self.device)
-                    cur_img_rgb = cur_img_rgb.permute(2,0,1) # 3, H, W
-                    cur_img_rgb /= 255.0 # convert RGB channel to [0,1]
+                    # cur_img_rgb_torch = torch.tensor(cur_img_rgb_np, dtype=self.dtype, device=self.device) 
+                    cur_img_rgb_torch = torch.from_numpy(cur_img_rgb_np).float().to(self.device)
+                    cur_img_rgb_torch = cur_img_rgb_torch.permute(2,0,1) # 3, H, W
+                    cur_img_rgb_torch /= 255.0 # convert RGB channel to [0,1]
                     # print(cur_img[3])
 
-                    H, W = cur_img_rgb.shape[1], cur_img_rgb.shape[2]
+                    H, W = cur_img_rgb_torch.shape[1], cur_img_rgb_torch.shape[2]
                     sky_mask = None # optional sky mask (sky:1, non-sky:0)
                     pred_normal = None # optional normal image 
 
@@ -337,11 +340,11 @@ class SLAMDataset():
                         if self.is_rgbd:
                             use_mono_depth_for_gs_init = False
 
-                        mono_depth_input_rgb = cur_img_rgb
+                        mono_depth_input_rgb = cur_img_rgb_torch
                         
                         # down-sample input image to save computation (otherwise it will take more than 100ms)
                         if H*W > 8e5: # 5e5
-                            mono_depth_input_rgb = F.interpolate(cur_img_rgb.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                            mono_depth_input_rgb = F.interpolate(cur_img_rgb_torch.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
                             # For kitti, if downsized, computational time can be decrease to 20ms on my GPU
 
                         tic_metric3d = get_time()
@@ -456,7 +459,7 @@ class SLAMDataset():
                             cv2.imshow("Mono RGB", cur_img_rgb_vis)
 
                         if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                            pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                            pred_depth_color = (colorize_depth_maps(pred_depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
                             pred_depth_color = np.transpose(pred_depth_color[0], (1, 2, 0)) # H, W, 3
                             pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_RGB2BGR) # for vis
                             cv2.imshow("Mono Depth", pred_depth_color)
@@ -546,9 +549,10 @@ class SLAMDataset():
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
 
                     # this is actually very fast (1-2 ms)
-                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb, self.K_mats[cam_name], 
+                    self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb_torch, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.local_map_radius*1.1,
-                                                          cam_name, img_down_rate, cur_img_depth, pred_normal, sky_mask, self.device)
+                                                          cam_name, depth_image=cur_img_depth, normal_img=pred_normal,  
+                                                          sky_mask=sky_mask, device=self.device)
 
                     #print("Time for loading camera {:.2f} (ms)".format((toc_load_cam-tic_load_cam)*1e3))
                     #print("Time for setting camera {:.2f} (ms)".format((toc_set_cam-tic_set_cam)*1e3))
@@ -602,60 +606,6 @@ class SLAMDataset():
             self.get_point_ts(point_ts)
 
         # print(self.cur_point_ts_torch)
-
-    # point-wise timestamp is now only used for motion undistortion (deskewing)
-    def get_point_ts(self, point_ts=None): 
-        # point_ts is already the normalized timestamp in a scan frame # [0,1]
-        if self.config.deskew:
-            if point_ts is not None and min(point_ts) < 1.0: # not all 1
-                # if not self.silence:
-                #     print("Pointwise timestamp available")
-                self.cur_point_ts_torch = torch.tensor(
-                    point_ts, device=self.device, dtype=self.dtype
-                )
-            else: # point_ts not available, guess the ts
-                # this sometimes does not work (FIXME): some isse here, better to directly read the ts
-                point_count = self.cur_point_cloud_torch.shape[0]
-                if point_count == 64 * 1024:
-                     # for Ouster 64-beam LiDAR
-                    if not self.silence:
-                        print("Ouster-64 point cloud deskewed")
-                    self.cur_point_ts_torch = (
-                        (torch.floor(torch.arange(point_count) / 64) / 1024)
-                        .reshape(-1, 1)
-                        .to(self.cur_point_cloud_torch)
-                    )
-                elif (
-                    point_count == 128 * 1024 or point_count == 128 * 2048
-                ):  # for Ouster 128-beam LiDAR
-                    if not self.silence:
-                        print("Ouster-128 point cloud deskewed")
-                    hres = point_count / 128
-                    self.cur_point_ts_torch = (
-                        (torch.floor(torch.arange(point_count) / 128) / hres)
-                        .reshape(-1, 1)
-                        .to(self.cur_point_cloud_torch)
-                    )
-                else:
-                    yaw = -torch.atan2(
-                        self.cur_point_cloud_torch[:, 1],
-                        self.cur_point_cloud_torch[:, 0],
-                    )  # y, x -> rad (clockwise)
-                    if self.config.lidar_type_guess == "velodyne":
-                        # for velodyne LiDAR (from -x axis, clockwise)
-                        self.cur_point_ts_torch = 0.5 * (yaw / math.pi + 1.0)  # [0,1]
-                        if not self.silence:
-                            print("Velodyne point cloud deskewed")
-                    else:
-                        # for Hesai LiDAR (from +y axis, clockwise)
-                        self.cur_point_ts_torch = 0.5 * (
-                            yaw / math.pi + 0.5
-                        )  # [-0.25,0.75]
-                        self.cur_point_ts_torch[
-                            self.cur_point_ts_torch < 0
-                        ] += 1.0  # [0,1]
-                        if not self.silence:
-                            print("HESAI point cloud deskewed")
     
     def set_ref_pose(self, frame_id):
         # load gt pose if available
@@ -712,7 +662,7 @@ class SLAMDataset():
             crop_max_range = self.config.max_range
 
         # adaptive
-        train_voxel_m = (
+        self.train_voxel_m = (
             crop_max_range / self.config.max_range
         ) * self.config.vox_down_m
         source_voxel_m = (
@@ -729,19 +679,21 @@ class SLAMDataset():
                 self.pgo_poses[frame_id] = cur_pose_init_guess
             return False
 
-        if self.config.rand_downsample:
-            kept_count = int(original_count * self.config.rand_down_r)
-            idx = torch.randint(0, original_count, (kept_count,), device=self.device)
-        else:
-            idx = voxel_down_sample_torch(
-                self.cur_point_cloud_torch[:, :3], train_voxel_m
-            )
-        self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
-        if self.cur_point_ts_torch is not None:
-            self.cur_point_ts_torch = self.cur_point_ts_torch[idx]
-        if self.cur_sem_labels_torch is not None:
-            self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
-            self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
+        ## Don't do this here, do it later when mapping (FIXME)
+        ## point cloud downsampling
+        # if self.config.rand_downsample:
+        #     kept_count = int(original_count * self.config.rand_down_r)
+        #     idx = torch.randint(0, original_count, (kept_count,), device=self.device)
+        # else:
+        #     idx = voxel_down_sample_torch(
+        #         self.cur_point_cloud_torch[:, :3], self.train_voxel_m
+        #     )
+        # self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
+        # if self.cur_point_ts_torch is not None:
+        #     self.cur_point_ts_torch = self.cur_point_ts_torch[idx]
+        # if self.cur_sem_labels_torch is not None:
+        #     self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
+        #     self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
 
         # T2 = get_time()
 
@@ -770,17 +722,18 @@ class SLAMDataset():
             )
 
         # Tn0 = get_time()
+        # not used
         if self.config.estimate_normal:
             cur_points = self.cur_point_cloud_torch[:, :3].clone() # in sensor frame
-            cur_hasher = VoxelHasherIndex(cur_points, train_voxel_m, buffer_size=int(1e6))
-            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, train_voxel_m*1.0)
+            cur_hasher = VoxelHasherIndex(cur_points, self.train_voxel_m, buffer_size=int(1e6))
+            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, self.train_voxel_m*1.0)
             # print(neighb_idx.shape)
             valid_mask = neighb_idx > 0
             neighbors = cur_points[neighb_idx] # fix the point corresponding to -1 idx
             neighbors[~valid_mask] = torch.ones(3).to(cur_points) * 9999.
 
             pca_extractor = GeometricFeatureExtractor()
-            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, train_voxel_m)  
+            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, self.train_voxel_m)  
             
             # orient normals toward sensor
             orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
@@ -803,11 +756,10 @@ class SLAMDataset():
 
         # prepare for the registration
         if frame_id > 0:
-
-            cur_source_torch = (
-                self.cur_point_cloud_torch.clone()
-            )  # used for registration
-
+            
+            # used for registration
+            cur_source_torch = self.cur_point_cloud_torch.clone()
+            
             # source point voxel downsampling (for registration)
             idx = voxel_down_sample_torch(cur_source_torch[:, :3], source_voxel_m)
             cur_source_torch = cur_source_torch[idx]
@@ -888,13 +840,16 @@ class SLAMDataset():
         
         self.last_pose_ref = self.cur_pose_ref  # update for the next frame
 
-        # deskewing (motion undistortion using the estimated transformation) for the sampled points for mapping
+        # deskewing (motion undistortion using the estimated transformation) for the points for mapping
         if self.config.deskew and not self.lose_track:
             self.cur_point_cloud_torch = deskewing(
                 self.cur_point_cloud_torch,
                 self.cur_point_ts_torch,
                 torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
             )  # T_last<-cur
+
+        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
+        self.project_pointcloud_to_cams()
 
         if self.lose_track:
             self.consecutive_lose_track_frame += 1
@@ -905,6 +860,53 @@ class SLAMDataset():
             self.write_results() # record before the failure point
             sys.exit("Lose track for a long time, system failed") 
 
+    def voxel_downsample_points_for_mapping(self):
+        # downsampling the point for mapping now
+        idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:, :3], self.train_voxel_m)
+        self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
+        if self.cur_point_ts_torch is not None:
+            self.cur_point_ts_torch = self.cur_point_ts_torch[idx]
+        if self.cur_sem_labels_torch is not None:
+            self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
+            self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
+
+
+    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True):
+        # done after deskewing
+        # to get a refined depth map and colorized point cloud
+
+        point_count = self.cur_point_cloud_torch.shape[0]
+        points_rgb_torch = torch.ones((point_count, 4)).to(self.cur_point_cloud_torch)
+
+        for cam_name in self.cam_names:
+            cam_img: CamImage = self.cur_cam_img[cam_name]
+
+            cam_rgb_torch = cam_img.rgb_image_list[0]
+
+            # TODO: check if this will be an in-place operation of self.cur_point_cloud_torch
+            cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)
+            cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)
+
+            points_rgb_torch, depth_map_torch = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
+                cam_rgb_torch, cur_T_c_l, cur_K_mat)
+
+            cam_img.set_depth_img(depth_map_torch)
+        
+        # color channels
+        self.cur_point_cloud_torch[:, 3:] = points_rgb_torch[:, :3] # 4-6 rgb
+
+        if use_only_colorized_points:
+            with_rgb_mask = (points_rgb_torch[:, 3] == 0)
+            self.cur_point_cloud_torch = self.cur_point_cloud_torch[with_rgb_mask]
+            if self.cur_point_ts_torch is not None:
+                self.cur_point_ts_torch = self.cur_point_ts_torch[with_rgb_mask]
+            if self.cur_point_normals is not None:
+                self.cur_point_normals = self.cur_point_normals[with_rgb_mask]
+            if self.cur_sem_labels_torch is not None:
+                self.cur_sem_labels_torch = self.cur_sem_labels_torch[with_rgb_mask]
+                self.cur_sem_labels_full = self.cur_sem_labels_full[with_rgb_mask]
+
+
     def update_poses_after_pgo(self, pgo_poses):
         self.pgo_poses[:self.processed_frame+1] = pgo_poses  # update pgo pose
         self.cur_pose_ref = self.pgo_poses[self.processed_frame]
@@ -912,7 +914,8 @@ class SLAMDataset():
 
     def update_o3d_map(self):
 
-        frame_down_torch = self.cur_point_cloud_torch  # no futher downsample
+        frame_down_torch = self.cur_point_cloud_torch 
+        # self.cur_point_cloud_torch is in current lidar frame
 
         frame_o3d = o3d.geometry.PointCloud()
         frame_points_np = (
@@ -939,6 +942,7 @@ class SLAMDataset():
         #     frame_o3d.normals = o3d.utility.Vector3dVector(frame_normals_np)
         #     frame_o3d.orient_normals_towards_camera_location()
 
+        # transform from lidar frame to world frame
         frame_o3d = frame_o3d.transform(self.cur_pose_ref)
 
         if self.config.color_channel > 0:
@@ -964,6 +968,7 @@ class SLAMDataset():
             self.cur_bbx = self.cur_frame_o3d.get_axis_aligned_bounding_box()
 
         # transform mono depth point cloud
+        # transform from lidar frame to world frame
         if self.monodepth_on and self.cur_frame_mono_depth_o3d.has_points(): 
             self.cur_frame_mono_depth_o3d = self.cur_frame_mono_depth_o3d.transform(self.cur_pose_ref)
 
@@ -1369,6 +1374,60 @@ class SLAMDataset():
             save_path = os.path.join(self.run_path, "map", out_file_name+".ply")
             o3d.t.io.write_point_cloud(save_path, map_out_o3d)
             print(f"save the merged raw point cloud map to {save_path}")
+
+    # point-wise timestamp is now only used for motion undistortion (deskewing)
+    def get_point_ts(self, point_ts=None): 
+        # point_ts is already the normalized timestamp in a scan frame # [0,1]
+        if self.config.deskew:
+            if point_ts is not None and min(point_ts) < 1.0: # not all 1
+                # if not self.silence:
+                #     print("Pointwise timestamp available")
+                self.cur_point_ts_torch = torch.tensor(
+                    point_ts, device=self.device, dtype=self.dtype
+                )
+            else: # point_ts not available, guess the ts
+                # this sometimes does not work (FIXME): some isse here, better to directly read the ts
+                point_count = self.cur_point_cloud_torch.shape[0]
+                if point_count == 64 * 1024:
+                     # for Ouster 64-beam LiDAR
+                    if not self.silence:
+                        print("Ouster-64 point cloud deskewed")
+                    self.cur_point_ts_torch = (
+                        (torch.floor(torch.arange(point_count) / 64) / 1024)
+                        .reshape(-1, 1)
+                        .to(self.cur_point_cloud_torch)
+                    )
+                elif (
+                    point_count == 128 * 1024 or point_count == 128 * 2048
+                ):  # for Ouster 128-beam LiDAR
+                    if not self.silence:
+                        print("Ouster-128 point cloud deskewed")
+                    hres = point_count / 128
+                    self.cur_point_ts_torch = (
+                        (torch.floor(torch.arange(point_count) / 128) / hres)
+                        .reshape(-1, 1)
+                        .to(self.cur_point_cloud_torch)
+                    )
+                else:
+                    yaw = -torch.atan2(
+                        self.cur_point_cloud_torch[:, 1],
+                        self.cur_point_cloud_torch[:, 0],
+                    )  # y, x -> rad (clockwise)
+                    if self.config.lidar_type_guess == "velodyne":
+                        # for velodyne LiDAR (from -x axis, clockwise)
+                        self.cur_point_ts_torch = 0.5 * (yaw / math.pi + 1.0)  # [0,1]
+                        if not self.silence:
+                            print("Velodyne point cloud deskewed")
+                    else:
+                        # for Hesai LiDAR (from +y axis, clockwise)
+                        self.cur_point_ts_torch = 0.5 * (
+                            yaw / math.pi + 0.5
+                        )  # [-0.25,0.75]
+                        self.cur_point_ts_torch[
+                            self.cur_point_ts_torch < 0
+                        ] += 1.0  # [0,1]
+                        if not self.silence:
+                            print("HESAI point cloud deskewed")
 
 def read_point_cloud(
     filename: str, color_channel: int = 0, bin_channel_count: int = 4

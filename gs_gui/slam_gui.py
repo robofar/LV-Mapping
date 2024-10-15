@@ -560,31 +560,7 @@ class SLAM_GUI:
                 )
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-        selected_gtcolor = self.gaussian_cur.gtcolor[new_val]
-        selected_gtdepth = self.gaussian_cur.gtdepth[new_val]
-        selected_gtnormal = self.gaussian_cur.gtnormal[new_val]
-
-        if selected_gtcolor is not None:
-            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
-            rgb = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            rgb = o3d.geometry.Image(rgb)
-            self.in_rgb_widget.update_image(rgb)
-
-        if selected_gtdepth is not None:
-            depth = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
-            depth_color = np.transpose(depth_color[0], (1, 2, 0))
-            depth_color = np.ascontiguousarray(depth_color)
-            depth_color_o3d = o3d.geometry.Image(depth_color)
-            self.in_depth_widget.update_image(depth_color_o3d)
-
-        if selected_gtnormal is not None:
-            normal = selected_gtnormal.contiguous().cpu().numpy() 
-            normal_color = 0.5 - normal * 0.5
-            normal_color = np.transpose(normal_color, (1, 2, 0))
-            normal_color = np.ascontiguousarray(normal_color)
-            normal_color_o3d = o3d.geometry.Image(normal_color)
-            self.in_normal_widget.update_image(normal_color_o3d)
+        self.update_img_show(new_val)
 
     # def _on_gs_chbox(self, is_checked, name=None):
     #     names = self.frustum_dict.keys() if name is None else [name]
@@ -820,37 +796,9 @@ class SLAM_GUI:
         #     self.kf_window = gaussian_packet.kf_window
         #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
 
+        # show rgb / depth / normal imgs
         selected_cam = self.combo_cams.selected_text
-        selected_frustum = self.frustum_dict[selected_cam]
-
-        if selected_cam in list(self.gaussian_cur.gtcolor.keys()):
-            selected_gtcolor = self.gaussian_cur.gtcolor[selected_cam]
-            selected_gtdepth = self.gaussian_cur.gtdepth[selected_cam]
-            selected_gtnormal = self.gaussian_cur.gtnormal[selected_cam]
-        else:
-            selected_gtcolor = selected_gtdepth = selected_gtnormal = None
-
-        if selected_gtcolor is not None:
-            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
-            rgb = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
-            rgb = o3d.geometry.Image(rgb)
-            self.in_rgb_widget.update_image(rgb)
-
-        if selected_gtdepth is not None:
-            depth = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8)
-            depth_color = np.transpose(depth_color[0], (1, 2, 0))
-            depth_color = np.ascontiguousarray(depth_color)
-            depth_color_o3d = o3d.geometry.Image(depth_color)
-            self.in_depth_widget.update_image(depth_color_o3d)
-
-        if selected_gtnormal is not None:
-            normal = selected_gtnormal.contiguous().cpu().numpy() 
-            normal_color = 0.5 - normal * 0.5
-            normal_color = np.transpose(normal_color, (1, 2, 0))
-            normal_color = np.ascontiguousarray(normal_color)
-            normal_color_o3d = o3d.geometry.Image(normal_color)
-            self.in_normal_widget.update_image(normal_color_o3d)
+        self.update_img_show(selected_cam)
 
         if gaussian_packet.current_pointcloud_xyz is not None:
             self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
@@ -942,6 +890,44 @@ class SLAM_GUI:
             self.q_vis2main = None
             self.q_main2vis = None
             self.process_finished = True
+
+
+    def update_img_show(self, cam_name):
+
+        if cam_name in list(self.gaussian_cur.gtcolor.keys()):
+            selected_gtcolor = self.gaussian_cur.gtcolor[cam_name]
+            selected_gtdepth = self.gaussian_cur.gtdepth[cam_name]
+            selected_gtnormal = self.gaussian_cur.gtnormal[cam_name]
+        else:
+            selected_gtcolor = selected_gtdepth = selected_gtnormal = None
+
+        if selected_gtcolor is not None:
+            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
+            rgb_np = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
+            rgb_o3d = o3d.geometry.Image(rgb_np)
+            self.in_rgb_widget.update_image(rgb_o3d)
+
+        if selected_gtdepth is not None:
+            depth_np = selected_gtdepth.contiguous().cpu().numpy() 
+            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8)
+            depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
+
+            if selected_gtcolor is not None:
+                alpha = 0.8
+                depth_color_np = (1 - alpha) * rgb_np + alpha * depth_color_np
+                depth_color_np = depth_color_np.astype(np.uint8)
+            
+            depth_color_np = np.ascontiguousarray(depth_color_np)
+            depth_color_o3d = o3d.geometry.Image(depth_color_np)
+            self.in_depth_widget.update_image(depth_color_o3d)
+
+        if selected_gtnormal is not None:
+            normal = selected_gtnormal.contiguous().cpu().numpy() 
+            normal_color = 0.5 - normal * 0.5
+            normal_color = np.transpose(normal_color, (1, 2, 0))
+            normal_color = np.ascontiguousarray(normal_color)
+            normal_color_o3d = o3d.geometry.Image(normal_color)
+            self.in_normal_widget.update_image(normal_color_o3d)
 
     @staticmethod
     def depth_to_normal(points, k=3, d_min=1e-3, d_max=10.0):
@@ -1041,7 +1027,7 @@ class SLAM_GUI:
 
             depth = depth.detach().cpu().numpy()
             # max_depth = np.max(depth)
-            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.9, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
             depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
             depth_color = np.ascontiguousarray(depth_color)
             render_img = o3d.geometry.Image(depth_color)

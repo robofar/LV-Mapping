@@ -787,8 +787,9 @@ def split_chunks(
 
 # torch version of lidar undistortion (deskewing)
 def deskewing(
-    points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_mid_pose=0.5
+    points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_ref_pose=0.5
 ):
+    # ts_ref_pose =  (ts_ref - ts_min) / (ts_max - ts_min)
 
     if ts is None:
         return points  # no deskewing
@@ -805,7 +806,7 @@ def deskewing(
     ts = (ts - min_ts) / (max_ts - min_ts)
 
     # this is related to: https://github.com/PRBonn/kiss-icp/issues/299
-    ts -= ts_mid_pose 
+    ts -= ts_ref_pose 
 
     rotmat_slerp = roma.rotmat_slerp(
         torch.eye(3).to(points), pose[:3, :3].to(points), ts
@@ -881,6 +882,109 @@ def colorize_depth_maps(
 
     return img_colored
 
+
+def project_points_to_cam_torch(points_torch, 
+                                points_rgb_torch, 
+                                img_torch, 
+                                T_c_l, K_mat, 
+                                min_depth=1.0, 
+                                max_depth=100.0):
+
+    # points_torch and points_rgb_torch as torch.Tensor (N, 4)
+    # img_torch as torch.Tensor (C, H, W), rgb channel has the float value [0,1]
+    
+    device = points_torch.device
+
+    # FIXME: check if points_torch would also get changed
+    # if so, clone it
+    # print(points_torch)
+    points_cam_torch = transform_torch(points_torch[:, :3], T_c_l)
+    # print(points_torch)
+    # points_torch[:, 3] = 1  # homo coordinate
+
+    # # Transform LiDAR points to camera coordinates
+    # points_cam = torch.matmul(T_c_l, points_torch.T).T  # (N, 4)
+    # points_cam = points_cam[:, :3]  # (N, 3)
+
+    # Project to image space (do it in batch)
+    u, v, depth = perspective_cam2image_torch(points_cam_torch.T, K_mat) # N, 1
+
+    _, img_height, img_width = img_torch.shape
+
+    # Prepare depth map for visualization
+    depth_map_torch = torch.zeros((1, img_height, img_width)).to(img_torch)
+    count_map = torch.zeros((img_height, img_width), dtype=torch.int, device=device)
+    
+    mask = (u >= 0) & (u < img_width) & (v >= 0) & (v < img_height)
+
+    mask = mask & (depth > min_depth) & (depth < max_depth)
+    
+    v_valid = v[mask]
+    u_valid = u[mask]
+
+    masked_depth = depth[mask]
+
+    per_pixel_point_counter = torch.ones_like(masked_depth, dtype=torch.int, device=device)
+    
+    indices_1d = v_valid * img_width + u_valid # int64
+
+    flat_depth_map = depth_map_torch.view(-1)  # Flatten depth map to match the scatter format
+    flat_count_map= count_map.view(-1) 
+
+    flat_depth_map.scatter_reduce_(0, indices_1d, masked_depth, reduce='amin', include_self=False)
+    depth_map_torch = flat_depth_map.view(1, img_height, img_width)
+
+    flat_count_map.scatter_reduce_(0, indices_1d, per_pixel_point_counter, reduce='sum')
+
+    print("# Ambigious projection pixel:", torch.sum(flat_count_map>1).item()) # actually not much, why this would have very large impact?
+
+    count_map = flat_count_map.view(img_height, img_width) # count of the points (rays) projected to each pixel 
+    # or we just remove those ambigious ones from the depth map
+
+    # print(depth_map_torch)
+
+    # depth_map_torch[0, v_valid, u_valid] = masked_depth # FIXME; here might have some problem, one piexl <--> N rays (depth)
+
+    masked_img_rgb = torch.transpose(img_torch[:, v_valid, u_valid], 0, 1) # N, 3
+    mask_count = masked_depth.shape[0]
+    masked_indicator = torch.zeros((mask_count, 1)).to(masked_depth) # N, 1
+
+    # mask indicating this point has color assigned by a corresponding pixel
+    # last dimension, if 0: assigned with valid color, if 1: has not assigned with valid color
+    rgb_with_mask = torch.cat((masked_img_rgb, masked_indicator), dim=-1) # N, 4 
+    
+    points_rgb_torch[mask] = rgb_with_mask # color [0,1]
+
+    # points_rgb_torch[mask, :3] = img_torch[v_valid, u_valid] # color [0,1]
+
+    # # mask indicating this point has color assigned by a corresponding pixel
+    # points_rgb_torch[mask, 3] = 0  
+
+    return points_rgb_torch, depth_map_torch
+
+def perspective_cam2image_torch(points, K_mat):
+    # project the 3D points in camera frame to 2D image frame with given intrinsic matrix
+
+    # if there's multiple points projected to the same pixel, assign the pixel's color to the point with the smallest depth
+
+    ndim = points.dim()
+    if ndim == 2:
+        points = points.unsqueeze(0)
+    
+    points_proj = torch.matmul(K_mat[:3, :3].reshape([1, 3, 3]), points)
+    depth = points_proj[:, 2, :]
+    depth[depth == 0] = -1e-6
+    
+    u = torch.round(points_proj[:, 0, :] / torch.abs(depth))
+    v = torch.round(points_proj[:, 1, :] / torch.abs(depth))
+
+    if ndim == 2:
+        u, v, depth = u[0], v[0], depth[0]
+
+    u = u.to(torch.int64)
+    v = v.to(torch.int64)
+    
+    return u, v, depth
 
 def plot_timing_detail(time_table: np.ndarray, saving_path: str, with_loop=False):
 

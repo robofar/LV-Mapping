@@ -23,13 +23,13 @@ neuralpoints:
   color_feature_dim: 16
 gs:
   exposure_correction_on: True
-  gs_iters: 50
+  dist_concat_on: False
+  gs_iters: 10
   gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2
   img_pool_size: 50
   gs_down_rate: 0
   gs_vis_down_rate: 0
-  dist_concat_on: False
   inverse_depth_loss: False
   lambda_depth: 5.0 # 10.0
   lambda_normal_depth: 0.05
@@ -47,7 +47,6 @@ loss:
   sigma_sigmoid_m: 0.02
   loss_weight_on: False # False
   dist_weight_scale: 0.6
-  behind_dropoff_on: True
   ekional_loss_on: True
   weight_e: 5.0
 continual: # the data sample pool

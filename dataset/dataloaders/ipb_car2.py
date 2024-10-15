@@ -263,8 +263,8 @@ class IPBCarDataset:
         img_height, img_width, _ = np.shape(img)
 
         # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width))
-        depth_img = np.zeros((img_height, img_width, 3))
+        depth_map = np.zeros((img_height, img_width, 1))
+        #
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters
@@ -275,7 +275,7 @@ class IPBCarDataset:
         v_valid = v[mask]
         u_valid = u[mask]
 
-        depth_map[v_valid,u_valid] = depth[mask]
+        depth_map[v_valid,u_valid, 0] = depth[mask]
 
         # print(np.shape(points_rgb))
 

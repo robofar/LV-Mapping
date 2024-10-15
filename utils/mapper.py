@@ -268,6 +268,8 @@ class Mapper:
         # point in local sensor frame
         frame_point_torch = point_cloud_torch[:, :3]
 
+        # better to project the camera frame here (better also with the image timestamp)
+
         # dynamic filtering
         self.static_mask = torch.ones(
             frame_point_torch.shape[0], dtype=torch.bool, device=self.config.device
@@ -278,10 +280,8 @@ class Mapper:
             self.neural_points.reset_local_map(frame_origin_torch, frame_orientation_torch, frame_id)
 
             # transformed to the global frame
-            frame_point_torch_global = transform_torch(
-                frame_point_torch, cur_pose_torch
-            )
-            
+            frame_point_torch_global = transform_torch(frame_point_torch, cur_pose_torch)
+
             self.static_mask = self.dynamic_filter(frame_point_torch_global)
             dynamic_count = (self.static_mask == 0).sum().item()
             if not self.silence:
@@ -605,6 +605,7 @@ class Mapper:
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
             T_w_c = T_w_l @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
             cur_view_cam.set_pose(T_w_c) # set camera pose
+            cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
         # training views
         if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
@@ -1397,6 +1398,7 @@ class Mapper:
                 area_loss = 0.0
                 if self.config.lambda_area > 0:
                     area_loss = (scaling[:,0] * scaling[:,1]).mean() # but this is already mean value
+                    area_loss /= (self.config.voxel_size_m**2) # normalize by the voxel area
                     if not self.silence:
                         print(" Gaussian area loss:", area_loss.item())
                     area_loss *= self.config.lambda_area
@@ -1644,7 +1646,7 @@ class Mapper:
                     # print(original_img_np[3]) # why all 1?
                     depth_img = cur_viewpoint_cam.depth_image_list[vis_down_rate]
                     depth_img_np = depth_img.detach().cpu().numpy()
-                    depth_img_np_color = (colorize_depth_maps(depth_img_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                    depth_img_np_color = (colorize_depth_maps(depth_img_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
                     depth_img_np_color = np.transpose(depth_img_np_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
                     depth_img_np_color_vis = cv2.cvtColor(depth_img_np_color, cv2.COLOR_RGB2BGR)
                     if self.config.o3d_vis_on and self.config.vis_in_cv2:
@@ -1695,7 +1697,7 @@ class Mapper:
 
                 if rendered_depth is not None:
                     rendered_depth_np = rendered_depth.detach().cpu().numpy()
-                    rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range*0.9)*255.0).astype(np.uint8) # 1, 3, H, W 
+                    rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
                     rendered_depth_np = rendered_depth_np[0] # H, W
                     rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
                     rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
@@ -1863,9 +1865,12 @@ class Mapper:
                 remove_gpu_cache()
                 
                 T_w_l = self.used_poses[frame_id] #
-                # self.neural_points.reset_local_map(T_w_l[:3,3], None, cur_ts=frame_id)
-                self.neural_points.recreate_hash(T_w_l[:3,3], None, True, True, frame_id) # and at the same time reset local map
-
+                
+                if frame_id % 100 == 0:
+                    self.neural_points.recreate_hash(T_w_l[:3,3], kept_points=True, with_ts=True, cur_ts=frame_id) # and at the same time reset local map
+                else:
+                    self.neural_points.reset_local_map(T_w_l[:3,3], cur_ts=frame_id)
+                
                 neural_points_data = {}
                 neural_points_data["position"] = self.neural_points.local_neural_points
                 neural_points_data["color"] = self.neural_points.local_point_colors

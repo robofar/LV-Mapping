@@ -221,7 +221,7 @@ class KITTIOdometryDataset:
         # points as np.numpy (N,4)
         points[:,3] = 1 # homo coordinate
 
-        points = self.intrinsic_correct(points) # FIXME: only for kitti
+        # points = self.intrinsic_correct(points) # FIXME: only for kitti
 
         # transfrom velodyne points to camera coordinate
         points_cam = np.matmul(T_c_l, points.T).T # N, 4
@@ -236,7 +236,7 @@ class KITTIOdometryDataset:
 
         # prepare depth map for visualization
         depth_map = np.zeros((img_height, img_width, 1))
-        depth_img = np.zeros((img_height, img_width, 3))
+        #
         mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
         # visualize points within 30 meters
