@@ -255,8 +255,8 @@ def setup_optimizer(
             )
 
     
-    lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    # lr_cur_feature = 0.01 
+    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    lr_cur_feature = 0.01 # we need it to converge fast
 
     weight_decay_feature = 0.0
     feat_opt_dict = {

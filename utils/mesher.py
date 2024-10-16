@@ -109,10 +109,11 @@ class Mesher:
                     _,
                 ) = self.neural_points.query_feature(
                     batch_coord,
-                    training_mode=False,
+                    accumulate_stability=False,
                     query_locally=query_locally,  # inference mode, query globally
                     query_geo_feature=query_sdf or query_sem,
                     query_color_feature=query_color,
+                    use_only_valid_points=True
                 )
                         
                 pred_mask = nn_count >= 1  # only query sdf here

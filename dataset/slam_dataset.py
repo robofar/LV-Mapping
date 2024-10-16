@@ -199,7 +199,10 @@ class SLAMDataset():
 
         self.static_mask = None
 
+        # adaptive resolution
+        self.crop_max_range = self.config.max_range
         self.train_voxel_m = self.config.vox_down_m
+        self.source_voxel_m = self.config.source_vox_down_m
       
         # current frame's data
         self.cur_point_cloud_torch = None
@@ -618,8 +621,48 @@ class SLAMDataset():
         )
 
     def preprocess_frame(self): 
+        """
+        proprocessing main function: all the preprocessing steps for a input point cloud
+        """  
         # T1 = get_time()
-        # poses related
+        
+        # setup poses
+        valid_frame_flag = self.initialize_pose()
+        if not valid_frame_flag:   
+            return False
+
+        # set adaptive downsampling voxel size 
+        if self.config.adaptive_range_on:
+            self.set_adaptive_resolution()
+
+        # T2 = get_time()
+
+        # preprocessing, filtering, kitti intrinsic correction
+        self.filter_and_correct()
+
+        # Tn0 = get_time()
+        # normal estimation (not used)
+        self.cur_point_normals = None
+        if self.config.estimate_normal:
+            self.estimate_normals()
+        
+        # Tn1 = get_time()
+        # print("Normal estimation time (s):", (Tn1-Tn0)*1e3)
+
+        # T3 = get_time()
+
+        # prepare for the registration (from the second frame)
+        if self.processed_frame > 0:
+            self.preprocess_source_points()
+            
+        # T4 = get_time()
+        return True
+
+    def initialize_pose(self):
+        """
+        initialize the poses, return value indicates whether the frame is valid
+        """  
+
         frame_id = self.processed_frame
         cur_pose_init_guess = self.cur_pose_ref
         if frame_id == 0:  # initialize the first frame, no tracking yet
@@ -649,27 +692,6 @@ class SLAMDataset():
                 cur_pose_init_guess, dtype=torch.float64, device=self.device
             )   
 
-        if self.config.adaptive_range_on:
-            pc_max_bound, _ = torch.max(self.cur_point_cloud_torch[:, :3], dim=0)
-            pc_min_bound, _ = torch.min(self.cur_point_cloud_torch[:, :3], dim=0)
-
-            min_x_range = min(torch.abs(pc_max_bound[0]), torch.abs(pc_min_bound[0]))
-            min_y_range = min(torch.abs(pc_max_bound[1]), torch.abs(pc_min_bound[1]))
-            max_x_y_min_range = max(min_x_range, min_y_range)
-
-            crop_max_range = min(self.config.max_range, 2.0 * max_x_y_min_range)
-        else:
-            crop_max_range = self.config.max_range
-
-        # adaptive
-        self.train_voxel_m = (
-            crop_max_range / self.config.max_range
-        ) * self.config.vox_down_m
-        source_voxel_m = (
-            crop_max_range / self.config.max_range
-        ) * self.config.source_vox_down_m
-
-        # down sampling (together with the color and semantic entities)
         original_count = self.cur_point_cloud_torch.shape[0]
         if original_count < 10:  # deal with missing data (invalid frame)
             print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
@@ -677,26 +699,15 @@ class SLAMDataset():
                 self.odom_poses[frame_id] = cur_pose_init_guess
             if self.config.pgo_on:
                 self.pgo_poses[frame_id] = cur_pose_init_guess
-            return False
+            return False # indicating invalid frame
+        
+        return True
 
-        ## Don't do this here, do it later when mapping (FIXME)
-        ## point cloud downsampling
-        # if self.config.rand_downsample:
-        #     kept_count = int(original_count * self.config.rand_down_r)
-        #     idx = torch.randint(0, original_count, (kept_count,), device=self.device)
-        # else:
-        #     idx = voxel_down_sample_torch(
-        #         self.cur_point_cloud_torch[:, :3], self.train_voxel_m
-        #     )
-        # self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
-        # if self.cur_point_ts_torch is not None:
-        #     self.cur_point_ts_torch = self.cur_point_ts_torch[idx]
-        # if self.cur_sem_labels_torch is not None:
-        #     self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
-        #     self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
 
-        # T2 = get_time()
-
+    def filter_and_correct(self):
+        """
+        filter or crop the measured point cloud, possibly with the LiDAR intrinsic correction
+        """  
         # preprocessing, filtering
         if self.cur_sem_labels_torch is not None:
             self.cur_point_cloud_torch, self.cur_sem_labels_torch = filter_sem_kitti(
@@ -713,86 +724,108 @@ class SLAMDataset():
                 self.config.min_z,
                 self.config.max_z,
                 self.config.min_range,
-                crop_max_range,
+                self.crop_max_range,
             )
-    
+        # kitti intrinsic correction
         if self.config.kitti_correction_on:
             self.cur_point_cloud_torch = intrinsic_correct(
                 self.cur_point_cloud_torch, self.config.correction_deg
             )
+    
 
-        # Tn0 = get_time()
-        # not used
-        if self.config.estimate_normal:
-            cur_points = self.cur_point_cloud_torch[:, :3].clone() # in sensor frame
-            cur_hasher = VoxelHasherIndex(cur_points, self.train_voxel_m, buffer_size=int(1e6))
-            neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, self.train_voxel_m*1.0)
-            # print(neighb_idx.shape)
-            valid_mask = neighb_idx > 0
-            neighbors = cur_points[neighb_idx] # fix the point corresponding to -1 idx
-            neighbors[~valid_mask] = torch.ones(3).to(cur_points) * 9999.
+    def set_adaptive_resolution(self):
+        """
+        set resolution adpatively according to the measured scan point cloud
+        """  
+        pc_max_bound, _ = torch.max(self.cur_point_cloud_torch[:, :3], dim=0)
+        pc_min_bound, _ = torch.min(self.cur_point_cloud_torch[:, :3], dim=0)
 
-            pca_extractor = GeometricFeatureExtractor()
-            _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, self.train_voxel_m)  
-            
-            # orient normals toward sensor
-            orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
-            valid_point_normals[orient_normal_mask] *= -1.0
+        min_x_range = min(torch.abs(pc_max_bound[0]), torch.abs(pc_min_bound[0]))
+        min_y_range = min(torch.abs(pc_max_bound[1]), torch.abs(pc_min_bound[1]))
+        max_x_y_min_range = max(min_x_range, min_y_range)
 
-            # all points and prints with valid normal
-            # print(cur_points.shape)
-            # print(valid_point_normals.shape)
+        self.crop_max_range = min(self.config.max_range, 2.0 * max_x_y_min_range)
 
-            self.cur_point_normals = torch.zeros_like(cur_points) # N, 3 
-            self.cur_point_normals[valid_normal_mask] = valid_point_normals # invalid part as 0
+        self.train_voxel_m = (
+            self.crop_max_range / self.config.max_range
+        ) * self.config.vox_down_m
+        self.source_voxel_m = (
+            self.crop_max_range / self.config.max_range
+        ) * self.config.source_vox_down_m
 
+
+    def estimate_normals(self):
+        """
+        do efficient normal estimation using PCA in torch
+        """  
+
+        cur_points = self.cur_point_cloud_torch[:, :3].clone() # in sensor frame
+        cur_hasher = VoxelHasherIndex(cur_points, self.train_voxel_m, buffer_size=int(1e6))
+        neighb_idx = cur_hasher.radius_neighborhood_search(cur_points, self.train_voxel_m*1.0)
+        # print(neighb_idx.shape)
+        valid_mask = neighb_idx > 0
+        neighbors = cur_points[neighb_idx] # fix the point corresponding to -1 idx
+        neighbors[~valid_mask] = torch.ones(3).to(cur_points) * 9999.
+
+        pca_extractor = GeometricFeatureExtractor()
+        _, valid_point_normals, valid_normal_mask = pca_extractor(cur_points, neighbors, self.train_voxel_m)  
+        
+        # orient normals toward sensor
+        orient_normal_mask = torch.sum(valid_point_normals * cur_points[valid_normal_mask], dim=1) > 0
+        valid_point_normals[orient_normal_mask] *= -1.0
+
+        # all points and prints with valid normal
+        # print(cur_points.shape)
+        # print(valid_point_normals.shape)
+
+        self.cur_point_normals = torch.zeros_like(cur_points) # N, 3 
+        self.cur_point_normals[valid_normal_mask] = valid_point_normals # invalid part as 0
+
+
+    def preprocess_source_points(self):
+        """
+        downsampling the points for registration (source point cloud) and doing the 
+        pre-deskewing using the uniform motion model
+        """  
+
+        # used for registration
+        cur_source_torch = self.cur_point_cloud_torch.clone()
+        
+        # source point voxel downsampling (for registration)
+        idx = voxel_down_sample_torch(cur_source_torch[:, :3], self.source_voxel_m)
+        cur_source_torch = cur_source_torch[idx]
+        self.cur_source_points = cur_source_torch[:, :3]
+        if self.config.color_channel == 1 or self.config.color_channel == 3:
+            self.cur_source_colors = cur_source_torch[:, 3:]
+
+        if self.cur_point_ts_torch is not None:
+            cur_ts = self.cur_point_ts_torch.clone()
+            cur_source_ts = cur_ts[idx]
         else:
-            self.cur_point_normals = None # about 6ms, not too slow
-        
-        # Tn1 = get_time()
-        # print("Normal estimation time (s):", (Tn1-Tn0)*1e3)
+            cur_source_ts = None
 
-        # T3 = get_time()
+        if self.cur_point_normals is not None:
+            self.cur_source_normals = self.cur_point_normals[idx] # invalid part as 0
 
-        # prepare for the registration
-        if frame_id > 0:
-            
-            # used for registration
-            cur_source_torch = self.cur_point_cloud_torch.clone()
-            
-            # source point voxel downsampling (for registration)
-            idx = voxel_down_sample_torch(cur_source_torch[:, :3], source_voxel_m)
-            cur_source_torch = cur_source_torch[idx]
-            self.cur_source_points = cur_source_torch[:, :3]
-            if self.config.color_channel == 1 or self.config.color_channel == 3:
-                self.cur_source_colors = cur_source_torch[:, 3:]
+        # deskewing (motion undistortion) for source point cloud
+        if self.config.deskew and not self.lose_track:
+            self.cur_source_points = deskewing(
+                self.cur_source_points,
+                cur_source_ts,
+                torch.tensor(
+                    self.last_odom_tran, device=self.device, dtype=self.dtype
+                )
+            )  # T_last<-cur
 
-            if self.cur_point_ts_torch is not None:
-                cur_ts = self.cur_point_ts_torch.clone()
-                cur_source_ts = cur_ts[idx]
-            else:
-                cur_source_ts = None
+        # print("# Source point for registeration : ", cur_source_torch.shape[0])
 
-            if self.cur_point_normals is not None:
-                self.cur_source_normals = self.cur_point_normals[idx] # invalid part as 0
-
-            # deskewing (motion undistortion) for source point cloud
-            if self.config.deskew and not self.lose_track:
-                self.cur_source_points = deskewing(
-                    self.cur_source_points,
-                    cur_source_ts,
-                    torch.tensor(
-                        self.last_odom_tran, device=self.device, dtype=self.dtype
-                    )
-                )  # T_last<-cur
-
-            # print("# Source point for registeration : ", cur_source_torch.shape[0])
-
-        # T4 = get_time()
-        return True
-
+    
     def update_odom_pose(self, cur_pose_torch: torch.tensor): 
-        
+        """
+        Done after odometry to setup the latest poses, do the deskewing of raw lidar points and
+        project to camera frames to generate colorized point cloud and depth map 
+        """    
+
         cur_frame_id = self.processed_frame
         # needed to be at least the second frame
         assert (cur_frame_id > 0), "This function needs to be used from at least the second frame"
@@ -859,6 +892,7 @@ class SLAMDataset():
         if self.consecutive_lose_track_frame > 10:
             self.write_results() # record before the failure point
             sys.exit("Lose track for a long time, system failed") 
+
 
     def voxel_downsample_points_for_mapping(self):
         # downsampling the point for mapping now
@@ -994,6 +1028,185 @@ class SLAMDataset():
         self.cur_bbx = o3d.geometry.AxisAlignedBoundingBox(bbx_min, bbx_max)
 
         # use the downsampled neural points here (done outside the class)
+
+    def deskew_at_frame(self, frame_id, use_gt_pose: bool = False):
+        if use_gt_pose and self.gt_pose_provided:
+            tran_in_frame = (
+                np.linalg.inv(self.gt_poses[frame_id + 1])
+                @ self.gt_poses[frame_id]
+            )
+        else:
+            if self.config.track_on:
+                tran_in_frame = (
+                    np.linalg.inv(self.odom_poses[frame_id + 1])
+                    @ self.odom_poses[frame_id]
+                )
+            elif self.gt_pose_provided:
+                tran_in_frame = (
+                    np.linalg.inv(self.gt_poses[frame_id + 1])
+                    @ self.gt_poses[frame_id]
+                )
+            else:
+                return 
+
+        self.cur_point_cloud_torch = deskewing(
+            self.cur_point_cloud_torch,
+            self.cur_point_ts_torch,
+            torch.tensor(
+                tran_in_frame, device=self.device, dtype=torch.float64
+            )
+        ) 
+
+
+    def write_merged_point_cloud(self, down_vox_m=None, 
+                                use_gt_pose=False, 
+                                out_file_name="merged_point_cloud",
+                                frame_step = 1,
+                                merged_downsample = False):
+
+        print("Begin to replay the dataset ...")
+
+        o3d_device = o3d.core.Device("CPU:0")
+        o3d_dtype = o3d.core.float32
+        map_out_o3d = o3d.t.geometry.PointCloud(o3d_device)
+        map_points_np = np.empty((0, 3))
+        map_intensity_np = np.empty(0)
+        map_color_np = np.empty((0, 3))
+
+        for frame_id in tqdm(
+            range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
+        ):  # frame id as the idx of the frame in the data folder without skipping
+            if self.config.use_dataloader:
+                self.read_frame_with_loader(frame_id, False, False)
+            else:
+                self.read_frame(frame_id, False)
+
+            if self.config.kitti_correction_on:
+                self.cur_point_cloud_torch = intrinsic_correct(
+                    self.cur_point_cloud_torch, self.config.correction_deg
+                )
+
+            if self.config.deskew and frame_id < self.total_pc_count-1:
+                self.deskew_at_frame(frame_id, use_gt_pose)
+
+            if down_vox_m is None:
+                down_vox_m = self.config.vox_down_m
+            idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:, :3], down_vox_m)
+
+            frame_down_torch = self.cur_point_cloud_torch[idx]
+
+            frame_down_torch, _ = crop_frame(
+                frame_down_torch,
+                None,
+                self.config.min_z,
+                self.config.max_z,
+                self.config.min_range,
+                self.config.max_range,
+            )
+            # get pose
+            if use_gt_pose and self.gt_pose_provided:
+                cur_pose_torch = torch.tensor(
+                    self.gt_poses[frame_id], device=self.device, dtype=torch.float64
+                )
+            else:
+                if self.config.pgo_on:
+                    cur_pose_torch = torch.tensor(
+                        self.pgo_poses[frame_id],
+                        device=self.device,
+                        dtype=torch.float64,
+                    )
+                elif self.config.track_on:
+                    cur_pose_torch = torch.tensor(
+                        self.odom_poses[frame_id],
+                        device=self.device,
+                        dtype=torch.float64,
+                    )
+                elif self.gt_pose_provided:
+                    cur_pose_torch = torch.tensor(
+                        self.gt_poses[frame_id], device=self.device, dtype=torch.float64
+                    )
+            frame_down_torch[:, :3] = transform_torch(
+                frame_down_torch[:, :3], cur_pose_torch
+            )
+
+            frame_points_np = frame_down_torch[:, :3].detach().cpu().numpy()
+            map_points_np = np.concatenate((map_points_np, frame_points_np), axis=0)
+            if self.config.color_channel == 1:
+                frame_intensity_np = frame_down_torch[:, 3].detach().cpu().numpy()
+                map_intensity_np = np.concatenate(
+                    (map_intensity_np, frame_intensity_np), axis=0
+                )
+            elif self.config.color_channel == 3:
+                frame_color_np = frame_down_torch[:, 3:].detach().cpu().numpy()
+                map_color_np = np.concatenate((map_color_np, frame_color_np), axis=0)
+
+        print("Replay done")
+
+        map_out_o3d.point["positions"] = o3d.core.Tensor(
+            map_points_np, o3d_dtype, o3d_device
+        )
+        if self.config.color_channel == 1:
+            map_out_o3d.point["intensity"] = o3d.core.Tensor(
+                np.expand_dims(map_intensity_np, axis=1), o3d_dtype, o3d_device
+            )
+        elif self.config.color_channel == 3:
+            map_out_o3d.point["colors"] = o3d.core.Tensor(
+                map_color_np, o3d_dtype, o3d_device
+            )
+
+        # print("Estimate normal")
+        # map_out_o3d.estimate_normals(max_nn=20)
+        
+        # downsample again
+        if merged_downsample:
+            map_out_o3d = map_out_o3d.voxel_down_sample(voxel_size=down_vox_m)
+
+        if self.run_path is not None:
+            save_path = os.path.join(self.run_path, "map", out_file_name+".ply")
+            o3d.t.io.write_point_cloud(save_path, map_out_o3d)
+            print(f"save the merged raw point cloud map to {save_path}")
+
+    # TODO
+    def o3d_tsdf_fusion(self, frame_step = 1, output_path = None, vox_size = 0.02, trunc_dist = 0.06):
+
+        scale = 1.0
+        volume = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length=vox_size, # unit: m
+            sdf_trunc=trunc_dist, # unit: m
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+
+        cam_intrinsic = self.loader.intrinsic
+        T_c_l = self.loader.T_c_l   
+
+        for frame_id in tqdm(range(0, self.total_pc_count, frame_step), desc="TSDF fusion"): 
+            
+            frame_id_in_folder = self.config.begin_frame + frame_id * self.config.step_frame
+            frame_data = self.loader[frame_id_in_folder]
+
+            cur_imgs = frame_data["img"]
+            used_img = cur_imgs[self.loader.main_cam_name]
+
+            rgb_image = o3d.geometry.Image(used_img[:,:,:3].astype(np.uint8))
+            depth_image = o3d.geometry.Image(used_img[:,:,3].astype(np.float32))
+
+            cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                        depth_image, 
+                                                                        depth_scale=1.0, 
+                                                                        depth_trunc=self.config.max_range, 
+                                                                        convert_rgb_to_intensity=False)
+
+            cur_T_l_w = np.linalg.inv(self.gt_poses[frame_id])
+            cur_T_c_w = T_c_l @ cur_T_l_w
+
+            volume.integrate(cur_rgbd, self.loader.intrinsic, cur_T_c_w)
+
+        tsdf_fusion_mesh = volume.extract_triangle_mesh()
+
+        if output_path is not None:
+            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
+            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+
+        return tsdf_fusion_mesh
 
     def write_results_log(self):
         log_folder = "log"
@@ -1202,178 +1415,6 @@ class SLAMDataset():
                 )
 
         return pose_eval
-
-    # TODO
-    def o3d_tsdf_fusion(self, frame_step = 1, output_path = None, vox_size = 0.02, trunc_dist = 0.06):
-
-        scale = 1.0
-        volume = o3d.pipelines.integration.ScalableTSDFVolume(
-            voxel_length=vox_size, # unit: m
-            sdf_trunc=trunc_dist, # unit: m
-            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
-
-        cam_intrinsic = self.loader.intrinsic
-        T_c_l = self.loader.T_c_l   
-
-        for frame_id in tqdm(range(0, self.total_pc_count, frame_step), desc="TSDF fusion"): 
-            
-            frame_id_in_folder = self.config.begin_frame + frame_id * self.config.step_frame
-            frame_data = self.loader[frame_id_in_folder]
-
-            cur_imgs = frame_data["img"]
-            used_img = cur_imgs[self.loader.main_cam_name]
-
-            rgb_image = o3d.geometry.Image(used_img[:,:,:3].astype(np.uint8))
-            depth_image = o3d.geometry.Image(used_img[:,:,3].astype(np.float32))
-
-            cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
-                                                                        depth_image, 
-                                                                        depth_scale=1.0, 
-                                                                        depth_trunc=self.config.max_range, 
-                                                                        convert_rgb_to_intensity=False)
-
-            cur_T_l_w = np.linalg.inv(self.gt_poses[frame_id])
-            cur_T_c_w = T_c_l @ cur_T_l_w
-
-            volume.integrate(cur_rgbd, self.loader.intrinsic, cur_T_c_w)
-
-        tsdf_fusion_mesh = volume.extract_triangle_mesh()
-
-        if output_path is not None:
-            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
-            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
-
-        return tsdf_fusion_mesh
-
-    def write_merged_point_cloud(self, down_vox_m=None, 
-                                use_gt_pose=False, 
-                                out_file_name="merged_point_cloud",
-                                frame_step = 1,
-                                merged_downsample = False):
-
-        print("Begin to replay the dataset ...")
-
-        o3d_device = o3d.core.Device("CPU:0")
-        o3d_dtype = o3d.core.float32
-        map_out_o3d = o3d.t.geometry.PointCloud(o3d_device)
-        map_points_np = np.empty((0, 3))
-        map_intensity_np = np.empty(0)
-        map_color_np = np.empty((0, 3))
-
-        for frame_id in tqdm(
-            range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
-        ):  # frame id as the idx of the frame in the data folder without skipping
-            if self.config.use_dataloader:
-                self.read_frame_with_loader(frame_id, False, False)
-            else:
-                self.read_frame(frame_id, False)
-
-            if self.config.kitti_correction_on:
-                self.cur_point_cloud_torch = intrinsic_correct(
-                    self.cur_point_cloud_torch, self.config.correction_deg
-                )
-
-            if self.config.deskew and frame_id < self.total_pc_count-1:
-                if use_gt_pose and self.gt_pose_provided:
-                    tran_in_frame = (
-                        np.linalg.inv(self.gt_poses[frame_id + 1])
-                        @ self.gt_poses[frame_id]
-                    )
-                else:
-                    if self.config.track_on:
-                        tran_in_frame = (
-                            np.linalg.inv(self.odom_poses[frame_id + 1])
-                            @ self.odom_poses[frame_id]
-                        )
-                    elif self.gt_pose_provided:
-                        tran_in_frame = (
-                            np.linalg.inv(self.gt_poses[frame_id + 1])
-                            @ self.gt_poses[frame_id]
-                        )
-                self.cur_point_cloud_torch = deskewing(
-                    self.cur_point_cloud_torch,
-                    self.cur_point_ts_torch,
-                    torch.tensor(
-                        tran_in_frame, device=self.device, dtype=torch.float64
-                    )
-                )  # T_last<-cur
-
-            if down_vox_m is None:
-                down_vox_m = self.config.vox_down_m
-            idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:, :3], down_vox_m)
-
-            frame_down_torch = self.cur_point_cloud_torch[idx]
-
-            frame_down_torch, _ = crop_frame(
-                frame_down_torch,
-                None,
-                self.config.min_z,
-                self.config.max_z,
-                self.config.min_range,
-                self.config.max_range,
-            )
-            # get pose
-            if use_gt_pose and self.gt_pose_provided:
-                cur_pose_torch = torch.tensor(
-                    self.gt_poses[frame_id], device=self.device, dtype=torch.float64
-                )
-            else:
-                if self.config.pgo_on:
-                    cur_pose_torch = torch.tensor(
-                        self.pgo_poses[frame_id],
-                        device=self.device,
-                        dtype=torch.float64,
-                    )
-                elif self.config.track_on:
-                    cur_pose_torch = torch.tensor(
-                        self.odom_poses[frame_id],
-                        device=self.device,
-                        dtype=torch.float64,
-                    )
-                elif self.gt_pose_provided:
-                    cur_pose_torch = torch.tensor(
-                        self.gt_poses[frame_id], device=self.device, dtype=torch.float64
-                    )
-            frame_down_torch[:, :3] = transform_torch(
-                frame_down_torch[:, :3], cur_pose_torch
-            )
-
-            frame_points_np = frame_down_torch[:, :3].detach().cpu().numpy()
-            map_points_np = np.concatenate((map_points_np, frame_points_np), axis=0)
-            if self.config.color_channel == 1:
-                frame_intensity_np = frame_down_torch[:, 3].detach().cpu().numpy()
-                map_intensity_np = np.concatenate(
-                    (map_intensity_np, frame_intensity_np), axis=0
-                )
-            elif self.config.color_channel == 3:
-                frame_color_np = frame_down_torch[:, 3:].detach().cpu().numpy()
-                map_color_np = np.concatenate((map_color_np, frame_color_np), axis=0)
-
-        print("Replay done")
-
-        map_out_o3d.point["positions"] = o3d.core.Tensor(
-            map_points_np, o3d_dtype, o3d_device
-        )
-        if self.config.color_channel == 1:
-            map_out_o3d.point["intensity"] = o3d.core.Tensor(
-                np.expand_dims(map_intensity_np, axis=1), o3d_dtype, o3d_device
-            )
-        elif self.config.color_channel == 3:
-            map_out_o3d.point["colors"] = o3d.core.Tensor(
-                map_color_np, o3d_dtype, o3d_device
-            )
-
-        # print("Estimate normal")
-        # map_out_o3d.estimate_normals(max_nn=20)
-        
-        # downsample again
-        if merged_downsample:
-            map_out_o3d = map_out_o3d.voxel_down_sample(voxel_size=down_vox_m)
-
-        if self.run_path is not None:
-            save_path = os.path.join(self.run_path, "map", out_file_name+".ply")
-            o3d.t.io.write_point_cloud(save_path, map_out_o3d)
-            print(f"save the merged raw point cloud map to {save_path}")
 
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts=None): 

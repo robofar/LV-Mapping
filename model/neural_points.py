@@ -470,7 +470,7 @@ class NeuralPoints(nn.Module):
         self,
         query_points: torch.Tensor,
         query_ts: torch.Tensor = None,
-        training_mode: bool = True,
+        accumulate_stability: bool = True,
         query_locally: bool = True,
         query_geo_feature: bool = True,
         query_color_feature: bool = False,
@@ -613,7 +613,7 @@ class NeuralPoints(nn.Module):
         with torch.no_grad():
             # Certainty accumulation for each neural point according to the weight
             # Use scatter_add_ to accumulate the values for each index
-            if training_mode:  # only do it during the training mode
+            if accumulate_stability:  # only do it during the training mode
                 idx[~valid_mask] = 0  # scatter_add don't accept -1 index
                 if query_locally:
                     self.local_point_certainties.scatter_add_(

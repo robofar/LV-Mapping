@@ -97,10 +97,10 @@ class MapVisualizer:
         self._initialize_visualizer()
 
         # Visualization options
-        self.render_mesh: bool = True # default on
-        self.render_pointcloud: bool = True
-        self.render_frame_axis: bool = True
-        self.render_trajectory: bool = True
+        self.render_mesh: bool = False # default on
+        self.render_pointcloud: bool = False
+        self.render_frame_axis: bool = False
+        self.render_trajectory: bool = False
         self.render_gt_trajectory: bool = False
         self.render_odom_trajectory: bool = (
             True  # when pgo is on, visualize the odom or not

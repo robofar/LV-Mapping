@@ -594,11 +594,12 @@ class NeuralPoints(nn.Module):
         self,
         query_points: torch.Tensor,
         query_ts: torch.Tensor = None,
-        training_mode: bool = True,
+        accumulate_stability: bool = True,
         query_locally: bool = True,
         query_geo_feature: bool = True,
         query_color_feature: bool = False,
-        use_free_points: bool = False,
+        use_only_measured_points: bool = True,
+        use_only_valid_points: bool = False,
     ):
         
         if not query_geo_feature and not query_color_feature:
@@ -624,8 +625,13 @@ class NeuralPoints(nn.Module):
         # T10 = get_time()
         
         # Only use the reliable neural points for SDF mapping
-        invalid_point_mask = self.free_gs_mask[idx] 
-        idx[invalid_point_mask] = -1
+        if use_only_measured_points:
+            disabled_point_mask = self.free_gs_mask[idx] 
+            idx[disabled_point_mask] = -1
+        
+        if use_only_valid_points:
+            disabled_point_mask = ~self.valid_gs_mask[idx] 
+            idx[disabled_point_mask] = -1
 
         # print("K=", idx.shape[-1]) # K
         if query_locally:
@@ -745,7 +751,7 @@ class NeuralPoints(nn.Module):
         with torch.no_grad():
             # Certainty accumulation for each neural point according to the weight
             # Use scatter_add_ to accumulate the values for each index
-            if training_mode:  # only do it during the training mode
+            if accumulate_stability:  # only do it during the training mode
                 idx[~valid_mask] = 0  # scatter_add don't accept -1 index
                 if query_locally:
                     self.local_point_certainties.scatter_add_(

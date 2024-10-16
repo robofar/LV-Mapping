@@ -238,8 +238,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         T1 = get_time()
         
-        valid_frame = dataset.preprocess_frame()
-        if not valid_frame:
+        valid_frame_flag = dataset.preprocess_frame()
+        if not valid_frame_flag:
             dataset.processed_frame += 1
             continue 
 
@@ -453,7 +453,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
             # reconstruction by marching cubes
             if config.mesh_freq_frame > 0:
-                if o3d_vis.render_mesh and (frame_id == 0 or frame_id == last_frame or (frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
+                if (frame_id == 0 or frame_id == last_frame or (frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
                     # update map bbx
                     global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=31) # prime number
                     dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
@@ -565,7 +565,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
 
-        mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate)
+        mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
@@ -578,7 +578,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
         output_mc_res_m = config.mc_res_m*0.6
-        chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 300) # reconstruct in chunks
+        chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 100) # reconstruct in chunks
         mc_cm_str = str(round(output_mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, output_mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)

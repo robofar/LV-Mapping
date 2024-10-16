@@ -166,7 +166,7 @@ class Mapper:
             points_torch.requires_grad_(True)
 
         geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
-            points_torch, training_mode=False
+            points_torch, accumulate_stability=False
         )
 
         sdf_pred = self.sdf_mlp.sdf(
@@ -203,7 +203,7 @@ class Mapper:
     def dynamic_filter_neural_points(self):
 
         geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
-            self.neural_points.local_neural_points, training_mode=False
+            self.neural_points.local_neural_points, accumulate_stability=False
         )
 
         sdf_pred = self.sdf_mlp.sdf(geo_feature)    
@@ -1845,7 +1845,9 @@ class Mapper:
         self.test_depthl1_list = []
         self.test_depth_rmse_list = []
 
-    def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, eval_down_rate=0, lpips_eval_on: bool = False):
+    def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
+                        eval_down_rate=0, skip_end_count: int = 0, 
+                        lpips_eval_on: bool = False):
         
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
@@ -1860,7 +1862,8 @@ class Mapper:
             background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
             bg_3d = background.view(3, 1, 1)
 
-            for frame_id in tqdm(range(0, self.dataset.processed_frame, 1), desc="GS evaluation"):
+            # skip_end_count means that we will skip the last n frames because the incremental mapping haven't done much mapping in such areas
+            for frame_id in tqdm(range(0, self.dataset.processed_frame - skip_end_count, 1), desc="GS evaluation"):
 
                 remove_gpu_cache()
                 
@@ -1880,8 +1883,16 @@ class Mapper:
                 neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
                 neural_points_data["valid_mask"] = self.neural_points.local_valid_gs_mask
 
-                # done only once, load the cam datas to cur_cam_img
+                # load the cam datas to cur_cam_img
                 self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
+
+                # crop frames and possibly do LiDAR intrinsic corrections
+                self.dataset.filter_and_correct()
+
+                # deskew and reset depth map
+                if self.config.deskew and frame_id < self.dataset.processed_frame-1:
+                    self.dataset.deskew_at_frame(frame_id)
+                    self.dataset.project_pointcloud_to_cams()
 
                 eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
                 # used_cam_name = self.dataset.cam_names
@@ -2356,7 +2367,7 @@ class Mapper:
 
     # short-hand function
     def sdf(self, x, get_std=False, min_nn_count=1, accumulate_stability=False):
-        geo_feature, _, weight_knn, nn_count, _ = self.neural_points.query_feature(x, training_mode=accumulate_stability) # we do not add stability here
+        geo_feature, _, weight_knn, nn_count, _ = self.neural_points.query_feature(x, accumulate_stability=accumulate_stability) # we do not add stability here
         sdf_pred = self.sdf_mlp.sdf(geo_feature)    
         # predict the scaled sdf with the feature # [N, K, 1]
         sdf_std = None

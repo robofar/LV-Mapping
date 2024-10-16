@@ -77,6 +77,8 @@ class SLAM_GUI:
 
         self.init_widget()
 
+        self.cur_frame_id = -1
+
         self.gaussian_nums = []
 
         # these are only used for the elliopsoid rendering 
@@ -733,152 +735,159 @@ class SLAM_GUI:
         if gaussian_packet is None:
             return
 
-        self.gaussian_cur = gaussian_packet
-        self.init = True
+        if gaussian_packet.frame_id != self.cur_frame_id:
+            
+            # only update with new data
 
-        if gaussian_packet.frame_id is not None:
-            self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
+            self.cur_frame_id = gaussian_packet.frame_id
+
+            self.gaussian_cur = gaussian_packet
+
+            self.init = True
+
+            if gaussian_packet.frame_id is not None:
+                self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
+                    
+            if gaussian_packet.has_neural_points:
+                self.neural_points_info.text = "# Neural points: {} (local {}), # Valid: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
+                    gaussian_packet.neural_points_data["count"],
+                    gaussian_packet.neural_points_data["local_count"],
+                    gaussian_packet.neural_points_data["valid_count"],
+                    gaussian_packet.neural_points_data["valid_local_count"],
+                    gaussian_packet.neural_points_data["map_memory_mb"]
+                )
+                # done every time, could be a bit time consuming here
+                self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
+                neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+                neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
+
+                neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black for vis
                 
-        if gaussian_packet.has_neural_points:
-            self.neural_points_info.text = "# Neural points: {} (local {}), # Valid: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
-                gaussian_packet.neural_points_data["count"],
-                gaussian_packet.neural_points_data["local_count"],
-                gaussian_packet.neural_points_data["valid_count"],
-                gaussian_packet.neural_points_data["valid_local_count"],
-                gaussian_packet.neural_points_data["map_memory_mb"]
-            )
-            # done every time, could be a bit time consuming here
-            self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
-            neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
-            neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
+                self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors)
 
-            neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black for vis
-            
-            self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors)
+                if self.neural_point_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.neural_point_name)
+                    self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
 
-            if self.neural_point_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.neural_point_name)
-                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
+                # show feature PCA color (TODO)
 
-            # show feature PCA color (TODO)
+            frustum_size = self.config.max_range*0.008
 
-        frustum_size = self.config.max_range*0.008
+            if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
+                
+                for cam in gaussian_packet.cam_list:
+                    frustum = self.add_camera(
+                        gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
+                    )
+                if self.followcam_chbox.checked:
+                    selected_cam = self.combo_cams.selected_text
+                    selected_frustum = self.frustum_dict[selected_cam]
+                    viewpoint = (
+                        selected_frustum.view_dir_behind
+                        if self.staybehind_chbox.checked
+                        else selected_frustum.view_dir
+                    )
+                    self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-        if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
-            
-            for cam in gaussian_packet.cam_list:
-                frustum = self.add_camera(
-                    gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
-                )
-            if self.followcam_chbox.checked:
-                selected_cam = self.combo_cams.selected_text
-                selected_frustum = self.frustum_dict[selected_cam]
-                viewpoint = (
-                    selected_frustum.view_dir_behind
-                    if self.staybehind_chbox.checked
-                    else selected_frustum.view_dir
-                )
-                self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+            # not used yet (TODO)
+            # if gaussian_packet.keyframe is not None: # as Camera class
+            #     name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
+            #     frustum = self.add_camera(
+            #         gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
+            #     )
 
-        # not used yet (TODO)
-        # if gaussian_packet.keyframe is not None: # as Camera class
-        #     name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
-        #     frustum = self.add_camera(
-        #         gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
-        #     )
+            # if gaussian_packet.keyframes is not None:
+            #     for keyframe in gaussian_packet.keyframes:
+            #         name = "keyframe_{}".format(keyframe.uid)
+            #         frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
 
-        # if gaussian_packet.keyframes is not None:
-        #     for keyframe in gaussian_packet.keyframes:
-        #         name = "keyframe_{}".format(keyframe.uid)
-        #         frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
+            # if gaussian_packet.kf_window is not None:
+            #     self.kf_window = gaussian_packet.kf_window
+            #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
 
-        # if gaussian_packet.kf_window is not None:
-        #     self.kf_window = gaussian_packet.kf_window
-        #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
+            # show rgb / depth / normal imgs
+            selected_cam = self.combo_cams.selected_text
+            self.update_img_show(selected_cam)
 
-        # show rgb / depth / normal imgs
-        selected_cam = self.combo_cams.selected_text
-        self.update_img_show(selected_cam)
+            if gaussian_packet.current_pointcloud_xyz is not None:
+                self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
+                if gaussian_packet.current_pointcloud_rgb is not None:
+                    self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
+                if self.scan_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.scan_name)
+                    self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
 
-        if gaussian_packet.current_pointcloud_xyz is not None:
-            self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
-            if gaussian_packet.current_pointcloud_rgb is not None:
-                self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
-            if self.scan_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.scan_name)
-                self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
+            if gaussian_packet.sdf_slice_xyz is not None:
+                if self.sdf_chbox.checked:
+                    self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
+                    if gaussian_packet.sdf_slice_rgb is not None:
+                        self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
 
-        if gaussian_packet.sdf_slice_xyz is not None:
-            if self.sdf_chbox.checked:
-                self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
-                if gaussian_packet.sdf_slice_rgb is not None:
-                    self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
+                    self.widget3d.scene.remove_geometry(self.sdf_name)
+                    self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
 
-                self.widget3d.scene.remove_geometry(self.sdf_name)
-                self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
+            if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
+                self.mesh = o3d.geometry.TriangleMesh(
+                    o3d.utility.Vector3dVector(gaussian_packet.mesh_verts),
+                    o3d.utility.Vector3iVector(gaussian_packet.mesh_faces),
+                    )
+                if gaussian_packet.mesh_verts_rgb is not None:    
+                    self.mesh.vertex_colors = o3d.utility.Vector3dVector(gaussian_packet.mesh_verts_rgb)
+                self.mesh.compute_vertex_normals()
 
-        if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
-            self.mesh = o3d.geometry.TriangleMesh(
-                o3d.utility.Vector3dVector(gaussian_packet.mesh_verts),
-                o3d.utility.Vector3iVector(gaussian_packet.mesh_faces),
-                )
-            if gaussian_packet.mesh_verts_rgb is not None:    
-                self.mesh.vertex_colors = o3d.utility.Vector3dVector(gaussian_packet.mesh_verts_rgb)
-            self.mesh.compute_vertex_normals()
+                if self.mesh_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.mesh_name)
+                    self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
 
-            if self.mesh_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.mesh_name)
-                self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
+            if gaussian_packet.gt_poses is not None:
+                gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
+                self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
+                gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
+                self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
+                self.gt_traj.paint_uniform_color(BLACK)
+                
+                if self.gt_traj_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.gt_traj_name)
+                    self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
-        if gaussian_packet.gt_poses is not None:
-            gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
-            self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
-            gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
-            self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
-            self.gt_traj.paint_uniform_color(BLACK)
-            
-            if self.gt_traj_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.gt_traj_name)
-                self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
+                if gaussian_packet.slam_poses is None:
 
-            if gaussian_packet.slam_poses is None:
+                    if self.cad_chbox.checked:
+                        self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
+                        self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
+                        self.widget3d.scene.remove_geometry(self.cad_name)
+                        self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
+                    
+                    self.range_circle = copy.deepcopy(self.range_circle_origin)
+                    self.range_circle.transform(gaussian_packet.gt_poses[-1])
 
+                    if self.range_circle_chbox.checked:    
+                        self.widget3d.scene.remove_geometry(self.range_circle_name)
+                        self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+
+            if gaussian_packet.slam_poses is not None:
+                slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
+                self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
+                slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
+                self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
+                self.slam_traj.paint_uniform_color(RED)
+
+                if self.slam_traj_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.slam_traj_name)
+                    self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
+                
                 if self.cad_chbox.checked:
                     self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                    self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
+                    self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
                     self.widget3d.scene.remove_geometry(self.cad_name)
                     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
-                
-                self.range_circle = copy.deepcopy(self.range_circle_origin)
-                self.range_circle.transform(gaussian_packet.gt_poses[-1])
 
-                if self.range_circle_chbox.checked:    
+                self.range_circle = copy.deepcopy(self.range_circle_origin)
+                self.range_circle.transform(gaussian_packet.slam_poses[-1])
+
+                if self.range_circle_chbox.checked: 
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
-
-        if gaussian_packet.slam_poses is not None:
-            slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
-            self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
-            slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
-            self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
-            self.slam_traj.paint_uniform_color(RED)
-
-            if self.slam_traj_chbox.checked:
-                self.widget3d.scene.remove_geometry(self.slam_traj_name)
-                self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
-            
-            if self.cad_chbox.checked:
-                self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
-                self.widget3d.scene.remove_geometry(self.cad_name)
-                self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
-
-            self.range_circle = copy.deepcopy(self.range_circle_origin)
-            self.range_circle.transform(gaussian_packet.slam_poses[-1])
-
-            if self.range_circle_chbox.checked: 
-                self.widget3d.scene.remove_geometry(self.range_circle_name)
-                self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
     
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -1171,13 +1180,6 @@ class SLAM_GUI:
         # print(self.decoders["gauss_xyz"])
 
         with torch.no_grad():
-            # rendering_data = render(current_cam, None, self.gaussian_cur.gaussian_xyz, 
-            #     self.gaussian_cur.gaussian_scale, self.gaussian_cur.gaussian_rot, 
-            #     self.gaussian_cur.gaussian_alpha, self.gaussian_cur.gaussian_color, 
-            #     self.background, scaling_modifier=self.scaling_slider.double_value, 
-            #     down_rate=self.gaussian_cur.img_down_rate)
-
-            # TODO: figure out why the GPU memory cannot be released
 
             render_tic = get_time()
 
@@ -1244,27 +1246,25 @@ class SLAM_GUI:
             def update():
                 if self.button_render.is_on:
                     # print("UPDATE scene")
-                    if self.step % 3 == 0: # 0.03s # 30 Hz
+                    if self.step % 3 == 0: # per 0.03s # 30 Hz
                         # print("UPDATE scene happens")
                         # self.scene_update() # don't do it so frequently
                         self.render_gui()
 
-                    if self.step % 50 == 0: # 0.5s # 2 Hz # receive latest data
-                        self.receive_data(self.q_main2vis)
+                    if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
+                        self.receive_data(self.q_main2vis) # this is also slow
 
-                    if self.step % 100 == 0:
+                    if self.step % 100 == 0: # per 1s
                         remove_gpu_cache() # remove cache regularly
+                
+                else:
+                    while not self.q_main2vis.empty(): # free the queue
+                        self.q_main2vis.get()
 
                 if self.step >= 1e9:
                     self.step = 0
 
             gui.Application.instance.post_to_main_thread(self.window, update)
-
-    
-    # # not used now
-    # def scene_update(self):
-    #     self.receive_data(self.q_main2vis)
-    #     self.render_gui()
 
 
 def run(params_gui=None):

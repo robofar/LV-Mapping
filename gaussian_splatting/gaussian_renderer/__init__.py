@@ -484,7 +484,7 @@ def spawn_gaussians(neural_points_data: Dict,
     # ------------------
     # Position (view independent)
 
-    displacement_range = 1.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position) # 1.0 might be too small maybe
+    displacement_range = 2.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position) # 1.0 might be too small maybe
     if neural_point_free_mask is not None:
         displacement_range[neural_point_free_mask] = 5.0 * neural_point_resolution
 
