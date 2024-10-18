@@ -377,6 +377,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             cur_iter_num = max(1, cur_iter_num-10)
         if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
             freeze_decoders(mlp_dict, config)
+            config.decoder_freezed = True
 
         # # conduct local bundle adjustment (with lower frequency)
         # if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
@@ -400,8 +401,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
             # TODO: check its time consuming, can be done once per x frames 
-            with torch.no_grad():  # eval step
-                mapper.check_invalid_neural_points()
+            if frame_id > 5 and frame_id % 2 == 0:
+                with torch.no_grad():  # eval step
+                    mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
 
         T6 = get_time()
 
@@ -430,7 +432,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         dataset.update_o3d_map()
         frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
 
-        odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis()
+        odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
         loop_edges = pgm.loop_edges_vis if config.pgo_on else None
 
         if config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
@@ -520,7 +522,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
             # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
 
-            packet_to_vis.add_neural_points_data(neural_points)
+            packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
@@ -596,7 +598,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         while True:
             o3d_vis.ego_view = False
             o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
-            odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis()
+            odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
             o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
     
     return pose_eval_results

@@ -76,7 +76,6 @@ class NeuralPoints(nn.Module):
         self.buffer_size = config.buffer_size
 
         self.temporal_local_map_on = True
-        self.local_map_radius = self.config.local_map_radius
         self.diff_travel_dist_local = (
             self.config.local_map_radius * self.config.local_map_travel_dist_ratio
         )
@@ -85,7 +84,8 @@ class NeuralPoints(nn.Module):
             self.config.diff_ts_local
         )  # not used now, switch to travel distance
 
-        self.local_orientation = torch.eye(3, device=self.device)
+        self.local_orientation = torch.eye(3, dtype=self.dtype, device=self.device)
+        self.local_position = torch.zeros(3, dtype=self.dtype, device=self.device)
 
         self.cur_ts = 0  # current frame No. or the current timestamp
         self.max_ts = 0
@@ -141,9 +141,10 @@ class NeuralPoints(nn.Module):
         # self.xyz = torch.empty(0, dtype=self.dtype, device=self.device) # N, 3 # here, this represent the displacement from the neural point
         # self.features_dc = torch.empty(0, dtype=self.dtype, device=self.device) # N,1,3 # basic color # [0, 1]
         # self.features_rest = torch.empty(0, dtype=self.dtype, device=self.device) # N,S-1,3 # additional color with SH # [0, 1]
-        # self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
-        # self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
-        # self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
+        
+        self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
+        self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
+        self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
         self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)
@@ -184,6 +185,8 @@ class NeuralPoints(nn.Module):
         self.local_mask = None
         self.global2local = None
 
+        self.sorrounding_mask = None
+
         # Local Gaussian parameters
         # self.local_xyz = nn.Parameter()
         # # self.local_xyz_free = nn.Parameter()
@@ -192,6 +195,10 @@ class NeuralPoints(nn.Module):
         # self.local_scaling = nn.Parameter()
         # self.local_rotation = nn.Parameter()
         # self.local_opacity = nn.Parameter()
+
+        self.local_scaling = torch.empty(0, dtype=self.dtype, device=self.device)
+        self.local_rotation = torch.empty(0, dtype=self.dtype, device=self.device)
+        self.local_opacity = torch.empty(0, dtype=self.dtype, device=self.device)
 
         # this is just for vis
         self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
@@ -483,6 +490,7 @@ class NeuralPoints(nn.Module):
 
         return new_point_ratio
 
+    # we also set the sorrounding map here
     def reset_local_map(
         self,
         sensor_position: torch.Tensor,
@@ -507,7 +515,7 @@ class NeuralPoints(nn.Module):
             delta_travel_dist = torch.abs(
                 self.travel_dist[cur_ts] - self.travel_dist[point_ts_used]
             )
-            time_mask = (delta_travel_dist < self.diff_travel_dist_local)
+            time_mask = (delta_travel_dist < self.diff_travel_dist_local) # increase this value now
         else:  # use delta_t
             delta_t = torch.abs(cur_ts - point_ts_used)
             time_mask = (delta_t < diff_ts_local) 
@@ -519,13 +527,23 @@ class NeuralPoints(nn.Module):
         masked_vec2sensor = self.neural_points[time_mask] - sensor_position
         masked_dist2sensor = torch.sum(masked_vec2sensor**2, dim=-1)  # dist square
 
-        dist_mask = (masked_dist2sensor < self.local_map_radius**2)
+        dist_mask = (masked_dist2sensor < self.config.local_map_radius**2)
         time_mask_idx = torch.nonzero(time_mask).squeeze() # True index
         local_mask_idx = time_mask_idx[dist_mask] # True index
 
-        local_mask = torch.full((time_mask.shape), False, dtype=torch.bool, device=self.device)
+        sorrounding_dist_mask = (masked_dist2sensor < (self.config.sorrounding_map_radius)**2)
 
+        sorrounding_mask_idx = time_mask_idx[~dist_mask & sorrounding_dist_mask] # parts that are not in local map
+
+        local_mask = torch.full((time_mask.shape), False, dtype=torch.bool, device=self.device)
         local_mask[local_mask_idx] = True 
+
+        sorrounding_mask = torch.full((time_mask.shape), False, dtype=torch.bool, device=self.device)
+        sorrounding_mask[sorrounding_mask_idx] = True
+        sorrounding_mask = torch.cat(
+            (sorrounding_mask, torch.tensor([True], device=self.device))
+        )  # padding with one element in the end
+        self.sorrounding_mask = sorrounding_mask
 
         self.local_neural_points = self.neural_points[local_mask]
         self.local_point_orientations = self.point_orientations[local_mask]
@@ -563,21 +581,48 @@ class NeuralPoints(nn.Module):
 
         self.global2local = global2local
 
+        # here we reset the nn.parameter
         self.local_geo_features = nn.Parameter(self.geo_features[local_mask])
         if self.color_features is not None:
             self.local_color_features = nn.Parameter(self.color_features[local_mask])
 
         self.local_orientation = sensor_orientation  # not used
+        self.local_position = sensor_position.float()
 
-    def assign_local_to_global(self):
+
+
+    def assign_local_to_global(self, freeze_stable_geo_feature: bool = False, 
+                               stable_thre: float = 500.0):
         local_mask = self.local_mask
-        # self.neural_points[local_mask[:-1]] = self.local_neural_points
-        # self.point_orientations[local_mask[:-1]] = self.local_point_orientations
-        self.geo_features[local_mask] = self.local_geo_features.data
-        if self.color_features is not None:
-            self.color_features[local_mask] = self.local_color_features.data
         self.point_certainties[local_mask[:-1]] = self.local_point_certainties
         self.point_ts_update[local_mask[:-1]] = self.local_point_ts_update
+        
+        # self.neural_points[local_mask[:-1]] = self.local_neural_points
+        # self.point_orientations[local_mask[:-1]] = self.local_point_orientations
+
+        # does not make sense actually (FIXME) not used
+        if freeze_stable_geo_feature:
+            
+            print("Mean stability: ", torch.mean(self.local_point_certainties).item())
+
+            stable_mask = (self.local_point_certainties > stable_thre) # L
+            stable_local_index = torch.nonzero(stable_mask).squeeze() # index in local 
+
+            local_mask_count = torch.sum(local_mask).item() # L+1
+            local_mask_part = torch.ones(local_mask_count, dtype=torch.bool, device=self.device) # all True, L+1
+
+            local_mask_part[stable_local_index] = False # stable part not update
+
+            local_unstable_mask = local_mask.clone() # G+1
+            local_unstable_mask[local_mask] = local_mask_part # G+1
+
+            self.geo_features[local_unstable_mask] = self.local_geo_features[local_mask_part].data
+        else:
+            self.geo_features[local_mask] = self.local_geo_features.data
+        
+        if self.color_features is not None:
+            self.color_features[local_mask] = self.local_color_features.data
+        
 
     # def assign_local_gaussians_to_global(self):
     #     local_mask = self.local_mask

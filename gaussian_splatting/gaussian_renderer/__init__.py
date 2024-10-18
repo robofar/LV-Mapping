@@ -48,6 +48,7 @@ from utils.tools import get_time
 def render(viewpoint_camera: CamImage, 
            cam_pose: torch.Tensor,
            neural_points_data: Dict,
+           # sorrounding_neural_points_data: Dict, # deprecated
            decoders: Dict[str, Decoder],
            gaussians: Dict[str, torch.Tensor], # input already spwaned gaussians 
            bg_color: torch.Tensor, 
@@ -57,7 +58,6 @@ def render(viewpoint_camera: CamImage,
            replay_mode: bool = False,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
-           alpha_filter_on: bool = True,
            correct_exposure: bool = True,
            learn_color_residual: bool = True):
 
@@ -81,7 +81,7 @@ def render(viewpoint_camera: CamImage,
     # Set up rasterization configuration (scalar value)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
-    z_far = viewpoint_camera.zfar
+    z_far = viewpoint_camera.zfar # but this is not really used by the rasterizer (how to set the maximum distance for rasterier ?)
 
     # TODO: document this part, figure out why
     if cam_pose is not None:
@@ -107,7 +107,9 @@ def render(viewpoint_camera: CamImage,
     normalize_depth_on = True # render normalized depth (with D = D/opacity)
     perpix_depth_on = True
     default_on = True
-    front_only_on = False # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
+    front_only_on = True # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
+    # check if we shall set to False
+    # front_only_on = False
 
     gaussian_surfel_train_config = torch.tensor([surface_on, normalize_depth_on, perpix_depth_on, default_on, front_only_on], dtype=dtype, device=device) # surface_on, normalize_depth_on, perpix_depth_on
 
@@ -170,24 +172,22 @@ def render(viewpoint_camera: CamImage,
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
     visible_neural_point_ratio = 0.0
+    gaussian_count = 0
+    s_gaussian_count = 0
 
-    # Use already predicted gaussians
-    if neural_points_data is None and decoders is None and gaussians is not None:
-        gaussian_xyz = gaussians["gaussian_xyz"]
-        gaussian_scale = gaussians["gaussian_scale"]
-        gaussian_rot = gaussians["gaussian_rot"]
-        gaussian_alpha = gaussians["gaussian_alpha"]
-        gaussian_color = gaussians["gaussian_color"]
-        alpha_all = None
-
-    else: 
-
+    if neural_points_data is not None and decoders is not None: 
+        
         # get only the visible local neural points
         visible_neural_point_mask = rasterizer.markVisible(neural_points_data["position"])
         # print(visible_neural_point_mask.shape)
         # print(visible_neural_point_mask.sum().item())
 
-        visible_neural_point_ratio = visible_neural_point_mask.sum() / visible_neural_point_mask.shape[0]
+        neural_point_count = visible_neural_point_mask.shape[0]
+        visible_neural_point_count = torch.sum(visible_neural_point_mask).item()
+
+        # print("# Local neural points: {:d}, # Visible: {:d}".format(neural_point_count, visible_neural_point_count))
+
+        visible_neural_point_ratio = visible_neural_point_count / neural_point_count
 
         if visible_neural_point_ratio < 0.05 and replay_mode: # is 0.05 too small?
             print("Too small ratio of visible neural points, skip this frame ")
@@ -197,21 +197,50 @@ def render(viewpoint_camera: CamImage,
         spawn_results = spawn_gaussians(neural_points_data,
             decoders, visible_neural_point_mask, viewpoint_camera.camera_center, 
             dist_concat_on, view_concat_on, 
-            alpha_filter_on, z_far, learn_color_residual=learn_color_residual)
+            z_far=z_far, learn_color_residual=learn_color_residual)
 
         if spawn_results is None: # in the case when there's no visible neural points in current FOV
             return None
+        
+        gaussian_xyz = spawn_results["gaussian_xyz"]
+        gaussian_scale = spawn_results["gaussian_scale"]
+        gaussian_rot = spawn_results["gaussian_rot"]
+        gaussian_alpha = spawn_results["gaussian_alpha"]
+        gaussian_color = spawn_results["gaussian_color"]
 
-        gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask = spawn_results
-    
+    # Spawned local gaussians
+    # if train_mode:
+    results = spawn_results
+    results["visible_neural_point_ratio"] = visible_neural_point_ratio
 
-    means3D = gaussian_xyz
-    opacity = gaussian_alpha
+    if gaussians is not None: # Use already predicted gaussians
+        s_gaussian_xyz = gaussians["gaussian_xyz"]
+        s_gaussian_scale = gaussians["gaussian_scale"]
+        s_gaussian_rot = gaussians["gaussian_rot"]
+        s_gaussian_alpha = gaussians["gaussian_alpha"]
+        s_gaussian_color = gaussians["gaussian_color"]
+        s_gaussian_count = s_gaussian_xyz.shape[0]
+
+    # concat spawned gaussians with pre-computed gaussians
+    if s_gaussian_count > 10:
+        means3D = torch.cat((gaussian_xyz, s_gaussian_xyz),0)
+        opacity = torch.cat((gaussian_alpha, s_gaussian_alpha),0)
+        scales = torch.cat((gaussian_scale, s_gaussian_scale),0)
+        rotations = torch.cat((gaussian_rot, s_gaussian_rot),0)
+        colors = torch.cat((gaussian_color, s_gaussian_color),0)
+    else:
+        means3D = gaussian_xyz
+        opacity = gaussian_alpha
+        scales = gaussian_scale
+        rotations = gaussian_rot
+        colors = gaussian_color
+
+    gaussian_count = means3D.shape[0]
 
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     # here we need to use neural_point coordinate + (optimizable) displacement 
     # better to use only the points in the local map
-    screenspace_points = torch.zeros_like(means3D, requires_grad=True, dtype=dtype, device=device) + 0
+    screenspace_points = torch.zeros_like(means3D, requires_grad=True, dtype=dtype, device=device)
     try:
         screenspace_points.retain_grad()
     except:
@@ -219,31 +248,10 @@ def render(viewpoint_camera: CamImage,
 
     means2D = screenspace_points
 
-    scales = gaussian_scale
-    rotations = gaussian_rot
-
-    gaussian_count = gaussian_xyz.shape[0]
-
     contains_nan = torch.isnan(rotations).any()
     assert ~contains_nan, "NaN in rotation"
 
     # shs = gaussian_sh # currently let sh degree as 0
-
-    colors = gaussian_color
-
-    # Spawned gaussians
-    # if train_mode:
-    results = {
-        "gaussian_xyz": gaussian_xyz, 
-        "gaussian_scale": gaussian_scale, 
-        "gaussian_rot": gaussian_rot, 
-        "gaussian_alpha": gaussian_alpha, 
-        "gaussian_color": gaussian_color, 
-        "alpha_all": alpha_all,
-        "gaussian_free_mask": gaussian_free_mask,
-        "view_gaussian_count": gaussian_count,
-        "visible_neural_point_ratio": visible_neural_point_ratio
-    }
 
     # main rasterization function
     if gs_type == "2d_gs":
@@ -359,8 +367,18 @@ def render(viewpoint_camera: CamImage,
 
         # d2n = None
 
+        alpha_thre = 0.1
+
+        # mask_vis = (rendered_alpha.detach() > 1e-3) # original one
+        mask_vis = (rendered_alpha.detach() > alpha_thre)
+
+        # mask_vis_3 = mask_vis.repeat(3, 1, 1)
+        # rendered_image[~mask_vis_3] = bg_color # TODO
+          
+        rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
+
         # tic_d2n = get_time()
-        mask_vis = (rendered_alpha.detach() > 1e-3)
+
         d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface # in camera frame
         
         d2n = d2n * rendered_alpha.detach()
@@ -417,6 +435,7 @@ def spawn_gaussians(neural_points_data: Dict,
                     dist_concat_on: bool = False, 
                     view_concat_on: bool = False,
                     alpha_filter_on: bool = True,
+                    scale_filter_on: bool = False,
                     z_far: float = 100.0,
                     dist_adaptive_scale: bool = False,
                     learn_color_residual: bool = True):
@@ -474,6 +493,7 @@ def spawn_gaussians(neural_points_data: Dict,
     view_direction = None
     view_distance = None
     if cam_origin is not None:
+        cam_origin = cam_origin.float()
         view_direction = neural_point_position - cam_origin # N, 3
         view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
         # normalize
@@ -506,6 +526,7 @@ def spawn_gaussians(neural_points_data: Dict,
     gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
     gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
 
+    # set back the average value (all the one with the largest alpha) (TODO)
 
     # ------------------
     # Scale (view dependent or not) ? # TODO
@@ -587,24 +608,58 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # alpha threshold # but this cannot let the gradients to backpropagate (FIXME) # what's the better way to set an self-adpative mask
     if alpha_filter_on:
-        before_size = gaussian_alpha.shape[0]
 
         alpha_thre = 0.0 # tanh [-1,1]
-        alpha_mask_idx = torch.nonzero(gaussian_alpha.squeeze(-1) > alpha_thre).view(-1)
+        alpha_mask = gaussian_alpha.squeeze(-1) > alpha_thre
+        # alpha_mask_idx = torch.nonzero(gaussian_alpha.squeeze(-1) > alpha_thre).view(-1)
 
-        gaussian_xyz = gaussian_xyz[alpha_mask_idx]
-        gaussian_scale = gaussian_scale[alpha_mask_idx]
-        gaussian_rot = gaussian_rot[alpha_mask_idx]
-        gaussian_alpha = gaussian_alpha[alpha_mask_idx]
-        gaussian_color = gaussian_color[alpha_mask_idx]
-
-        after_shape = gaussian_alpha.shape[0]
+        gaussian_xyz = gaussian_xyz[alpha_mask]
+        gaussian_scale = gaussian_scale[alpha_mask]
+        gaussian_rot = gaussian_rot[alpha_mask]
+        gaussian_alpha = gaussian_alpha[alpha_mask]
+        gaussian_color = gaussian_color[alpha_mask]
 
         if gaussian_free_mask is not None:
-            gaussian_free_mask = gaussian_free_mask[alpha_mask_idx]
+            gaussian_free_mask = gaussian_free_mask[alpha_mask]
 
-        # print("Gaussian count:", before_size, "-->", after_shape) # it's downsampled a bit too much, shall we have some inductive bias
+        # print("Gaussian count:", before_size, "-->", after_shape) 
+        # # it's downsampled a bit too much, shall we have some inductive bias
 
     # also consider the entropy loss, let the opacity to be either 0 or 1
 
-    return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, alpha_all, gaussian_free_mask
+    if scale_filter_on:
+
+        before_size = gaussian_alpha.shape[0]
+
+        scale_mask = torch.any(gaussian_scale > 0.5 * neural_point_resolution, dim=1)
+
+        gaussian_xyz = gaussian_xyz[scale_mask]
+        gaussian_scale = gaussian_scale[scale_mask]
+        gaussian_rot = gaussian_rot[scale_mask]
+        gaussian_alpha = gaussian_alpha[scale_mask]
+        gaussian_color = gaussian_color[scale_mask]
+
+        if gaussian_free_mask is not None:
+            # gaussian_free_mask = gaussian_free_mask[alpha_mask_idx]
+            gaussian_free_mask = gaussian_free_mask[scale_mask]
+
+    gaussian_count = gaussian_xyz.shape[0]
+
+    spawn_results = {
+        "gaussian_xyz": gaussian_xyz, 
+        "gaussian_scale": gaussian_scale, 
+        "gaussian_rot": gaussian_rot, 
+        "gaussian_alpha": gaussian_alpha, 
+        "gaussian_color": gaussian_color, 
+        "alpha_all": alpha_all,
+        "gaussian_free_mask": gaussian_free_mask,
+        "local_view_gaussian_count": gaussian_count,
+    }
+
+    # gaussian_mask = gaussian_xyz
+
+    return spawn_results
+
+
+# TODO: add a gaussian filter function
+# remove gaussians based on alpha, size, etc.

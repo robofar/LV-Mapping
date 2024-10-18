@@ -106,8 +106,10 @@ class VisPacket:
     ):
         self.has_gaussians = False
         self.has_neural_points = False
+        self.has_sorrounding_points = False
 
         self.neural_points_data = None
+        self.sorrounding_neural_points_data = None
 
         self.local_gaussian_count = 0
 
@@ -192,22 +194,47 @@ class VisPacket:
 
         self.img_down_rate = img_down_rate
 
-    def add_neural_points_data(self, neural_points):
+    def add_neural_points_data(self, neural_points, only_local_map: bool = True):
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
-            self.neural_points_data["position"] = neural_points.local_neural_points
-            self.neural_points_data["color"] = neural_points.local_point_colors
-            self.neural_points_data["geo_feature"] = neural_points.local_geo_features
-            self.neural_points_data["color_feature"] = neural_points.local_color_features
-            self.neural_points_data["resolution"] = neural_points.resolution
-            self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
-            self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
             self.neural_points_data["count"] = neural_points.count()
             self.neural_points_data["valid_count"] = neural_points.count(valid_gs_only=True)
             self.neural_points_data["local_count"] = neural_points.local_count()
             self.neural_points_data["valid_local_count"] = neural_points.local_count(valid_gs_only=True)
             self.neural_points_data["map_memory_mb"] = neural_points.cur_memory_mb
+            self.neural_points_data["resolution"] = neural_points.resolution
+
+            if only_local_map:
+                self.neural_points_data["position"] = neural_points.local_neural_points
+                self.neural_points_data["color"] = neural_points.local_point_colors
+                self.neural_points_data["geo_feature"] = neural_points.local_geo_features
+                self.neural_points_data["color_feature"] = neural_points.local_color_features
+                self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
+                self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
+
+                sorrounding_mask = neural_points.sorrounding_mask
+                sorrounding_mask_a = sorrounding_mask[:-1]
+                if torch.sum(sorrounding_mask_a).item() > 10:
+                    self.has_sorrounding_points = True
+                    self.sorrounding_neural_points_data = {}
+                    self.sorrounding_neural_points_data["center"] = neural_points.local_position
+                    self.sorrounding_neural_points_data["position"] = neural_points.neural_points[sorrounding_mask_a]
+                    self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
+                    self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
+                    self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
+                    self.sorrounding_neural_points_data["resolution"] = neural_points.resolution
+                    self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
+                    self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
+
+            else:
+                self.neural_points_data["position"] = neural_points.neural_points
+                self.neural_points_data["color"] = neural_points.point_colors
+                self.neural_points_data["geo_feature"] = neural_points.geo_features
+                self.neural_points_data["color_feature"] = neural_points.color_features
+                self.neural_points_data["free_mask"] = neural_points.free_gs_mask
+                self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
+
 
     def add_gaussians(self,  
                     gaussian_xyz=None,

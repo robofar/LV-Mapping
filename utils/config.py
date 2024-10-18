@@ -84,8 +84,8 @@ class Config:
 
         # map-based dynamic filtering (observations in certain freespace are dynamic)
         self.dynamic_filter_on: bool = False
-        self.dynamic_certainty_thre: float = 0.5 # 0.5 
-        self.dynamic_sdf_ratio_thre: float = 0.5 # 1.5 # type1 dynamic
+        self.dynamic_certainty_thre: float = 1.0 # 0.5 
+        self.dynamic_sdf_ratio_thre: float = 1.0 # 1.5 # type1 dynamic
         self.dynamic_min_grad_norm_thre: float = 0.25 # type2 dynamic
 
         # neural points
@@ -113,8 +113,9 @@ class Config:
 
         # local map
         self.diff_ts_local: float = 400.0 # deprecated (use travel distance instead)
-        self.local_map_travel_dist_ratio: float = 5.0
+        self.local_map_travel_dist_ratio: float = 4.0
         self.local_map_radius: float = 50.0
+        self.sorrounding_map_radius: float = 100.0
 
         # map management
         self.prune_map_on: bool = False
@@ -147,6 +148,7 @@ class Config:
         self.color_mlp_level: int = 1
         self.color_mlp_hidden_dim: int = 64
 
+        self.decoder_freezed: bool = False # change to true after self.freeze_after_frame
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
 
         # For GS MLPs (FIXME)
@@ -244,14 +246,19 @@ class Config:
         self.lambda_normal_depth_consist: float = 0.0 # normal consistency regularization weight # 0.05
         self.lambda_normal_smooth: float = 0.0
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
-        self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections
+        self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections # [confirmed to be not very useful]
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction
         self.lambda_sdf: float = 0.0 # pin map sdf fitting loss
 
-        self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM)
-        
+        # consistency loss supervision direction (FIXME)
+        # cannot be all true
+        self.gs_consist_depth_fixed: bool = False
+        self.gs_consist_normal_fixed: bool = False # fixed normal to guide depth
+
+        # these are deprecated
+        self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
         self.gs_position_lr: float = 0.00016 # 1.6e4 # the original value in 3D GS is 0.00016
         self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
         self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
@@ -589,7 +596,6 @@ class Config:
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
-            self.gs_init_opacity = config_args["gs"].get("init_opacity", self.gs_init_opacity)
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             
             self.lambda_ssim= float(config_args["gs"].get("lambda_ssim", self.lambda_ssim)) # weight for ssim, set to zero for faster training
@@ -606,12 +612,15 @@ class Config:
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
             self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
 
-            self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
-            self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
-            self.gs_scaling_lr = float(config_args["gs"].get("gs_scaling_lr", self.gs_scaling_lr))
-            self.gs_opacity_lr = float(config_args["gs"].get("gs_opacity_lr", self.gs_opacity_lr))
-            
-            self.gaussian_vis_scale = float(config_args["gs"].get("gaussian_vis_scale", self.gaussian_vis_scale)) # only for vis
+            self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
+            self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
+
+            # deprecated
+            # self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
+            # self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
+            # self.gs_scaling_lr = float(config_args["gs"].get("gs_scaling_lr", self.gs_scaling_lr))
+            # self.gs_opacity_lr = float(config_args["gs"].get("gs_opacity_lr", self.gs_opacity_lr))
+            # self.gaussian_vis_scale = float(config_args["gs"].get("gaussian_vis_scale", self.gaussian_vis_scale)) # only for vis
 
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
@@ -654,5 +663,6 @@ class Config:
         self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
         self.window_radius = max(self.max_range+0.5, 6.0) # for the sampling data pool, should not be too small
-        self.local_map_radius = min(self.max_range*1.1, self.max_range+10.0) # for the local neural points
+        self.local_map_radius = min(self.max_range*1.1, self.max_range+5.0) # for the local neural points
+        self.sorrounding_map_radius = self.local_map_radius * 2.0
         self.vis_frame_axis_len = self.max_range / 50.0

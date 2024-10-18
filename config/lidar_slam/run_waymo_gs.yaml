@@ -27,7 +27,7 @@ gs:
   n_gaussian: 8
   gaussian_bs_ratio: 1.0
   gs_keyframe_interval: 2 # 2
-  img_pool_size: 50 # 15
+  img_pool_size: 40 # 15
   img_test_pool_size: 0
   gs_down_rate: 1
   gs_vis_down_rate: 1

@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from OpenGL import GL as gl
 
-from gaussian_splatting.gaussian_renderer import render
+from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gs_gui.gl_render import util, util_gau
 from gs_gui.gl_render.render_ogl import OpenGLRenderer
@@ -54,6 +54,8 @@ class SLAM_GUI:
 
         self.q_main2vis = None
         self.gaussian_cur = None
+
+        self.cur_base_gaussians = None # Dict: these are background gaussians stored in the visualizer
 
         self.decoders = None
 
@@ -113,6 +115,7 @@ class SLAM_GUI:
         ) # open3d gui #FIXME, now this is crashing
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
+
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(self.window.renderer)
 
@@ -185,6 +188,7 @@ class SLAM_GUI:
         self.scan = o3d.geometry.PointCloud()
         self.sdf_slice = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
+        self.invalid_neural_points = o3d.geometry.PointCloud()
         self.sensor_cad = o3d.geometry.TriangleMesh()
         self.sensor_cad_origin = o3d.geometry.TriangleMesh()
 
@@ -329,6 +333,12 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.neural_point_chbox)
         self.neural_point_name = "neural_points"
 
+        self.invalid_neural_point_chbox = gui.Checkbox("Invalid Points")
+        self.invalid_neural_point_chbox.checked = False
+        self.invalid_neural_point_chbox.set_on_checked(self._on_invalid_neural_point_chbox)
+        chbox_tile_3dobj.add_child(self.invalid_neural_point_chbox)
+        self.invalid_neural_point_name = "invalid_neural_points"
+
         # self.sky_chbox = gui.Checkbox("Sky")
         # self.sky_chbox.checked = False
         # self.sky_chbox.set_on_checked(self._on_sky_chbox)
@@ -439,16 +449,28 @@ class SLAM_GUI:
         self.panel.add_child(tabs)
 
 
-        ## Input Image Tab
+        ## Input/Eval Image Tab
         tabs2 = gui.TabControl()
         tab_input = gui.Vert(0, tab_margins)
         self.in_rgb_widget = gui.ImageWidget()
         self.in_depth_widget = gui.ImageWidget()
         self.in_normal_widget = gui.ImageWidget()
+
+        self.rendered_rgb_widget = gui.ImageWidget()
+        self.rendered_depth_widget = gui.ImageWidget()
+        self.rendered_depth_error_widget = gui.ImageWidget()
+
         tab_input.add_child(gui.Label("Input Color/Depth/Normal"))
         tab_input.add_child(self.in_rgb_widget)
+
+        tab_input.add_child(self.rendered_rgb_widget)
+        
         tab_input.add_child(self.in_depth_widget)
+
+        tab_input.add_child(self.rendered_depth_error_widget)
+        
         tab_input.add_child(self.in_normal_widget)
+
         tabs2.add_tab("Input", tab_input)
         self.panel.add_child(tabs2)
 
@@ -514,7 +536,7 @@ class SLAM_GUI:
 
     def _on_layout(self, layout_context):
         contentRect = self.window.content_rect
-        self.widget3d_width_ratio = 0.7
+        self.widget3d_width_ratio = 0.7 # 
         self.widget3d_width = int(
             self.window.size.width * self.widget3d_width_ratio
         )  # 15 ems wide
@@ -595,6 +617,13 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.neural_point_name)
+
+    def _on_invalid_neural_point_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
+            self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render) # TODO: add pin-slam mesh
+        else:
+            self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
 
     # TODO: rendering shader is not good
     def _on_mesh_chbox(self, is_checked):
@@ -757,20 +786,44 @@ class SLAM_GUI:
                     gaussian_packet.neural_points_data["map_memory_mb"]
                 )
                 # done every time, could be a bit time consuming here
-                self.neural_points.points = o3d.utility.Vector3dVector(gaussian_packet.neural_points_data["position"].detach().cpu().numpy())
+                
+                neural_point_position = gaussian_packet.neural_points_data["position"].detach().cpu().numpy()
                 neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
                 neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
-                neural_point_colors[~neural_point_valid_mask] *= 0.0 # invalid part set to black for vis
+                valid_neural_point_position = neural_point_position[neural_point_valid_mask]
+                valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
                 
-                self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors)
+                invalid_neural_point_position = neural_point_position[~neural_point_valid_mask]
+                invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
+                invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis
+
+                self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position)
+                self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color)
+
+                self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position)
+                self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color)
 
                 if self.neural_point_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.neural_point_name)
                     self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
+                
+                if self.invalid_neural_point_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
+                    self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
 
                 # show feature PCA color (TODO)
 
+            if gaussian_packet.has_sorrounding_points:
+                cur_center_position = gaussian_packet.sorrounding_neural_points_data["center"]
+                self.cur_base_gaussians = spawn_gaussians(gaussian_packet.sorrounding_neural_points_data, 
+                    self.decoders, None, cur_center_position,
+                    dist_concat_on=self.config.dist_concat_on, 
+                    view_concat_on=self.config.view_concat_on, 
+                    scale_filter_on=True,
+                    z_far=self.config.sorrounding_map_radius,
+                    learn_color_residual=True)
+            
             frustum_size = self.config.max_range*0.008
 
             if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
@@ -789,25 +842,12 @@ class SLAM_GUI:
                     )
                     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-            # not used yet (TODO)
-            # if gaussian_packet.keyframe is not None: # as Camera class
-            #     name = "keyframe_{}".format(gaussian_packet.keyframe.uid)
-            #     frustum = self.add_camera(
-            #         gaussian_packet.keyframe, name=name, color=[0, 0, 1], size=frustum_size
-            #     )
-
-            # if gaussian_packet.keyframes is not None:
-            #     for keyframe in gaussian_packet.keyframes:
-            #         name = "keyframe_{}".format(keyframe.uid)
-            #         frustum = self.add_camera(keyframe, name=name, color=[0, 0, 1], size=frustum_size)
-
-            # if gaussian_packet.kf_window is not None:
-            #     self.kf_window = gaussian_packet.kf_window
-            #     self._on_kf_window_chbox(is_checked=self.kf_window_chbox.checked)
-
-            # show rgb / depth / normal imgs
+            # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
             selected_cam = self.combo_cams.selected_text
             self.update_img_show(selected_cam)
+
+
+            # TODO: add evaluation online, visualize the error map here
 
             if gaussian_packet.current_pointcloud_xyz is not None:
                 self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
@@ -901,7 +941,9 @@ class SLAM_GUI:
             self.process_finished = True
 
 
-    def update_img_show(self, cam_name):
+    def update_img_show(self, cam_name, 
+                        online_eval_on: bool = True, 
+                        show_depth_error: bool = False):
 
         if cam_name in list(self.gaussian_cur.gtcolor.keys()):
             selected_gtcolor = self.gaussian_cur.gtcolor[cam_name]
@@ -922,9 +964,7 @@ class SLAM_GUI:
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
             if selected_gtcolor is not None:
-                alpha = 0.8
-                depth_color_np = (1 - alpha) * rgb_np + alpha * depth_color_np
-                depth_color_np = depth_color_np.astype(np.uint8)
+                depth_color_np = self.overlaid_img(depth_color_np, rgb_np)     
             
             depth_color_np = np.ascontiguousarray(depth_color_np)
             depth_color_o3d = o3d.geometry.Image(depth_color_np)
@@ -937,6 +977,82 @@ class SLAM_GUI:
             normal_color = np.ascontiguousarray(normal_color)
             normal_color_o3d = o3d.geometry.Image(normal_color)
             self.in_normal_widget.update_image(normal_color_o3d)
+
+        if online_eval_on:
+            render_results = self.render_cur_view(cam_name)
+
+            if render_results is not None:
+
+                rendered_rgb_np = (
+                    (torch.clamp(render_results["render"], min=0, max=1.0) * 255)
+                    .byte()
+                    .permute(1, 2, 0)
+                    .contiguous()
+                    .cpu()
+                    .numpy()
+                )
+                rendered_rgb_o3d = o3d.geometry.Image(rendered_rgb_np)
+                self.rendered_rgb_widget.update_image(rendered_rgb_o3d)
+
+                if show_depth_error:
+
+                    eval_depth_max = self.config.max_range
+                    eval_depth_min = self.config.min_range
+                    diff_depth_max_show = eval_depth_max * 0.05 # unit: m
+
+                    rendered_depth = cur_frame_rendering_data["surf_depth"]
+                    cur_gt_depth = cur_frame_cam_img.depth_image_list[self.config.gs_vis_down_rate]
+                    if rendered_depth is not None and cur_gt_depth is not None:
+                        
+                        depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        diff_depth = torch.abs(rendered_depth - cur_gt_depth)
+                        diff_depth[~depth_valid_mask] = 0.0
+
+                        diff_depth_np = diff_depth.detach().cpu().numpy()
+
+                        diff_depth_color_np = (colorize_depth_maps(diff_depth_np, 0.0, diff_depth_max_show, cmap="inferno_r")[0]*255.0).astype(np.uint8)
+                        diff_depth_color_np = np.transpose(diff_depth_color_np, (1, 2, 0)) # H, W, 3
+                        diff_depth_color_np = np.ascontiguousarray(diff_depth_color_np)
+
+                        if selected_gtcolor is not None:
+                            diff_depth_color_np = self.overlaid_img(diff_depth_color_np, rgb_np) 
+
+                        diff_depth_o3d = o3d.geometry.Image(diff_depth_color_np)
+
+                        self.rendered_depth_error_widget.update_image(diff_depth_o3d)
+
+                    #     depth = depth.detach().cpu().numpy()
+                    #     # max_depth = np.max(depth)
+                    #     depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+                    #     depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
+                    #     depth_color = np.ascontiguousarray(depth_color)
+                    #     render_img = o3d.geometry.Image(depth_color)
+
+
+    def render_cur_view(self, cam_name):
+
+        if cam_name not in list(self.gaussian_cur.gtcolor.keys()):
+            return None
+
+        cur_frame_cam_img = self.gaussian_cur.current_frames[cam_name]
+
+        cur_frame_rendering_data = render(cur_frame_cam_img, 
+            None, self.gaussian_cur.neural_points_data, 
+            self.decoders, self.cur_base_gaussians, self.background,
+            scaling_modifier=self.scaling_slider.double_value, 
+            down_rate=self.config.gs_vis_down_rate, 
+            dist_concat_on=self.config.dist_concat_on, 
+            view_concat_on=self.config.view_concat_on, 
+            correct_exposure=False)
+
+        return cur_frame_rendering_data
+
+    
+    def overlaid_img(self, foreground_img_np, background_img_np, alpha_foreground: float = 0.7):
+        overlaid_img_np = (1 - alpha_foreground) * background_img_np + alpha_foreground * foreground_img_np
+        overlaid_img_np = overlaid_img_np.astype(np.uint8)
+
+        return overlaid_img_np
 
     @staticmethod
     def depth_to_normal(points, k=3, d_min=1e-3, d_max=10.0):
@@ -1183,24 +1299,28 @@ class SLAM_GUI:
 
             render_tic = get_time()
 
-            rendering_data = render(current_cam, None, self.gaussian_cur.neural_points_data, self.decoders, 
-                None, self.background, scaling_modifier=self.scaling_slider.double_value, 
+            rendering_data = render(current_cam, None, 
+                self.gaussian_cur.neural_points_data, 
+                self.decoders, self.cur_base_gaussians, self.background, 
+                scaling_modifier=self.scaling_slider.double_value, 
                 down_rate=self.config.gs_vis_down_rate, 
-                dist_concat_on=self.config.dist_concat_on, view_concat_on=self.config.view_concat_on, correct_exposure=False)
+                dist_concat_on=self.config.dist_concat_on, 
+                view_concat_on=self.config.view_concat_on, 
+                correct_exposure=False)
             
             render_toc = get_time()
 
             if rendering_data is not None:
                 gaussians_all_count = rendering_data["alpha_all"].shape[0]
-                gaussians_valid_count = rendering_data["view_gaussian_count"]
+                gaussians_valid_count = rendering_data["local_view_gaussian_count"]
                 valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
                 mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
-                cur_view_gaussian_count = rendering_data["visibility_filter"].shape[0]
+                cur_visble_gaussian_count = torch.sum(rendering_data["visibility_filter"]).item()
             else:
-                cur_view_gaussian_count = 0
+                cur_visble_gaussian_count = 0
                 mean_valid_count = 0
 
-            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_view_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
+            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_visble_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
 
             render_time = render_toc - render_tic # s
             render_freq = 1.0/render_time

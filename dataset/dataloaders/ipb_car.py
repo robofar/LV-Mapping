@@ -191,6 +191,7 @@ class IPBCarDataset:
             # toc_1 = get_time()
             
             # TODO: a bit slow, try to speed it up
+            # we do not to do this here anymore
             points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
             # toc_1 = get_time()

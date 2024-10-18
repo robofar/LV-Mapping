@@ -157,11 +157,11 @@ class SLAMDataset():
         # use pre-allocated numpy array
         self.odom_poses = None
         if config.track_on:
-            self.odom_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy()
+            self.odom_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy() # T_wi
 
         self.pgo_poses = None
         if config.pgo_on:
-            self.pgo_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy()
+            self.pgo_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy() # T_wi
 
         self.travel_dist = np.zeros(max_frame_number) 
         self.time_table = []
@@ -1030,24 +1030,30 @@ class SLAMDataset():
         # use the downsampled neural points here (done outside the class)
 
     def deskew_at_frame(self, frame_id, use_gt_pose: bool = False):
+        assert frame_id > 0, "frame_id needs to be larger than 0, because we use frame_id-1 here"
+
+        cur_frame = frame_id
+        last_frame = frame_id-1
         if use_gt_pose and self.gt_pose_provided:
             tran_in_frame = (
-                np.linalg.inv(self.gt_poses[frame_id + 1])
-                @ self.gt_poses[frame_id]
+                np.linalg.inv(self.gt_poses[last_frame])
+                @ self.gt_poses[cur_frame]
             )
         else:
             if self.config.track_on:
                 tran_in_frame = (
-                    np.linalg.inv(self.odom_poses[frame_id + 1])
-                    @ self.odom_poses[frame_id]
+                    np.linalg.inv(self.odom_poses[last_frame])
+                    @ self.odom_poses[cur_frame]
                 )
             elif self.gt_pose_provided:
                 tran_in_frame = (
-                    np.linalg.inv(self.gt_poses[frame_id + 1])
-                    @ self.gt_poses[frame_id]
+                    np.linalg.inv(self.gt_poses[last_frame])
+                    @ self.gt_poses[cur_frame]
                 )
             else:
                 return 
+
+        # tran_in_frame: T_last<-cur
 
         self.cur_point_cloud_torch = deskewing(
             self.cur_point_cloud_torch,
@@ -1086,7 +1092,7 @@ class SLAMDataset():
                     self.cur_point_cloud_torch, self.config.correction_deg
                 )
 
-            if self.config.deskew and frame_id < self.total_pc_count-1:
+            if self.config.deskew and frame_id > 0:
                 self.deskew_at_frame(frame_id, use_gt_pose)
 
             if down_vox_m is None:
@@ -1228,16 +1234,18 @@ class SLAMDataset():
                 os.path.join(self.run_path, log_folder, frame_str + "_gt_poses.ply"),
             )
 
-    def get_poses_np_for_vis(self):
+    def get_poses_np_for_vis(self, frame_id):
         odom_poses = None
         if self.odom_poses is not None:
-            odom_poses = self.odom_poses[:self.processed_frame+1]
+            odom_poses = self.odom_poses[:frame_id+1]
         gt_poses = None
         if self.gt_poses is not None:
-            gt_poses = self.gt_poses[:self.processed_frame+1]
-        pgo_poses = None
+            gt_poses = self.gt_poses[:frame_id+1]
+        
         if self.pgo_poses is not None:
-            pgo_poses = self.pgo_poses[:self.processed_frame+1]
+            pgo_poses = self.pgo_poses[:frame_id+1]
+        else:
+            pgo_poses = odom_poses
         
         return odom_poses, gt_poses, pgo_poses
 

@@ -255,8 +255,8 @@ def setup_optimizer(
             )
 
     
-    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    lr_cur_feature = 0.01 # we need it to converge fast
+    lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
     feat_opt_dict = {
@@ -789,6 +789,11 @@ def split_chunks(
 def deskewing(
     points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_ref_pose=0.5
 ):
+    """
+        LiDAR point cloud deskewing (motion compensation) function,
+        note that pose indicates T_last<-cur
+    """  
+
     # ts_ref_pose =  (ts_ref - ts_min) / (ts_max - ts_min)
 
     if ts is None:
@@ -936,7 +941,8 @@ def project_points_to_cam_torch(points_torch,
 
     flat_count_map.scatter_reduce_(0, indices_1d, per_pixel_point_counter, reduce='sum')
 
-    print("# Ambigious projection pixel:", torch.sum(flat_count_map>1).item()) # actually not much, why this would have very large impact?
+    # TODO: now we are using amin, but better to directly not use these points for depth map
+    # print("# Ambigious projection pixel:", torch.sum(flat_count_map>1).item()) # actually not much, why this would have very large impact?
 
     count_map = flat_count_map.view(img_height, img_width) # count of the points (rays) projected to each pixel 
     # or we just remove those ambigious ones from the depth map

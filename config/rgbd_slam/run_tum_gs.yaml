@@ -24,9 +24,9 @@ neuralpoints:
 gs:
   exposure_correction_on: True
   dist_concat_on: False
-  gs_iters: 10
+  gs_iters: 20
   gaussian_bs_ratio: 2.0
-  gs_keyframe_interval: 2
+  gs_keyframe_interval: 4
   img_pool_size: 50
   gs_down_rate: 0
   gs_vis_down_rate: 0
@@ -52,17 +52,17 @@ loss:
 continual: # the data sample pool
   batch_size_new_sample: 3000 # don't split current and history
   pool_capacity: 2e7
-# tracker:
-#   uniform_motion_on: True
-#   photo_loss: True
-#   photo_weight: 0.1
-#   source_vox_down_m: 0.02
-#   iter_n: 50
-#   min_grad_norm: 0.5 # 0.5
-#   max_grad_norm: 2.0 # 2.0
-#   GM_grad: 0.4 # TODO
-#   GM_dist: 0.05
-#   eigenvalue_check: False
+tracker:
+  uniform_motion_on: True
+  # photo_loss: True
+  # photo_weight: 0.1
+  source_vox_down_m: 0.02
+  iter_n: 50
+  min_grad_norm: 0.5 # 0.5
+  max_grad_norm: 2.0 # 2.0
+  GM_grad: 0.4 # TODO
+  GM_dist: 0.05
+  eigenvalue_check: False
 optimizer:
   iters: 15  # iterations per frame
   batch_size: 8192 # 16384 # 16384 # 8192
