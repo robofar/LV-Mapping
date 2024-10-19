@@ -549,6 +549,7 @@ class SLAMDataset():
                         # print("Points filtering time       (ms):", (toc_pcd_filtering-toc_rgbd2pcd)*1e3)# ||| 
                         # print("To CUDA time                (ms):", (toc_tocuda-toc_pcd_filtering)*1e3)  # |
 
+
                     img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
 
                     # this is actually very fast (1-2 ms)
@@ -879,10 +880,8 @@ class SLAMDataset():
                 self.cur_point_cloud_torch,
                 self.cur_point_ts_torch,
                 torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
+                ts_ref_pose = self.config.deskew_ref_ratio
             )  # T_last<-cur
-
-        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
-        self.project_pointcloud_to_cams()
 
         if self.lose_track:
             self.consecutive_lose_track_frame += 1
@@ -1058,9 +1057,8 @@ class SLAMDataset():
         self.cur_point_cloud_torch = deskewing(
             self.cur_point_cloud_torch,
             self.cur_point_ts_torch,
-            torch.tensor(
-                tran_in_frame, device=self.device, dtype=torch.float64
-            )
+            torch.tensor(tran_in_frame, device=self.device, dtype=torch.float64),
+            self.config.deskew_ref_ratio
         ) 
 
 

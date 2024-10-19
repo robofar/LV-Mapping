@@ -160,12 +160,15 @@ class SLAM_GUI:
         self.mesh_render.shader = "normals"
         # self.mesh_render.base_color = [0.5, 0.5, 0.5, 0.5]
 
-
         # trajectory
         self.traj_render = rendering.MaterialRecord()
         self.traj_render.shader = "unlitLine"
         self.traj_render.line_width = 4 * self.window.scaling  # note that this is scaled with respect to pixels,
 
+        # range ring
+        self.ring_render = rendering.MaterialRecord()
+        self.ring_render.shader = "unlitLine"
+        self.ring_render.line_width = 1 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         self.cad_render = rendering.MaterialRecord()
         self.cad_render.shader = "defaultLit"
@@ -200,14 +203,21 @@ class SLAM_GUI:
         self.slam_traj = o3d.geometry.LineSet()
         self.gt_traj = o3d.geometry.LineSet()
 
+        # range circles
         self.range_circle = o3d.geometry.LineSet()
-        circle_points = generate_circle(radius=30.0, num_points=100)
-
-        lines = [[i, (i + 1) % len(circle_points)] for i in range(len(circle_points))]
-        self.range_circle_origin = o3d.geometry.LineSet(
-            points=o3d.utility.Vector3dVector(circle_points),
-            lines=o3d.utility.Vector2iVector(lines),
+        circle_points_1 = generate_circle(radius=30.0, num_points=100)
+        lines1 = [[i, (i + 1) % len(circle_points_1)] for i in range(len(circle_points_1))]
+        range_circle1 = o3d.geometry.LineSet(
+            points=o3d.utility.Vector3dVector(circle_points_1),
+            lines=o3d.utility.Vector2iVector(lines1),
         )
+        circle_points_2 = generate_circle(radius=60.0, num_points=100)
+        lines2 = [[i, (i + 1) % len(circle_points_2)] for i in range(len(circle_points_2))]
+        range_circle2 = o3d.geometry.LineSet(
+            points=o3d.utility.Vector3dVector(circle_points_2),
+            lines=o3d.utility.Vector2iVector(lines2),
+        )
+        self.range_circle_origin = range_circle1 + range_circle2
         self.range_circle_origin.paint_uniform_color(LIGHTBLUE)
 
         bounds = self.widget3d.scene.bounding_box
@@ -515,6 +525,9 @@ class SLAM_GUI:
         self.g_renderer.set_render_reso(self.g_camera.w, self.g_camera.h)
 
     def add_camera(self, camera, name, color=[0, 1, 0], gt=False, size=0.01):
+        # only the cam geometry
+        # img are not added
+
         W2C = (
             getWorld2View2(camera.R_gt, camera.T_gt)
             if gt
@@ -536,7 +549,7 @@ class SLAM_GUI:
 
     def _on_layout(self, layout_context):
         contentRect = self.window.content_rect
-        self.widget3d_width_ratio = 0.7 # 
+        self.widget3d_width_ratio = 0.2 # 0.7
         self.widget3d_width = int(
             self.window.size.width * self.widget3d_width_ratio
         )  # 15 ems wide
@@ -881,10 +894,11 @@ class SLAM_GUI:
 
             if gaussian_packet.gt_poses is not None:
                 gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
-                self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
-                gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
-                self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
-                self.gt_traj.paint_uniform_color(BLACK)
+                if gt_position_np.shape[0] > 1:
+                    self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
+                    gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
+                    self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
+                    self.gt_traj.paint_uniform_color(BLACK)
                 
                 if self.gt_traj_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.gt_traj_name)
@@ -903,14 +917,16 @@ class SLAM_GUI:
 
                     if self.range_circle_chbox.checked:    
                         self.widget3d.scene.remove_geometry(self.range_circle_name)
-                        self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+                        self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
 
             if gaussian_packet.slam_poses is not None:
+                
                 slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
-                self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
-                slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
-                self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
-                self.slam_traj.paint_uniform_color(RED)
+                if slam_position_np.shape[0] > 1:
+                    self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
+                    slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
+                    self.slam_traj.lines = o3d.utility.Vector2iVector(slam_edges)
+                    self.slam_traj.paint_uniform_color(RED)
 
                 if self.slam_traj_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.slam_traj_name)
@@ -927,7 +943,7 @@ class SLAM_GUI:
 
                 if self.range_circle_chbox.checked: 
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
-                    self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+                    self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
     
         if gaussian_packet.finish:
             print("Received terminate signal")
@@ -960,7 +976,7 @@ class SLAM_GUI:
 
         if selected_gtdepth is not None:
             depth_np = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8)
+            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range*0.5)*255.0).astype(np.uint8)
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
             if selected_gtcolor is not None:

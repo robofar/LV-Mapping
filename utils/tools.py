@@ -792,6 +792,9 @@ def deskewing(
     """
         LiDAR point cloud deskewing (motion compensation) function,
         note that pose indicates T_last<-cur
+        ts_ref_pose =0.0, we deskew the scan to the beginning of the frame
+        ts_ref_pose =0.5, we deskew the scan to the mid of the frame
+        ts_ref_pose =1.0, we deskew the scan to the end of the frame
     """  
 
     # ts_ref_pose =  (ts_ref - ts_min) / (ts_max - ts_min)

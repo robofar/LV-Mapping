@@ -52,6 +52,9 @@ class IPBCarDataset:
         self.cam_front_topic_name = "front" 
         self.cam_rear_topic_name = "rear"
 
+        # cameras are almost triggered at the same time
+        # h lidar 's timstamp is usually 0.05s later than camera's ts
+
         cam_list_all = [self.cam_front_topic_name, self.cam_left_topic_name, self.cam_rear_topic_name, self.cam_right_topic_name]
 
         if cam_name in cam_list_all: 
@@ -67,6 +70,7 @@ class IPBCarDataset:
             print("Use all the cameras")
 
         self.img_files = {}
+        self.img_ts = {}
         self.K_mats = {}
         self.dist_coeffs = {}
         self.T_c_l_mats = {}
@@ -74,10 +78,12 @@ class IPBCarDataset:
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
         self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply")) # we use bin here, can not be directly visualized but would be much smaller
+        self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
 
         # vertical lidar
         self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
         self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
+        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
 
         # img_size: 2064x1024
 
@@ -86,7 +92,14 @@ class IPBCarDataset:
         for cam_name in self.cam_list:
             cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
             cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
-            
+            cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
+
+            # skip the first frame here (not needed actually)
+            # we just use from the first frame
+            # better to add the association function
+            # cur_img_files = cur_img_files[1:]
+            # cur_img_ts = cur_img_ts[1:]
+
             # if os.path.exists(cur_cam_dir):
             #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
             #     if len(cur_img_files) == len(self.lidar_horizontal_files):
@@ -99,6 +112,7 @@ class IPBCarDataset:
             #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
 
             self.img_files[cam_name] = cur_img_files
+            self.img_ts[cam_name] = cur_img_ts
 
         # read calib
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
@@ -131,6 +145,8 @@ class IPBCarDataset:
     def __getitem__(self, idx):
         
         # tic_read_pc = get_time()
+
+        print("H Lidar ts: {}".format(self.lidar_horizontal_ts[idx]))
 
         # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
         # read bin is very fast
@@ -174,6 +190,8 @@ class IPBCarDataset:
             # tic_0 = get_time()
             # slow, but would be hard to speed up
 
+            print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
+
             cur_img_file = self.img_files[cam_name][idx]
 
             img_file_split = cur_img_file.split("/")
@@ -192,30 +210,32 @@ class IPBCarDataset:
             
             # TODO: a bit slow, try to speed it up
             # we do not to do this here anymore
-            points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+            # FIXME: not used now
+            # points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
 
             # toc_1 = get_time()
 
+            # depth_img_dict[cam_name] = depth_map # H, W, 1
+            
             img_dict[cam_name] = img_cam # H, W, 3
-            depth_img_dict[cam_name] = depth_map # H, W, 1
-
+            
             # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
             # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
 
-
-        if self.use_only_colorized_points:
-            with_rgb_mask = (points_rgb[:, 3] == 0)
-            points = points[with_rgb_mask]
-            points_rgb = points_rgb[with_rgb_mask]
-            point_ts = point_ts[with_rgb_mask]
+        # FIXME
+        # if self.use_only_colorized_points:
+        #     with_rgb_mask = (points_rgb[:, 3] == 0)
+        #     points = points[with_rgb_mask]
+        #     points_rgb = points_rgb[with_rgb_mask]
+        #     point_ts = point_ts[with_rgb_mask]
 
         # we skip the intensity here for now (and also the color mask)
         points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
         # print(point_ts) # correct
 
-        # frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
-        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
+        frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
+        # frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
 
         return frame_data
 

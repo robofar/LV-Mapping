@@ -264,6 +264,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 else:
                     sys.exit("You are using the mapping mode, but no pose is provided.")
 
+        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
+        # if config.deskew: # only needed for LiDAR datasets
+        dataset.project_pointcloud_to_cams()
+
         travel_dist = dataset.travel_dist[:frame_id+1]
         neural_points.travel_dist = torch.tensor(travel_dist, device=config.device, dtype=config.dtype) # always update this
                                                                                                                                                             
@@ -357,7 +361,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # if the robot stop, also don't process this frame, since there's no new oberservations
         dataset.voxel_downsample_points_for_mapping()
         
-        if frame_id < 5 or (not dataset.lose_track and not dataset.stop_status):
+        if (not dataset.lose_track and not dataset.stop_status) or frame_id < 5:
             mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals,
                                  dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0),
                                  dataset.cur_point_cloud_mono_depth, dataset.cur_point_normals_mono_depth)
@@ -383,7 +387,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
         #     mapper.bundle_adjustment(config.ba_iters, config.ba_frame)
         
-        # mapping with fixed poses (every frame)
+        # mapping with fixed poses (every frame) # now only done for the first frame
         if frame_id % config.mapping_freq_frame == 0:
             mapper.mapping(cur_iter_num)
 

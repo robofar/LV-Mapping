@@ -53,6 +53,7 @@ class Config:
         # motion undistortion
         self.deskew: bool = False
         self.lidar_type_guess: str = "velodyne"
+        self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
 
         # preprocess
         # distance filter
@@ -418,6 +419,7 @@ class Config:
             self.deskew = config_args["setting"].get("deskew", self.deskew) # apply motion undistortion or not
             if self.step_frame > 1:
                 self.deskew = False
+            self.deskew_ref_ratio = config_args["setting"].get("deskew_ref_ratio", self.deskew_ref_ratio) 
 
         # process
         if "process" in config_args:

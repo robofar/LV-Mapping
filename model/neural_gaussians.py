@@ -142,9 +142,9 @@ class NeuralPoints(nn.Module):
         # self.features_dc = torch.empty(0, dtype=self.dtype, device=self.device) # N,1,3 # basic color # [0, 1]
         # self.features_rest = torch.empty(0, dtype=self.dtype, device=self.device) # N,S-1,3 # additional color with SH # [0, 1]
         
-        self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
-        self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
-        self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
+        # self.scaling = torch.empty(0, dtype=self.dtype, device=self.device)  # N, 2 , 2D Gaussian # For 3D GS or gaussian surfel, N, 3        
+        # self.rotation = torch.empty(0, dtype=self.dtype, device=self.device) # N, 4 , quaternion
+        # self.opacity = torch.empty(0, dtype=self.dtype, device=self.device) # N, 1
         
         self.valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool
         self.valid_gs_mask = torch.empty(0, dtype=torch.bool, device=self.device) # N, 1 # bool # TODO: think about this, related to pruning, this also include the dynamic mask (if dynamic, then invalid)

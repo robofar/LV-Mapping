@@ -200,13 +200,17 @@ def render(viewpoint_camera: CamImage,
             z_far=z_far, learn_color_residual=learn_color_residual)
 
         if spawn_results is None: # in the case when there's no visible neural points in current FOV
-            return None
-        
-        gaussian_xyz = spawn_results["gaussian_xyz"]
-        gaussian_scale = spawn_results["gaussian_scale"]
-        gaussian_rot = spawn_results["gaussian_rot"]
-        gaussian_alpha = spawn_results["gaussian_alpha"]
-        gaussian_color = spawn_results["gaussian_color"]
+            gaussian_xyz = torch.empty((0, 3), dtype=dtype, device=device)
+            gaussian_scale = torch.empty((0, 3), dtype=dtype, device=device)
+            gaussian_rot = torch.empty((0, 4), dtype=dtype, device=device)
+            gaussian_alpha = torch.empty((0, 1), dtype=dtype, device=device)
+            gaussian_color = torch.empty((0, 3), dtype=dtype, device=device)
+        else:
+            gaussian_xyz = spawn_results["gaussian_xyz"]
+            gaussian_scale = spawn_results["gaussian_scale"]
+            gaussian_rot = spawn_results["gaussian_rot"]
+            gaussian_alpha = spawn_results["gaussian_alpha"]
+            gaussian_color = spawn_results["gaussian_color"]
 
     # Spawned local gaussians
     # if train_mode:
@@ -236,6 +240,9 @@ def render(viewpoint_camera: CamImage,
         colors = gaussian_color
 
     gaussian_count = means3D.shape[0]
+
+    if gaussian_count <= 10:
+        return None
 
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     # here we need to use neural_point coordinate + (optimizable) displacement 

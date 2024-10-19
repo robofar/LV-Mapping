@@ -135,6 +135,10 @@ class Mapper:
         self.cam_img_test_pool = []
         self.test_cam_uid = [] 
 
+        # used training views in this frame # for visualization
+        self.cur_frame_train_views = []
+
+
         # current exposure parameters for each camera
         self.cams_exposure_ab = {}
 
@@ -1649,6 +1653,7 @@ class Mapper:
 
         # disabled for now
         # # rendered the last frame for vis
+        # online_eval_on = True
         if online_eval_on: # TODO
             
             T1_v = get_time()
@@ -1963,7 +1968,6 @@ class Mapper:
                 # crop frames and possibly do LiDAR intrinsic corrections
                 self.dataset.filter_and_correct()
 
-
                 # deskew and reset depth map
                 if self.config.deskew and frame_id > 0:
                     self.dataset.deskew_at_frame(frame_id)
@@ -2066,7 +2070,6 @@ class Mapper:
                     # packet_to_vis.add_neural_points_data(self.neural_points)
 
                     odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
-
                     packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
 
                     q_main2vis.put(packet_to_vis)
