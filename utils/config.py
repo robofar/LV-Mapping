@@ -86,7 +86,7 @@ class Config:
         # map-based dynamic filtering (observations in certain freespace are dynamic)
         self.dynamic_filter_on: bool = False
         self.dynamic_certainty_thre: float = 1.0 # 0.5 
-        self.dynamic_sdf_ratio_thre: float = 1.0 # 1.5 # type1 dynamic
+        self.dynamic_sdf_ratio_thre: float = 0.8 # 1.5 # type1 dynamic
         self.dynamic_min_grad_norm_thre: float = 0.25 # type2 dynamic
 
         # neural points
@@ -258,12 +258,14 @@ class Config:
         self.gs_consist_depth_fixed: bool = False
         self.gs_consist_normal_fixed: bool = False # fixed normal to guide depth
 
+        self.learn_color_residual: bool = False
+
         # these are deprecated
-        self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
-        self.gs_position_lr: float = 0.00016 # 1.6e4 # the original value in 3D GS is 0.00016
-        self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
-        self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
-        self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
+        # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
+        # self.gs_position_lr: float = 0.00016 # 1.6e4 # the original value in 3D GS is 0.00016
+        # self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
+        # self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
+        # self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
 
         self.pin_gs_opt_on: bool = True # optimize pin features together with gaussians
 
@@ -356,6 +358,9 @@ class Config:
         self.vis_point_size: int = 2 # point size for visualization in o3d
         self.sensor_cad_path = None # the path to the sensor cad file, "./cad/ipb_car.ply" for visualization
         self.cam_cad_path = "./cad/camera.ply"
+
+        # GS visualizer
+        self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
 
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
 
@@ -493,6 +498,8 @@ class Config:
                 self.dist_weight_scale = config_args["loss"].get("dist_weight_scale", self.dist_weight_scale)
                 # apply "behind the surface" loss weight drop-off or not
                 self.behind_dropoff_on = config_args["loss"].get("behind_dropoff_on", self.behind_dropoff_on)
+            self.weight_i = float(config_args["loss"].get("weight_color", self.weight_i))
+            
             self.ekional_loss_on = config_args["loss"].get("ekional_loss_on", self.ekional_loss_on) # use ekional loss (norm(gradient) = 1 loss)
             self.weight_e = float(config_args["loss"].get("weight_e", self.weight_e))
             self.numerical_grad = config_args["loss"].get("numerical_grad_on", self.numerical_grad)
@@ -591,6 +598,8 @@ class Config:
             self.dist_concat_on = config_args["gs"].get("dist_concat_on", self.dist_concat_on)
             self.view_concat_on = config_args["gs"].get("view_concat_on", self.view_concat_on)
 
+            self.learn_color_residual = config_args["gs"].get("learn_color_residual", self.learn_color_residual)
+
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
@@ -660,6 +669,9 @@ class Config:
             self.save_map = config_args["eval"].get('save_map', self.save_map)
             self.save_merged_pc = config_args["eval"].get('save_merged_pc', self.save_merged_pc)
             self.save_mesh = config_args["eval"].get('save_mesh', self.save_mesh)
+
+            # gs visualizer
+            self.visualizer_split_width_ratio = config_args["eval"].get('visualizer_split_width_ratio', self.visualizer_split_width_ratio)
 
         # associated parameters
         self.infer_bs = self.bs * 8

@@ -182,7 +182,7 @@ def setup_optimizer(
     lr_gs_scale = 1e-3
     lr_gs_rot = 1e-3
     lr_gs_alpha = 1e-3
-    lr_gs_color = 1e-2 # better to be larger, like 1e-2
+    lr_gs_color = 2e-2 # better to be larger, like 1e-2 # FIXME
 
     # lr_gs_xyz = 1e-4
     # lr_gs_scale = 1e-4
@@ -255,8 +255,8 @@ def setup_optimizer(
             )
 
     
-    lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
+    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
     feat_opt_dict = {
@@ -957,6 +957,13 @@ def project_points_to_cam_torch(points_torch,
     masked_img_rgb = torch.transpose(img_torch[:, v_valid, u_valid], 0, 1) # N, 3
     mask_count = masked_depth.shape[0]
     masked_indicator = torch.zeros((mask_count, 1)).to(masked_depth) # N, 1
+
+    # FIXME
+    # unique_elements, counts = torch.unique(indices_1d, return_counts=True)
+    # repeated_elements = unique_elements[counts > 1]
+    # ambigious_mask = torch.isin(indices_1d, repeated_elements)
+    # ambigious_indices = torch.nonzero(ambigious_mask).squeeze()
+    # masked_indicator[ambigious_mask] = 1 # ambigious ones are set to invalid
 
     # mask indicating this point has color assigned by a corresponding pixel
     # last dimension, if 0: assigned with valid color, if 1: has not assigned with valid color

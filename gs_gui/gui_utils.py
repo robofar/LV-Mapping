@@ -79,7 +79,6 @@ class VisPacket:
         self,
         frame_id = None,
         current_frames=None,
-        keyframe=None,
         gaussian_xyz=None,
         gaussian_scale=None,
         gaussian_rot=None,
@@ -133,7 +132,7 @@ class VisPacket:
 
             self.local_gaussian_count = self.gaussian_xyz.shape[0]
 
-        self.keyframe = keyframe
+        # self.keyframe = keyframe
         self.current_frames = current_frames
         self.cam_list = []
 

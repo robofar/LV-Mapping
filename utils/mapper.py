@@ -618,6 +618,7 @@ class Mapper:
             while len(self.cam_short_term_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
                 oldest_short_term_train_cam = self.cam_short_term_train_pool[0]
                 oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
+                oldest_short_term_train_cam.in_long_term_memory = True
                 self.cam_long_term_train_pool.append(oldest_short_term_train_cam)
                 self.cam_short_term_train_pool.pop(0) # pop the oldest cam
 
@@ -625,7 +626,6 @@ class Mapper:
             for cam_name in self.dataset.cam_names:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.train_view = True
-
                 self.cam_short_term_train_pool.append(cur_view_cam)
                 self.train_cam_uid.append(cur_view_cam.uid)
 
@@ -839,6 +839,8 @@ class Mapper:
             poses = self.used_poses[ts]
             origins = poses[:, :3, 3]
 
+            surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+
             if self.ba_done_flag:
                 coord = transform_batch_torch(
                     coord, poses
@@ -870,11 +872,9 @@ class Mapper:
                 if not self.config.weighted_first:
                     sem_pred = torch.sum(sem_pred * weight_knn, dim=1)  # N, S
             if self.config.color_on:
-                color_pred = self.color_mlp.regress_color(color_feature)  # [N, K, C]
+                color_pred = self.color_mlp.regress_color(color_feature[surface_mask])  # [N, K, C]
                 if not self.config.weighted_first:
-                    color_pred = torch.sum(color_pred * weight_knn, dim=1)  # N, C
-
-            surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+                    color_pred = torch.sum(color_pred * weight_knn[surface_mask], dim=1)  # N, C
 
             if self.require_gradient:
                 g = get_gradient(coord, sdf_pred)  # to unit m
@@ -1000,7 +1000,7 @@ class Mapper:
             color_loss = 0.0
             if self.config.color_on and self.config.weight_i > 0:
                 color_loss = color_diff_loss(
-                    color_pred[surface_mask],
+                    color_pred,
                     color_label[surface_mask],
                     weight[surface_mask],
                     self.config.loss_weight_on,
@@ -1064,6 +1064,8 @@ class Mapper:
             # TODO: add camera exposures # add all cams in the train pool
         )
 
+        self.cur_frame_train_views = [] # set back to empty
+
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
 
@@ -1111,7 +1113,7 @@ class Mapper:
                         view_concat_on=self.config.view_concat_on, 
                         scale_filter_on=True,
                         z_far=self.config.sorrounding_map_radius,
-                        learn_color_residual=True)
+                        learn_color_residual=self.config.learn_color_residual)
         
 
         # also have a valid mask for the neural points
@@ -1177,25 +1179,11 @@ class Mapper:
                     viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_long_term
 
-                    # while cam_outside_local_map:
-                    #     cur_img_idx = torch.randperm(long_term_img_pool_size)[0]
-                    #     viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
-                    #     train_down_rate = down_rate_long_term
-                    #     cam_dist_to_cur_local_map_center = torch.norm(viewpoint_cam.camera_center - cur_local_map_center)
-                    #     # print("Distance to local map center: ", cam_dist_to_cur_local_map_center)
-                    #     # if cam is inside local map, we use it for training
-                    #     if rand_count > 10:
-                    #         exit_while_loop = True
-                    #         break
-                    #     rand_count += 1
-                    #     if cam_dist_to_cur_local_map_center < self.config.max_range: 
-                    #         cam_outside_local_map = False  
-                    # if exit_while_loop: # break the for loop then
-                    #     break
-
                     if not self.silence:
                         print(" Train on a cam from long-term memory")
                         print(" Used cam id:", viewpoint_cam.uid)
+
+                cam_name = viewpoint_cam.cam_id
 
                 gt_rgb_image = viewpoint_cam.rgb_image_list[train_down_rate] # 3, H, W
 
@@ -1216,10 +1204,13 @@ class Mapper:
                     replay_mode=is_replay_mode, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
-                    correct_exposure=self.config.exposure_correction_on) # render gaussians 
+                    correct_exposure=self.config.exposure_correction_on,
+                    learn_color_residual=self.config.learn_color_residual) # render gaussians 
 
                 if render_pkg is None:
                     continue
+
+                self.cur_frame_train_views.append(viewpoint_cam)
 
                 T3 = get_time()
 
@@ -1293,9 +1284,22 @@ class Mapper:
 
                 # ----------------
                 # RGB rendering loss (combining L1 and SSIM), slow part
-                loss_rgb_l1 = l1_loss(rendered_rgb_image, gt_rgb_image)
+
+                # special issue for ipb car dataset (rear camera, remove the ego-car part for loss calculation)
+                if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
+                    pixel_h_used = int(920/1024*gt_depth_image.shape[1])
+                elif cam_name == "front":
+                    pixel_h_used = int(1008/1024*gt_depth_image.shape[1])
+                else:  
+                    pixel_h_used = -1
+
+                rendered_rgb_image_for_loss = rendered_rgb_image[:,:pixel_h_used,:]
+                gt_rgb_image_for_loss = gt_rgb_image[:,:pixel_h_used,:]
+
+                loss_rgb_l1 = l1_loss(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
                 if self.config.lambda_ssim > 0.0:
-                    rgb_loss = (1.0 - self.config.lambda_ssim) * loss_rgb_l1 + self.config.lambda_ssim * (1.0 - ssim(rendered_rgb_image, gt_rgb_image))
+                    ssim_value = ssim(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
+                    rgb_loss = (1.0 - self.config.lambda_ssim) * loss_rgb_l1 + self.config.lambda_ssim * (1.0 - ssim_value)
                 else:
                     rgb_loss = loss_rgb_l1 # l1 only, ssim might take a long time
 
@@ -1539,7 +1543,9 @@ class Mapper:
                 if sdf_loss_on and self.config.lambda_sdf > 0.0:
                     # with batch size bs (this is done for all the sdf samples in the local map)
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=True)
-                        
+
+                    surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+
                     poses = self.used_poses[ts]
                     origins = poses[:, :3, 3]
                         
@@ -1555,11 +1561,9 @@ class Mapper:
                         sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
                     
                     if self.config.color_on:
-                        color_pred = self.color_mlp.regress_color(color_feature)  # [N, K, C]
+                        surface_color_pred = self.color_mlp.regress_color(color_feature[surface_mask])  # [N, K, C]
                         if not self.config.weighted_first:
-                            color_pred = torch.sum(color_pred * weight_knn, dim=1)  # N, C
-
-                    surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+                            surface_color_pred = torch.sum(surface_color_pred * weight_knn[surface_mask], dim=1)  # N, C
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
@@ -1577,13 +1581,7 @@ class Mapper:
                         eikonal_loss = ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
                         
                     if self.config.color_on and self.config.weight_i > 0:
-                        color_loss = color_diff_loss(
-                            color_pred[surface_mask],
-                            color_label[surface_mask],
-                            weight[surface_mask],
-                            self.config.loss_weight_on,
-                            l2_loss=False,
-                        )
+                        color_loss = color_diff_loss(surface_color_pred, color_label[surface_mask])
                         
                     # if not self.silence:
                     #     print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
@@ -1632,19 +1630,6 @@ class Mapper:
                 #     print(" GS/SDF consist loss  iter time (ms):", (T5-T4)*1e3) 
                 #     print(" SDF loss             iter time (ms):", (T6-T5)*1e3) 
                 #     print(" Backward propagation iter time (ms):", (T7-T6)*1e3) # still, this backpropagation is slow, but better to do this in batch
-            
-            # # filter dynamic gaussains (TODO)
-            filter_gaussian_on = False # DO THIS, still ideally to have this
-            # this may has some issue
-            # if filter_gaussian_on:
-            #     local_gaussian_position = self.neural_points.get_local_xyz
-            #     nonfree_local_gaussian_position = local_gaussian_position[~self.neural_points.local_free_gs_mask]
-            #     nonfree_local_gaussians_static_mask = self.dynamic_filter(nonfree_local_gaussian_position, type_2_on=False)
-            #     local_gaussians_static_mask = self.neural_points.local_free_gs_mask.clone()
-            #     local_gaussians_static_mask[local_gaussians_static_mask==0] = nonfree_local_gaussians_static_mask # non free part according to this static mask, free part all static
-
-            #     self.neural_points.local_valid_gs_mask = local_gaussians_static_mask 
-            #     # self.neural_points.local_valid_gs_mask = self.neural_points.local_valid_gs_mask & local_gaussians_static_mask # TODO
 
             # self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
@@ -1960,7 +1945,7 @@ class Mapper:
                     view_concat_on=self.config.view_concat_on, 
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
-                    learn_color_residual=True)
+                    learn_color_residual=self.config.learn_color_residual)
 
                 # load the cam datas to cur_cam_img
                 self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
@@ -1972,7 +1957,7 @@ class Mapper:
                 if self.config.deskew and frame_id > 0:
                     self.dataset.deskew_at_frame(frame_id)
                 
-                self.dataset.project_pointcloud_to_cams()
+                self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
 
                 eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
                 # used_cam_name = self.dataset.cam_names
@@ -1996,7 +1981,8 @@ class Mapper:
                             down_rate=eval_down_rate, 
                             dist_concat_on=self.config.dist_concat_on, 
                             view_concat_on=self.config.view_concat_on, 
-                            correct_exposure=True) # render gaussians 
+                            correct_exposure=True,
+                            learn_color_residual=self.config.learn_color_residual) # render gaussians 
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -2235,128 +2221,6 @@ class Mapper:
     #         print(f"Save the mesh resulting from TSDF fusion to {output_path}")
 
     #     return tsdf_fusion_mesh
-
-    # def spawn_gaussians(self, cam_origin = None, alpha_filter_on: bool = True):
-
-    #     # TODO: only spawn points from the neural points inside the frustum
-    #     # using the cuda function "in_frustum"
-    #     # currently just use all the points in the local map
-
-    #     view_direction = None
-    #     view_distance = None
-    #     if cam_origin is not None:
-    #         view_direction = self.neural_points.local_neural_points - cam_origin # N, 3
-    #         view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
-    #         # normalize
-    #         view_direction = view_direction / view_distance
-
-    #     geo_feature_in = self.neural_points.local_geo_features[:-1]
-
-    #     # ------------------
-    #     # Position (view independent)
-
-    #     # test this scale here, better to not be too large (FIXME)
-    #     xyz_displacement = 4.0 * self.config.voxel_size_m * torch.tanh(self.gaussian_xyz_mlp.mlp(geo_feature_in)) # N, 3K # [-1,1]        
-    #     # print(xyz_displacement)
-
-    #     local_point_count = xyz_displacement.shape[0]
-    #     gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
-    #     local_gaussian_count = local_point_count * gaussian_count_per_point
-
-    #     gaussian_xyz = self.neural_points.local_neural_points.repeat(1, gaussian_count_per_point) + xyz_displacement # N, 3K
-        
-    #     gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
-
-    #     # ------------------
-    #     # Scale (view independent)
-
-    #     gaussian_scale = self.config.voxel_size_m * torch.exp(self.gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
-    #     # FIXME
-    #     # what should be the maximum size here?
-    #     # gaussian_scale = 2.0 * self.config.voxel_size_m * torch.sigmoid(self.gaussian_scale_mlp.mlp(geo_feature_in)) # N, 2K
-        
-    #     gaussian_scale = gaussian_scale.view(local_gaussian_count, -1) # NK, 2 # positive (after activation)
-        
-    #     # print("mean scale:", gaussian_scale.mean().item())
-        
-    #     thin_dim_scale = torch.full((local_gaussian_count, 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
-    #     gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
-        
-    #     # ------------------
-    #     # Rotation (view independent)
-    #     gaussian_rot = self.gaussian_rot_mlp.mlp(geo_feature_in) # N, 4K
-    #     gaussian_rot = gaussian_rot.view(local_gaussian_count, -1) # NK , 4
-    #     gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
-    #     gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
-
-
-    #     # ------------------
-    #     # Opacity (view dependent)
-
-    #     if self.config.dist_concat_on:
-    #         geo_feature_in = torch.concat(geo_feature_in, view_distance)
-
-    #     # gaussian_alpha = torch.sigmoid(self.gaussian_alpha_mlp.mlp(geo_feature_in) 
-    #     gaussian_alpha = torch.tanh(self.gaussian_alpha_mlp.mlp(geo_feature_in)) 
-    #     # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) 
-    #     # gaussian_alpha = 0.5-0.5*torch.tanh(self.gaussian_alpha_mlp.mlp(self.neural_points.local_geo_features)[:-1]) # N, K  #[-1,1] --> [0,1]
-
-    #     gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
-        
-    #     # print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
-
-    #     # ------------------
-    #     # Color (view dependent)
-
-    #     color_feature_in = self.neural_points.local_color_features[:-1]
-    #     if self.config.view_concat_on:
-    #         color_features_in = torch.concat(color_features_in, view_direction) # no high freq positional embedding yet
-        
-    #     # try to now use only one single feature vector
-    #     # learn residual now
-
-    #     # gaussian_rgb_residual = 0.5 * torch.tanh(self.gaussian_color_mlp.mlp(color_feature_in) # N, 3K [-0.5, 0.5]
-    #     gaussian_rgb_residual = self.gaussian_color_mlp.mlp(color_feature_in) # N, 3K
-    #     # print(gaussian_rgb_residual)
-    #     # print(torch.abs(gaussian_rgb_residual).mean().item())
-        
-    #     gaussian_color = self.neural_points.local_point_colors.repeat(1, gaussian_count_per_point) + gaussian_rgb_residual # N, 3K
-    #     gaussian_color = torch.clamp(gaussian_color, 0.0, 1.0)
-
-    #     # or we directlt learn the color value (instead of residual)
-    #     # gaussian_color = torch.sigmoid(self.gaussian_color_mlp.mlp(self.neural_points.local_color_features)[:-1]) # N, 3K
-
-    #     gaussian_color = gaussian_color.view(local_gaussian_count, -1) # NK, 3 # not SH anymore
-
-    #     # gaussian_rgb_base = self.neural_points.local_point_colors.repeat(1, gaussian_count_per_point)
-    #     # gaussian_color = gaussian_color.view(local_gaussian_count, 1, -1) # NK, 1, 3
-    #     # gaussian_sh = RGB2SH(gaussian_rgb_base)
-
-    #     # ------------------
-    #     # Mask
-
-    #     mean_alpha_all = gaussian_alpha.mean()
-
-    #     # alpha threshold # but this cannot let the gradients to backpropagate (FIXME) # what's the better way to set an self-adpative mask
-    #     if alpha_filter_on:
-    #         before_size = gaussian_alpha.shape[0]
-
-    #         alpha_thre = 0.0 # tanh [-1,1]
-    #         alpha_mask_idx = torch.nonzero(gaussian_alpha.squeeze(-1) > alpha_thre).view(-1)
-
-    #         gaussian_xyz = gaussian_xyz[alpha_mask_idx]
-    #         gaussian_scale = gaussian_scale[alpha_mask_idx]
-    #         gaussian_rot = gaussian_rot[alpha_mask_idx]
-    #         gaussian_alpha = gaussian_alpha[alpha_mask_idx]
-    #         gaussian_color = gaussian_color[alpha_mask_idx]
-
-    #         after_shape = gaussian_alpha.shape[0]
-
-    #         print("Gaussian count:", before_size, "-->", after_shape) # it's downsampled a bit too much, shall we have some inductive bias
-
-    #     # also consider the entropy loss, let the opacity to be either 0 or 1
-
-    #     return gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, mean_alpha_all
 
 
     # joint optimization of PIN map and the poses in the sliding window

@@ -813,9 +813,8 @@ class SLAMDataset():
             self.cur_source_points = deskewing(
                 self.cur_source_points,
                 cur_source_ts,
-                torch.tensor(
-                    self.last_odom_tran, device=self.device, dtype=self.dtype
-                )
+                torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
+                ts_ref_pose = self.config.deskew_ref_ratio
             )  # T_last<-cur
 
         # print("# Source point for registeration : ", cur_source_torch.shape[0])
@@ -914,7 +913,7 @@ class SLAMDataset():
         for cam_name in self.cam_names:
             cam_img: CamImage = self.cur_cam_img[cam_name]
 
-            cam_rgb_torch = cam_img.rgb_image_list[0]
+            cam_rgb_torch = cam_img.rgb_image_list[0] # without downsampling
 
             # TODO: check if this will be an in-place operation of self.cur_point_cloud_torch
             cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)
@@ -930,6 +929,7 @@ class SLAMDataset():
 
         if use_only_colorized_points:
             with_rgb_mask = (points_rgb_torch[:, 3] == 0)
+            # print("# not valid count:", torch.sum(~with_rgb_mask).item())
             self.cur_point_cloud_torch = self.cur_point_cloud_torch[with_rgb_mask]
             if self.cur_point_ts_torch is not None:
                 self.cur_point_ts_torch = self.cur_point_ts_torch[with_rgb_mask]

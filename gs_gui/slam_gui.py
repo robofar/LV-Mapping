@@ -50,6 +50,7 @@ class SLAM_GUI:
         self.device = "cuda"
 
         self.frustum_dict = {}
+        self.keyframe_dict = {}
         self.model_dict = {}
 
         self.q_main2vis = None
@@ -157,7 +158,7 @@ class SLAM_GUI:
 
         # mesh 
         self.mesh_render = rendering.MaterialRecord()
-        self.mesh_render.shader = "normals"
+        self.mesh_render.shader = "normals" # TODO: add a button to switch to lit (color)
         # self.mesh_render.base_color = [0.5, 0.5, 0.5, 0.5]
 
         # trajectory
@@ -165,10 +166,20 @@ class SLAM_GUI:
         self.traj_render.shader = "unlitLine"
         self.traj_render.line_width = 4 * self.window.scaling  # note that this is scaled with respect to pixels,
 
+        # cur frame frustrum
+        self.cur_frame_render = rendering.MaterialRecord()
+        self.cur_frame_render.shader = "unlitLine"
+        self.cur_frame_render.line_width = 4 * self.window.scaling
+
+        # train frame frustrum
+        self.train_frame_render = rendering.MaterialRecord()
+        self.train_frame_render.shader = "unlitLine"
+        self.train_frame_render.line_width = 2 * self.window.scaling
+
         # range ring
         self.ring_render = rendering.MaterialRecord()
         self.ring_render.shader = "unlitLine"
-        self.ring_render.line_width = 1 * self.window.scaling  # note that this is scaled with respect to pixels,
+        self.ring_render.line_width = 2 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         self.cad_render = rendering.MaterialRecord()
         self.cad_render.shader = "defaultLit"
@@ -313,6 +324,11 @@ class SLAM_GUI:
         self.cameras_chbox.set_on_checked(self._on_cameras_chbox)
         chbox_tile_3dobj.add_child(self.cameras_chbox)
 
+        self.keyframe_chbox = gui.Checkbox("Train Frames")
+        self.keyframe_chbox.checked = True
+        self.keyframe_chbox.set_on_checked(self._on_keyframes_chbox)
+        chbox_tile_3dobj.add_child(self.keyframe_chbox)
+
         # disable this for now
         # self.kf_window_chbox = gui.Checkbox("Active window")
         # self.kf_window_chbox.set_on_checked(self._on_kf_window_chbox)
@@ -330,24 +346,16 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.mesh_chbox)
         self.mesh_name = "pin_mesh"
 
+        self.cmesh_chbox = gui.Checkbox("Colorized Mesh")
+        self.cmesh_chbox.checked = False
+        self.cmesh_chbox.set_on_checked(self._on_cmesh_chbox)
+        chbox_tile_3dobj.add_child(self.cmesh_chbox)
+
         self.scan_chbox = gui.Checkbox("Scan")
         self.scan_chbox.checked = True
         self.scan_chbox.set_on_checked(self._on_scan_chbox)
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
-
-        # TODO
-        self.neural_point_chbox = gui.Checkbox("Neural Points")
-        self.neural_point_chbox.checked = False
-        self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
-        chbox_tile_3dobj.add_child(self.neural_point_chbox)
-        self.neural_point_name = "neural_points"
-
-        self.invalid_neural_point_chbox = gui.Checkbox("Invalid Points")
-        self.invalid_neural_point_chbox.checked = False
-        self.invalid_neural_point_chbox.set_on_checked(self._on_invalid_neural_point_chbox)
-        chbox_tile_3dobj.add_child(self.invalid_neural_point_chbox)
-        self.invalid_neural_point_name = "invalid_neural_points"
 
         # self.sky_chbox = gui.Checkbox("Sky")
         # self.sky_chbox.checked = False
@@ -355,6 +363,19 @@ class SLAM_GUI:
         # chbox_tile_3dobj.add_child(self.sky_chbox)
 
         chbox_tile_3dobj_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        # TODO
+        self.neural_point_chbox = gui.Checkbox("Neural Points")
+        self.neural_point_chbox.checked = False
+        self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
+        chbox_tile_3dobj_2.add_child(self.neural_point_chbox)
+        self.neural_point_name = "neural_points"
+
+        self.invalid_neural_point_chbox = gui.Checkbox("Invalid Points")
+        self.invalid_neural_point_chbox.checked = False
+        self.invalid_neural_point_chbox.set_on_checked(self._on_invalid_neural_point_chbox)
+        chbox_tile_3dobj_2.add_child(self.invalid_neural_point_chbox)
+        self.invalid_neural_point_name = "invalid_neural_points"
 
         self.sdf_chbox = gui.Checkbox("SDF")
         self.sdf_chbox.checked = False
@@ -540,16 +561,36 @@ class SLAM_GUI:
             frustum = create_frustum(C2W, color, size=size)
             self.combo_cams.add_item(name)
             self.frustum_dict[name] = frustum
-            self.widget3d.scene.add_geometry(name, frustum.line_set, self.traj_render) # add camera frame to visualizer
+            self.widget3d.scene.add_geometry(name, frustum.line_set, self.cur_frame_render) # add camera frame to visualizer
         frustum = self.frustum_dict[name]
         frustum.update_pose(C2W)
         self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
         self.widget3d.scene.show_geometry(name, self.cameras_chbox.checked)
         return frustum
 
+    def add_keyframe(self, camera, name, color=[0, 1, 0], size=0.01):
+        # only the cam geometry
+        # img are not added
+
+        W2C = getWorld2View2(camera.R, camera.T)
+        W2C = W2C.cpu().numpy()
+        C2W = np.linalg.inv(W2C)
+        frustum = create_frustum(C2W, color, size=size)
+        if name not in self.keyframe_dict.keys():
+            frustum = create_frustum(C2W, color, size=size)
+            # self.combo_cams.add_item(name) # TODO
+            self.keyframe_dict[name] = frustum
+            self.widget3d.scene.add_geometry(name, frustum.line_set, self.train_frame_render) # add camera frame to visualizer
+        frustum = self.keyframe_dict[name]
+        frustum.update_pose(C2W)
+        self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
+        self.widget3d.scene.show_geometry(name, self.keyframe_chbox.checked)
+        return frustum
+
     def _on_layout(self, layout_context):
         contentRect = self.window.content_rect
-        self.widget3d_width_ratio = 0.2 # 0.7
+        # self.widget3d_width_ratio = 0.6 # 0.7 # FIXME
+        self.widget3d_width_ratio = self.config.visualizer_split_width_ratio
         self.widget3d_width = int(
             self.window.size.width * self.widget3d_width_ratio
         )  # 15 ems wide
@@ -609,6 +650,11 @@ class SLAM_GUI:
         for name in names:
             self.widget3d.scene.show_geometry(name, is_checked)
 
+    def _on_keyframes_chbox(self, is_checked, name=None):
+        names = self.keyframe_dict.keys() if name is None else [name]
+        for name in names:
+            self.widget3d.scene.show_geometry(name, is_checked)
+
     # def _on_axis_chbox(self, is_checked):
     #     name = "axis"
     #     if is_checked:
@@ -645,6 +691,16 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
+    
+    def _on_cmesh_chbox(self, is_checked):
+        if is_checked:
+            self.mesh_render.shader = "defaultLit"
+        else:
+            self.mesh_render.shader = "normals"
+        if self.mesh_chbox.checked:
+            self.widget3d.scene.remove_geometry(self.mesh_name)
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
+
 
     def _on_scan_chbox(self, is_checked):
         if is_checked:
@@ -677,7 +733,7 @@ class SLAM_GUI:
     def _on_range_circle_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
-            self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.traj_render)
+            self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
         else:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
 
@@ -685,32 +741,32 @@ class SLAM_GUI:
         self.widget3d.scene.show_skybox(is_checked)
 
 
-    def _on_kf_window_chbox(self, is_checked):
-        if self.kf_window is None:
-            return
-        edge_cnt = 0
-        for key in self.kf_window.keys():
-            for kf_idx in self.kf_window[key]:
-                name = "kf_edge_{}".format(edge_cnt)
-                edge_cnt += 1
-                if "keyframe_{}".format(key) not in self.frustum_dict.keys():
-                    continue
-                test1 = self.frustum_dict["keyframe_{}".format(key)].view_dir[1]
-                kf = self.frustum_dict["keyframe_{}".format(kf_idx)].view_dir[1]
-                points = [test1, kf]
-                lines = [[0, 1]]
-                colors = [[0, 1, 0]] # green camera frame
+    # def _on_kf_window_chbox(self, is_checked):
+    #     if self.kf_window is None:
+    #         return
+    #     edge_cnt = 0
+    #     for key in self.kf_window.keys():
+    #         for kf_idx in self.kf_window[key]:
+    #             name = "kf_edge_{}".format(edge_cnt)
+    #             edge_cnt += 1
+    #             if "keyframe_{}".format(key) not in self.frustum_dict.keys():
+    #                 continue
+    #             test1 = self.frustum_dict["keyframe_{}".format(key)].view_dir[1]
+    #             kf = self.frustum_dict["keyframe_{}".format(kf_idx)].view_dir[1]
+    #             points = [test1, kf]
+    #             lines = [[0, 1]]
+    #             colors = [[0, 1, 0]] # green camera frame
 
-                line_set = o3d.geometry.LineSet()
-                line_set.points = o3d.utility.Vector3dVector(points)
-                line_set.lines = o3d.utility.Vector2iVector(lines)
-                line_set.colors = o3d.utility.Vector3dVector(colors)
+    #             line_set = o3d.geometry.LineSet()
+    #             line_set.points = o3d.utility.Vector3dVector(points)
+    #             line_set.lines = o3d.utility.Vector2iVector(lines)
+    #             line_set.colors = o3d.utility.Vector3dVector(colors)
 
-                if is_checked:
-                    self.widget3d.scene.remove_geometry(name)
-                    self.widget3d.scene.add_geometry(name, line_set, self.traj_render)
-                else:
-                    self.widget3d.scene.remove_geometry(name)
+    #             if is_checked:
+    #                 self.widget3d.scene.remove_geometry(name)
+    #                 self.widget3d.scene.add_geometry(name, line_set, self.traj_render)
+    #             else:
+    #                 self.widget3d.scene.remove_geometry(name)
 
     def _on_button(self, is_on):
         packet = Packet_vis2main()
@@ -835,7 +891,7 @@ class SLAM_GUI:
                     view_concat_on=self.config.view_concat_on, 
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
-                    learn_color_residual=True)
+                    learn_color_residual=self.config.learn_color_residual)
             
             frustum_size = self.config.max_range*0.008
 
@@ -859,6 +915,21 @@ class SLAM_GUI:
             selected_cam = self.combo_cams.selected_text
             self.update_img_show(selected_cam)
 
+            if gaussian_packet.keyframes is not None: # as Camera class
+                
+                for keyframe_name in list(self.keyframe_dict.keys()): 
+                    self.widget3d.scene.remove_geometry(keyframe_name)
+
+                self.keyframe_dict = {} # set back to empty
+
+                for cam in gaussian_packet.keyframes:
+                    if cam.in_long_term_memory:
+                        frustum_color = [0.5, 0.5, 0]
+                    else:
+                        frustum_color = [1, 1, 0]
+                    frustum = self.add_keyframe(
+                        cam, name=cam.uid, color=frustum_color, size=frustum_size
+                    ) 
 
             # TODO: add evaluation online, visualize the error map here
 
@@ -976,7 +1047,7 @@ class SLAM_GUI:
 
         if selected_gtdepth is not None:
             depth_np = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range*0.5)*255.0).astype(np.uint8)
+            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8)
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
             if selected_gtcolor is not None:
@@ -1059,7 +1130,8 @@ class SLAM_GUI:
             down_rate=self.config.gs_vis_down_rate, 
             dist_concat_on=self.config.dist_concat_on, 
             view_concat_on=self.config.view_concat_on, 
-            correct_exposure=False)
+            correct_exposure=False,
+            learn_color_residual=self.config.learn_color_residual)
 
         return cur_frame_rendering_data
 
@@ -1322,7 +1394,8 @@ class SLAM_GUI:
                 down_rate=self.config.gs_vis_down_rate, 
                 dist_concat_on=self.config.dist_concat_on, 
                 view_concat_on=self.config.view_concat_on, 
-                correct_exposure=False)
+                correct_exposure=False,
+                learn_color_residual=self.config.learn_color_residual)
             
             render_toc = get_time()
 

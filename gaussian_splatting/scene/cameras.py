@@ -33,7 +33,8 @@ class CamImage:
         self.device = device
         self.dtype = torch.float32
 
-        self.train_view = False # is used as train view or test view
+        self.train_view: bool = False # is used as train view or test view
+        self.in_long_term_memory: bool = False
 
         if rgb_image is not None:
             rgb_image = rgb_image.clamp(0.0, 1.0) # only for the RGB part

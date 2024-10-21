@@ -264,10 +264,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 else:
                     sys.exit("You are using the mapping mode, but no pose is provided.")
 
-        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
-        # if config.deskew: # only needed for LiDAR datasets
-        dataset.project_pointcloud_to_cams()
-
         travel_dist = dataset.travel_dist[:frame_id+1]
         neural_points.travel_dist = torch.tensor(travel_dist, device=config.device, dtype=config.dtype) # always update this
                                                                                                                                                             
@@ -357,6 +353,11 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         T4 = get_time()
         
         # IV: Mapping and bundle adjustment
+        
+        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
+        # if config.deskew: # only needed for LiDAR datasets
+        dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # config.learn_color_residual
+        
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
         dataset.voxel_downsample_points_for_mapping()
@@ -520,6 +521,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
                 current_frames=dataset.cur_cam_img, 
+                keyframes=mapper.cur_frame_train_views, # None
                 img_down_rate=config.gs_vis_down_rate)
 
             # spawn gaussians in the current local map
@@ -538,6 +540,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 packet_to_vis.add_sdf_slice(np.array(cur_sdf_slice.points, dtype=np.float64), np.array(cur_sdf_slice.colors, dtype=np.float64))
             
             packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
+            
+            # add the used training pool
+            # mapper.cur_frame_train_views
 
             q_main2vis.put(packet_to_vis)
 

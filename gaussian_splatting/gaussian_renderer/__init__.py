@@ -179,6 +179,8 @@ def render(viewpoint_camera: CamImage,
         
         # get only the visible local neural points
         visible_neural_point_mask = rasterizer.markVisible(neural_points_data["position"])
+        # check the in_frustum and checkFrustum function
+        
         # print(visible_neural_point_mask.shape)
         # print(visible_neural_point_mask.sum().item())
 

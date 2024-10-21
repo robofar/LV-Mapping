@@ -28,7 +28,7 @@ def sdf_l2_loss(pred, label):
     return loss.mean()
 
 
-def color_diff_loss(pred, label, weight, weighted=False, l2_loss=False):
+def color_diff_loss(pred, label, weight=1.0, weighted=False, l2_loss=False):
     diff = pred - label
     if not weighted:
         weight = 1.0
