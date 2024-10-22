@@ -611,11 +611,19 @@ class Mapper:
             cur_view_cam.set_pose(T_w_c) # set camera pose
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
+        # maybe also consider the accumulated rotation (TODO)
+        keyframe_on = (frame_id == 0) or (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist)
+
         # training views
-        if not self.dataset.stop_status and frame_id % self.config.gs_keyframe_interval==0:
+        if keyframe_on and frame_id % self.config.gs_keyframe_interval==0:
+            
+            if not self.silence:
+                print("New training frame added for frame {}".format(frame_id))
+
+            self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
             # better to use the newly added gaussians ratio (FIXME)
             # move oldest short-term memory to long-term memory
-            while len(self.cam_short_term_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
+            while len(self.cam_short_term_train_pool) > self.config.img_pool_size:
                 oldest_short_term_train_cam = self.cam_short_term_train_pool[0]
                 if self.config.long_term_train_down:
                     oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
@@ -635,7 +643,7 @@ class Mapper:
                 self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
                 # make sure the memory are freed
 
-        # also add some testing views (all the others are then testing views)
+        # also add some testing views (all the others are then testing views), now it's deprecated, we do not do online evaluation
         else:
             for cam_name in self.dataset.cam_names:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
@@ -1147,6 +1155,8 @@ class Mapper:
 
             short_term_img_pool_size = len(self.cam_short_term_train_pool)
             long_term_img_pool_size = len(self.cam_long_term_train_pool)
+
+            assert short_term_img_pool_size > 0, "At least one frame for training is required"
 
             for iter in tqdm(range(iter_count), disable=self.silence):    
 

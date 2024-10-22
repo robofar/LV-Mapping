@@ -60,6 +60,8 @@ def inspect_pings_map():
 
     run_path = setup_experiment(config, sys.argv, debug_mode=True)
     config.use_dataloader = True
+
+    mp.set_start_method("spawn") # don't forget this
     
     # initialize the mlp decoder
     geo_feature_dim = config.feature_dim
@@ -111,6 +113,8 @@ def inspect_pings_map():
     # reset neural points
 
     ref_position = neural_points.neural_points[0]
+    ref_pose = torch.eye(4, device=config.device)
+    ref_pose[:3,3] = ref_position
 
     neural_points.recreate_hash(ref_position, with_ts=False)
 
@@ -134,7 +138,7 @@ def inspect_pings_map():
             config=config,
         )
 
-        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
+        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
         gui_process.start()
         # time.sleep(2) # second
 
@@ -143,19 +147,24 @@ def inspect_pings_map():
         dummy_K[0,0] = dummy_K[1,1] = 500
         dummy_K[0,2] = dummy_K[1,2] = 300
         dummy_cam: CamImage = CamImage(frame_id=0, rgb_image=None, K_mat=dummy_K, img_width=600, img_height=600)
+        
+        dummy_cam.set_pose(ref_pose)
+        
         dummy_cams = {"dummy": dummy_cam}
+        # is there a way to set the camera in visualizer?
 
+        # packet_to_vis: VisPacket = VisPacket(frame_id=0, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis: VisPacket = VisPacket(frame_id=0, current_frames=dummy_cams, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
         
         q_main2vis.put(packet_to_vis)
 
-    # while True:
-    #     # print("what's wrong")
-    #     if config.gs_vis_on:
-    #         if not q_vis2main.empty():
-    #             while q_vis2main.get().flag_pause:
-    #                 continue
+    while True:
+        # print("what's wrong")
+        if config.gs_vis_on:
+            if not q_vis2main.empty():
+                while q_vis2main.get().flag_pause:
+                    continue
 
     # mesh_vox_size_m = None
     # if len(sys.argv) > 2:

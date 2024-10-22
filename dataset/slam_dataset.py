@@ -164,6 +164,8 @@ class SLAMDataset():
             self.pgo_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy() # T_wi
 
         self.travel_dist = np.zeros(max_frame_number) 
+        self.accu_travel_dist_for_keyframe: float = 0.0
+        
         self.time_table = []
 
         self.processed_frame: int = 0
@@ -865,6 +867,9 @@ class SLAMDataset():
             self.lose_track = True
             self.write_results() # record before the failure point
             sys.exit("Too large translation in one frame, system failed")
+
+        # for GS training keyframes
+        self.accu_travel_dist_for_keyframe += cur_frame_travel_dist
 
         accu_travel_dist = self.travel_dist[cur_frame_id-1] + cur_frame_travel_dist
         self.travel_dist[cur_frame_id] = accu_travel_dist

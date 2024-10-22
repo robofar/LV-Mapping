@@ -14,6 +14,8 @@ import torch
 import torch.nn.functional as F
 from OpenGL import GL as gl
 
+# import pycg # TODO
+
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gs_gui.gl_render import util, util_gau
@@ -251,7 +253,7 @@ class SLAM_GUI:
         self.panel.add_child(self.button)
 
         self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
-        self.button_render.is_on = True # default off
+        self.button_render.is_on = True # default on
         # self.button_render.set_on_clicked(self._on_button_render)
         self.panel.add_child(self.button_render)
 
@@ -859,8 +861,6 @@ class SLAM_GUI:
 
             self.gaussian_cur = gaussian_packet
 
-            # print("ARE YOU OKKKKK")
-
             self.init = True
 
             if gaussian_packet.frame_id is not None:
@@ -933,14 +933,6 @@ class SLAM_GUI:
                         else selected_frustum.view_dir
                     )
                     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
-
-            # else: # initialize
-            #     default_cam = CamImage()
-            #     frustum = self.add_camera(
-            #        default_cam, name="default", color=[0, 1, 0], size=frustum_size
-            #     )
-            #     viewpoint = frustum.view_dir
-            #     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
 
             # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
@@ -1471,18 +1463,16 @@ class SLAM_GUI:
         if not self.init:
             return
 
-        # problem is here
-        current_cam = self.get_current_cam() # TODO, you can also send back it to main
+        current_cam = self.get_current_cam()
 
         if not self.gs_chbox.checked:
-            # if self.render_img is None:
-            #     return
+            if self.render_img is None:
+                return
             self.render_img = None
         else: # gs_chbox checked
             results = self.rasterise(current_cam)
             if results is None:
                 return
-            # print("Results get")
             self.render_img = self.render_o3d_image(results, current_cam)
             results = {} # free memory 
         ## self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
@@ -1505,12 +1495,9 @@ class SLAM_GUI:
                 if self.button_render.is_on:
                     # print("UPDATE scene")
                     if self.step % 3 == 0: # per 0.03s # 30 Hz
-                        # print("UPDATE scene happens")
-                        # self.scene_update() # don't do it so frequently
                         self.render_gui() # stucked here
 
                     if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
-                        # print("Receiving")
                         self.receive_data(self.q_main2vis) # this is also slow
 
                     if self.step % 50 == 0: # per 0.5s

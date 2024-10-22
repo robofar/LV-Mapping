@@ -232,7 +232,11 @@ class Config:
         self.gs_iters: int = 0
         self.gs_bs: int = 1 # not used now
         self.gaussian_bs_ratio: float = 1.0 # gaussian_bs = bs * gaussian_bs_ratio
+        
+        # gs keyframes
         self.gs_keyframe_interval: int = 2
+        self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
+
         self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
         self.long_term_train_down: bool = True # downsample the training image for long-term memory, faster, vague supervision in long term memory
         
@@ -607,7 +611,10 @@ class Config:
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
+            
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
+            self.gs_keyframe_accu_travel_dist = config_args["gs"].get("gs_keyframe_accu_dist", self.max_range*0.02) # default value set to be self.max_range*0.02
+            
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
 
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)

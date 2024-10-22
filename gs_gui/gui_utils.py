@@ -84,9 +84,6 @@ class VisPacket:
         gaussian_rot=None,
         gaussian_alpha=None,
         gaussian_color=None,
-        gtcolor=None,
-        gtdepth=None,
-        gtnormal=None,
         keyframes=None,
         finish=False,
         kf_window=None,
@@ -138,54 +135,18 @@ class VisPacket:
         self.gtdepth = {}
         self.gtnormal = {}
 
-        self.img_resize_width = 600 # resized for vis
-        if current_frames is not None:
-            self.cam_list = list(current_frames.keys())
-            for cam in self.cam_list:
-                current_frame = current_frames[cam]
-                if current_frame.rgb_image_list[img_down_rate] is not None:
-                    gtcolor = current_frame.rgb_image_list[img_down_rate]
-                    if current_frame.sky_mask_on:
-                        # mask the sky part
-                        cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
-                        cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
-                        gtcolor[cur_sky_mask_used] = 1.0
-                    
-                    if current_frame.depth_on:
-                        gtdepth = current_frame.depth_image_list[img_down_rate]
-                    if current_frame.mono_normal_on:
-                        gtnormal = current_frame.normal_img_list[img_down_rate]
-                        if current_frame.sky_mask_on:
-                            # mask the sky part
-                            gtnormal[cur_sky_mask_used] = 0.0
-                
-                gtcolor = self.resize_img(gtcolor)
-
-                if gtcolor is not None:
-                    # exposure correction for vis
-                    with torch.no_grad():
-                        gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
-
-                self.gtcolor[cam] = gtcolor
-
-                self.gtdepth[cam] = self.resize_img(gtdepth, is_sparse=True)
-
-                self.gtnormal[cam] = self.resize_img(gtnormal)
-
+        # add camera frames, set gtcolor, gtdepth, gtnormal
+        self.add_current_frames(current_frames, img_down_rate)
+        
         self.keyframes = keyframes
         self.finish = finish
         self.kf_window = kf_window
 
-        self.current_pointcloud_xyz = current_pointcloud_xyz
-        self.current_pointcloud_rgb = current_pointcloud_rgb
+        self.add_scan(current_pointcloud_xyz, current_pointcloud_rgb)
 
-        self.mesh_verts = mesh_verts
-        self.mesh_faces = mesh_faces
-        self.mesh_verts_rgb = mesh_verts_rgb
+        self.add_mesh(mesh_verts, mesh_faces, mesh_verts_rgb)
 
-        self.odom_poses = odom_poses
-        self.gt_poses = gt_poses
-        self.slam_poses = slam_poses
+        self.add_traj(odom_poses, gt_poses, slam_poses)
 
         self.img_down_rate = img_down_rate
 
@@ -194,6 +155,50 @@ class VisPacket:
 
         self.sdf_pool_xyz = None
         self.sdf_pool_rgb = None
+
+
+    def add_current_frames(self, current_frames, img_down_rate: int =0):
+
+        if current_frames is not None:
+            self.cam_list = list(current_frames.keys())
+            
+            for cam in self.cam_list:
+                current_frame = current_frames[cam]
+                
+                if current_frame.rgb_image_list[img_down_rate] is not None:
+                    
+                    gtcolor = current_frame.rgb_image_list[img_down_rate]
+                    if current_frame.sky_mask_on:
+                        # mask the sky part
+                        cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
+                        cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
+                        gtcolor[cur_sky_mask_used] = 1.0
+                    
+                    gtcolor = self.resize_img(gtcolor)
+
+                    # exposure correction for vis
+                    with torch.no_grad():
+                        gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
+
+                    self.gtcolor[cam] = gtcolor
+                    
+                    if current_frame.depth_on:
+                        gtdepth = current_frame.depth_image_list[img_down_rate]
+                        gtdepth = self.resize_img(gtdepth, is_sparse=True)
+                    else:
+                        gtdepth = None
+                    self.gtdepth[cam] = gtdepth
+                    
+                    if current_frame.mono_normal_on:
+                        gtnormal = current_frame.normal_img_list[img_down_rate]
+                        if current_frame.sky_mask_on:
+                            # mask the sky part
+                            gtnormal[cur_sky_mask_used] = 0.0
+                        gtnormal = self.resize_img(gtnormal)    
+                    else:
+                        gtnormal = None
+                    self.gtnormal[cam] = gtnormal
+
 
     # the sorrounding map is also added here
     def add_neural_points_data(self, neural_points, only_local_map: bool = True, 

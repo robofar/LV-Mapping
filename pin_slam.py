@@ -510,7 +510,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 frame_point_cloud_for_vis = dataset.cur_frame_mono_depth_o3d 
                 if o3d_vis.debug_mode == 1: # show mono depth and lidar together, lidar as red color
                     dataset.cur_frame_o3d.paint_uniform_color(np.array([1.0, 0, 0])) # RED
-                    frame_point_cloud_for_vis += dataset.cur_frame_o3d 
+                    frame_point_cloud_for_vis += dataset.cur_frame_o3d
                 
             o3d_vis.update(frame_point_cloud_for_vis, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd, mapper.T_w_c_cur_view, mapper.rendered_pcd_o3d)
 
@@ -527,7 +527,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
                 current_frames=dataset.cur_cam_img, 
-                keyframes=None, # mapper.cur_frame_train_views, # None
+                keyframes=mapper.cur_frame_train_views, # None
                 img_down_rate=config.gs_vis_down_rate)
 
             # spawn gaussians in the current local map
