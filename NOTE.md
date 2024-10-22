@@ -141,6 +141,11 @@ python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_
 
 ```
 
+to extract data from the raw rosbag, use the vbr_toolkit:
+```
+vbr convert kitti ./path/to/rosbag.bag ./path/to/extracted_data_folder
+```
+
 The light across different cameras seem to be not identical, figure out a way to do the correction
 
 **pass**

@@ -52,6 +52,8 @@ from gs_gui.gui_utils import VisPacket, ParamsGUI
      Y. Pan et al. from IPB
 '''
 
+# or maybe we directly add the inspection function here?
+
 parser = argparse.ArgumentParser()
 parser.add_argument('config_path', type=str, nargs='?', default='config/lidar_slam/run.yaml', help='[Optional] Path to *.yaml config file, if not set, default config would be used')
 parser.add_argument('dataset_name', type=str, nargs='?', help='[Optional] Name of a specific dataset, example: kitti, mulran, or rosbag (when -d is set)')
@@ -119,17 +121,15 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     color_feature_dim = config.color_feature_dim
     # print("colro feature dim:", color_feature_dim)
 
-    geo_mlp = Decoder(config, geo_feature_dim, 64, 1, 1)
-    sem_mlp = Decoder(config, sem_feature_dim, 64, 1, config.sem_class_count + 1) if config.semantic_on else None
-    color_mlp = Decoder(config, color_feature_dim, 64, 1, config.color_channel) if config.color_on else None
+    geo_mlp = Decoder(config, geo_feature_dim, config.geo_mlp_hidden_dim, config.geo_mlp_level, 1)
+    sem_mlp = Decoder(config, sem_feature_dim, config.sem_mlp_hidden_dim, config.sem_mlp_level, config.sem_class_count + 1) if config.semantic_on else None
+    color_mlp = Decoder(config, color_feature_dim, config.color_mlp_hidden_dim, config.color_mlp_level, config.color_channel) if config.color_on else None
 
     # # Load the decoder model
     # if config.load_model: # not used
     #     load_decoder(config, geo_mlp, sem_mlp, color_mlp)
 
     n_gaussian = config.spawn_n_gaussian # almost 2D, then 4 already means 1/2 resolution
-    hidden_layer_count = 1 # 1 or 2 ? # TODO
-    hidden_layer_dim = 64 # 64 # 128 # now this is small enough
 
     dist_concat_dim = 1 if config.dist_concat_on else 0
     view_concat_dim = 3 if config.view_concat_on else 0
@@ -138,11 +138,15 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # # scale_dim = 2 if gs_2d else 3
     # scale_dim = 3
 
-    gaussian_xyz_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
-    gaussian_rot_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 4, n_gaussian, 0) # (TODO) optimize quat is not very stable, try to use normal 
-    gaussian_scale_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, 0)
-    gaussian_alpha_mlp = Decoder(config, geo_feature_dim, hidden_layer_dim, hidden_layer_count, 1, n_gaussian, dist_concat_dim) # concat distance
-    gaussian_color_mlp = Decoder(config, color_feature_dim, hidden_layer_dim, hidden_layer_count, 3, n_gaussian, view_concat_dim) # concat view direction
+    # current value
+    # gs_mlp_hidden_dim 64
+    # gs_mlp_level 1
+
+    gaussian_xyz_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 3, n_gaussian, 0)
+    gaussian_rot_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 4, n_gaussian, 0)
+    gaussian_scale_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 3, n_gaussian, 0)
+    gaussian_alpha_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 1, n_gaussian, dist_concat_dim) # concat distance
+    gaussian_color_mlp = Decoder(config, color_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 3, n_gaussian, view_concat_dim) # concat view direction
 
     mlp_dict = {}
     
@@ -156,7 +160,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     mlp_dict["gauss_alpha"] = gaussian_alpha_mlp
     mlp_dict["gauss_color"] = gaussian_color_mlp
 
-    # initialize the neural gaussians
+    # initialize the neural point features
     neural_points = NeuralPoints(config)
 
     # non-blocking visualizer
@@ -356,7 +360,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
-        dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # config.learn_color_residual
+        dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
@@ -496,8 +500,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                     else:
                         cur_sdf_slice = cur_sdf_slice_h
                                 
-            pool_pcd = mapper.get_data_pool_o3d(down_rate=17, only_cur_data=o3d_vis.vis_only_cur_samples) if o3d_vis.render_data_pool else None # down rate should be a prime number
+            # pool_pcd = mapper.get_data_pool_o3d(down_rate=17, only_cur_data=o3d_vis.vis_only_cur_samples) if o3d_vis.render_data_pool else None # down rate should be a prime number
             
+            pool_pcd = mapper.get_data_pool_o3d(down_rate=31, only_cur_data=o3d_vis.vis_only_cur_samples)
+
             o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
 
             if o3d_vis.vis_mono_depth_frame:
@@ -521,7 +527,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # add the most recent train frame for vis
             packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
                 current_frames=dataset.cur_cam_img, 
-                keyframes=mapper.cur_frame_train_views, # None
+                keyframes=None, # mapper.cur_frame_train_views, # None
                 img_down_rate=config.gs_vis_down_rate)
 
             # spawn gaussians in the current local map
@@ -539,10 +545,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             if cur_sdf_slice is not None:
                 packet_to_vis.add_sdf_slice(np.array(cur_sdf_slice.points, dtype=np.float64), np.array(cur_sdf_slice.colors, dtype=np.float64))
             
+            if pool_pcd is not None:
+                packet_to_vis.add_sdf_training_pool(np.array(pool_pcd.points, dtype=np.float64), np.array(pool_pcd.colors, dtype=np.float64))
+
             packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
-            
-            # add the used training pool
-            # mapper.cur_frame_train_views
 
             q_main2vis.put(packet_to_vis)
 
@@ -575,8 +581,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     if config.gs_on: # TODO: add to a function inside mapper or dataset 
         
         print("Begin rendering evaluation")
-
-        mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
+        # don't do visualization
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10) 
+        # visualize the results
+        # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
@@ -599,7 +607,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         #     gs_map = os.path.join(run_path, "map", "gaussians.ply") # global gaussian map is also saved here (now we don't save gaussian map anymore)
         #     neural_points.save_gaussian_ply(gs_map)
         # else:
-        save_implicit_map(run_path, neural_points, geo_mlp, color_mlp, sem_mlp)
+        save_implicit_map(run_path, neural_points, mlp_dict)
     if config.save_merged_pc:
         dataset.write_merged_point_cloud() # replay: save merged point cloud map
     

@@ -42,7 +42,7 @@ from gaussian_splatting.scene.cameras import CamImage
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 
-from utils.tools import get_time
+from utils.tools import get_time, apply_quaternion_rotation, quat_multiply, quat_inverse
 
 # the mian gaussain rendering function
 def render(viewpoint_camera: CamImage, 
@@ -180,7 +180,7 @@ def render(viewpoint_camera: CamImage,
         # get only the visible local neural points
         visible_neural_point_mask = rasterizer.markVisible(neural_points_data["position"])
         # check the in_frustum and checkFrustum function
-        
+
         # print(visible_neural_point_mask.shape)
         # print(visible_neural_point_mask.sum().item())
 
@@ -207,6 +207,7 @@ def render(viewpoint_camera: CamImage,
             gaussian_rot = torch.empty((0, 4), dtype=dtype, device=device)
             gaussian_alpha = torch.empty((0, 1), dtype=dtype, device=device)
             gaussian_color = torch.empty((0, 3), dtype=dtype, device=device)
+            results = {}
         else:
             gaussian_xyz = spawn_results["gaussian_xyz"]
             gaussian_scale = spawn_results["gaussian_scale"]
@@ -214,10 +215,11 @@ def render(viewpoint_camera: CamImage,
             gaussian_alpha = spawn_results["gaussian_alpha"]
             gaussian_color = spawn_results["gaussian_color"]
 
+            spawn_results["visible_neural_point_ratio"] = visible_neural_point_ratio
+            results = spawn_results
+
     # Spawned local gaussians
     # if train_mode:
-    results = spawn_results
-    results["visible_neural_point_ratio"] = visible_neural_point_ratio
 
     if gaussians is not None: # Use already predicted gaussians
         s_gaussian_xyz = gaussians["gaussian_xyz"]
@@ -450,6 +452,7 @@ def spawn_gaussians(neural_points_data: Dict,
                     learn_color_residual: bool = True):
 
     neural_point_position = neural_points_data["position"]
+    neural_point_orientation = neural_points_data["orientation"] # as quat
     neural_point_color = neural_points_data["color"]
     neural_point_geo_features = neural_points_data["geo_feature"]
     neural_point_color_features = neural_points_data["color_feature"]
@@ -470,6 +473,7 @@ def spawn_gaussians(neural_points_data: Dict,
             visble_mask = visble_mask & neural_point_valid_mask # only visble and also valid neural points will be used 
 
         neural_point_position = neural_point_position[visble_mask]
+        neural_point_orientation = neural_point_orientation[visble_mask]
         neural_point_color = neural_point_color[visble_mask]
 
         if neural_point_free_mask is not None:
@@ -525,15 +529,29 @@ def spawn_gaussians(neural_points_data: Dict,
     gaussian_count_per_point = gaussian_xyz_mlp.out_k # K
     local_gaussian_count = local_point_count * gaussian_count_per_point
 
-    gaussian_xyz = neural_point_position.repeat(1, gaussian_count_per_point) + xyz_displacement # N, 3K
-    gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
+    # apply rotation (FIXME)
+    # print(neural_point_position.shape)
+    # print(neural_point_orientation.shape)
+
+    neural_point_quat = neural_point_orientation.repeat(1, gaussian_count_per_point).view(local_gaussian_count, -1) # NK, 4
+    xyz_displacement = xyz_displacement.view(local_gaussian_count, -1) # NK, 3
+    
+    xyz_displacement = apply_quaternion_rotation(neural_point_quat, xyz_displacement) # NK, 3            
+    ## passive rotation (axis rotation w.r.t point)
+
+    neural_point_xyz = neural_point_position.repeat(1, gaussian_count_per_point).view(local_gaussian_count, -1) # NK, 3
+
+    gaussian_xyz = neural_point_xyz + xyz_displacement # NK, 3
+    # gaussian_xyz = gaussian_xyz.view(local_gaussian_count, -1) # NK, 3
 
     # ------------------
     # Rotation (view independent)
     gaussian_rot = gaussian_rot_mlp.mlp_batch(geo_feature_in) # N, 4K
     gaussian_rot = gaussian_rot.view(local_gaussian_count, -1) # NK , 4
-    gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation)
+    gaussian_rot = torch.nn.functional.normalize(gaussian_rot) # normalize (after activation) # NK, 4 as quaternion
     gaussian_rot = torch.nan_to_num(gaussian_rot, 0, 0)
+    
+    gaussian_rot = quat_multiply(neural_point_quat, gaussian_rot) # NK, 4
 
     # set back the average value (all the one with the largest alpha) (TODO)
 
@@ -584,6 +602,10 @@ def spawn_gaussians(neural_points_data: Dict,
 
     color_feature_in = neural_point_color_features[:-1]
     if view_concat_on and view_direction is not None:
+        # here view direction should in a local coordinate frame (FIXME)
+        neural_point_orientation_inverse = quat_inverse(neural_point_orientation)
+        view_direction = apply_quaternion_rotation(neural_point_orientation_inverse ,view_direction)
+
         color_feature_in = torch.concat((color_feature_in, view_direction), dim=1) # no high freq positional embedding yet
     
     # try to now use only one single feature vector
@@ -662,7 +684,8 @@ def spawn_gaussians(neural_points_data: Dict,
         "gaussian_color": gaussian_color, 
         "alpha_all": alpha_all,
         "gaussian_free_mask": gaussian_free_mask,
-        "local_view_gaussian_count": gaussian_count,
+        # this is the spawned valid gaussian count, not the visible gaussian count (this would be even fewer)
+        "local_view_gaussian_count": gaussian_count, 
     }
 
     # gaussian_mask = gaussian_xyz

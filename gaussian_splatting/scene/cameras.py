@@ -21,7 +21,7 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id: int, rgb_image, K_mat, z_min=0.1, z_max=100.0,
+    def __init__(self, frame_id, rgb_image, K_mat, z_min=0.1, z_max=100.0,
         cam_id: str = "cam", img_down_rate = 0, 
         depth_image = None, normal_img = None, sky_mask = None, 
         device = "cuda", cam_pose = None, img_width = None, img_height = None, pyramid_level: int = 4):
@@ -43,7 +43,10 @@ class CamImage:
         else:
             self.image_width = img_width
             self.image_height = img_height
+        
+        # if input rgb_image is None, then you need to input valid img_width and height
 
+        # numpy array
         self.K_mat = K_mat
         self.fx = K_mat[0,0]
         self.fy = K_mat[1,1]
@@ -69,6 +72,11 @@ class CamImage:
         self.full_proj_transform = None 
         
         # set the poses related transformations
+
+        # init value
+        self.R = torch.eye(3, dtype=self.dtype, device=self.device)
+        self.T = torch.zeros(3, dtype=self.dtype, device=self.device)
+
         self.set_pose(cam_pose)
 
         # pyramid of images
@@ -169,6 +177,7 @@ class CamImage:
         return torch.tensor([h0, w0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
     def set_pose(self, cam_pose):
+
         if cam_pose is not None: # we also directly load the camera pose here
 
             T_cw = torch.linalg.inv(cam_pose).to(dtype=self.dtype, device=self.device) 

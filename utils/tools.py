@@ -378,24 +378,44 @@ def save_checkpoint(
 
 
 def save_implicit_map(
-    run_path, neural_points, sdf_mlp, color_mlp=None, sem_mlp=None
+    run_path, neural_points, mlp_dict, with_footprint: bool = False
 ):
+    # together with the mlp decoders
 
-    map_dict = {"neural_points": neural_points, "sdf_mlp": sdf_mlp.state_dict()}
-    if color_mlp is not None:
-        map_dict["color_mlp"] = color_mlp.state_dict()
-    if sem_mlp is not None:
-        map_dict["sem_mlp"] = sem_mlp.state_dict()
+    map_model = {"neural_points": neural_points}
+
+    for key in list(mlp_dict.keys()):
+        if mlp_dict[key] is not None:
+            map_model[key] = mlp_dict[key].state_dict()
+        else:
+            map_model[key] = None
 
     model_save_path = os.path.join(run_path, "model", "pin_map.pth")  # end with .pth
-    torch.save(map_dict, model_save_path)
+    torch.save(map_model, model_save_path)
 
     print(f"save the map to {model_save_path}")
 
-    np.save(
-        os.path.join(run_path, "memory_footprint.npy"),
-        np.array(neural_points.memory_footprint),
-    )  # save detailed memory table
+    if with_footprint:
+        np.save(
+            os.path.join(run_path, "memory_footprint.npy"),
+            np.array(neural_points.memory_footprint),
+        )  # save detailed memory table
+
+# TODO: have some problem, neural points are not assigned back
+def load_implicit_map(model_path, neural_points, mlp_dict, 
+    neural_points_key_name = "neural_points"):
+    map_model = torch.load(model_path)
+
+    for key in list(map_model.keys()):
+        if key != neural_points_key_name:
+            if map_model[key] is not None:
+                mlp_dict[key].load_state_dict(map_model[key])
+                freeze_model(mlp_dict[key])
+        else: # == neural_points_key_name
+            neural_points = map_model[neural_points_key_name]
+            # print(neural_points.neural_points)
+
+    print("Implicit map loaded")
 
 
 def load_decoder(config, geo_mlp, sem_mlp, color_mlp):
@@ -409,6 +429,16 @@ def load_decoder(config, geo_mlp, sem_mlp, color_mlp):
     if config.color_on:
         color_mlp.load_state_dict(loaded_model["color_mlp"])
         freeze_model(color_mlp)  # fixed the decoder
+
+def load_decoders(loaded_model, mlp_dict):
+
+    for key in list(loaded_model.keys()):
+        if key != "neural_points":
+            if loaded_model[key] is not None:
+                mlp_dict[key].load_state_dict(loaded_model[key])
+                freeze_model(mlp_dict[key])
+
+    print("Pretrained decoders loaded")
 
 def remove_gpu_cache():
     cuda_available = torch.cuda.is_available()
@@ -506,7 +536,11 @@ def rotmat_to_quat(rot_matrix: torch.tensor):
     qx = (rot_matrix[:, 2, 1] - rot_matrix[:, 1, 2]) / (4.0 * qw)
     qy = (rot_matrix[:, 0, 2] - rot_matrix[:, 2, 0]) / (4.0 * qw)
     qz = (rot_matrix[:, 1, 0] - rot_matrix[:, 0, 1]) / (4.0 * qw)
-    return torch.stack((qw, qx, qy, qz), dim=1)
+
+    # this is a unit quaternion
+    quat_out = torch.stack((qw, qx, qy, qz), dim=1) 
+
+    return quat_out
 
 
 def quat_to_rotmat(quaternions: torch.tensor):
@@ -548,8 +582,9 @@ def quat_multiply(q1: torch.tensor, q2: torch.tensor):
     """
     Perform quaternion multiplication for batches.
     q' = q1 @ q2
-    apply rotation q1 to quat q2
+    apply rotation q1 to quat q2 (q1 and q2 are both unit quaternions)
     both in the shape of N, 4
+    the return q_out are also batchs of unit quaternions
     """
     w1, x1, y1, z1 = torch.unbind(q1, dim=1)  # quaternion representing the rotation
     w2, x2, y2, z2 = torch.unbind(q2, dim=1)  # quaternion to be rotated
@@ -559,7 +594,24 @@ def quat_multiply(q1: torch.tensor, q2: torch.tensor):
     y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
     z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
 
-    return torch.stack((w, x, y, z), dim=1) # N, 4
+    q_out = torch.stack((w, x, y, z), dim=1) # N, 4
+
+    return q_out
+
+def quat_inverse(quat: torch.tensor):
+    """
+    Compute the inverse of a batch of unit quaternions.
+    The input quaternions are in the shape of (N, 4), where each quaternion is (w, x, y, z).
+    Returns the inverse quaternions, also in the shape of (N, 4).
+    Note: For unit quaternions, the inverse is the conjugate.
+    """
+    # Unpack the quaternions into scalar (w) and vector (x, y, z) parts
+    w, x, y, z = torch.unbind(quat, dim=1)
+    
+    # Compute the conjugate, which is the inverse for unit quaternions
+    quat_inv = torch.stack((w, -x, -y, -z), dim=1)
+    
+    return quat_inv
 
 # def vec2quat(vec: torch.tensor):
 #     v = v / v.norm()

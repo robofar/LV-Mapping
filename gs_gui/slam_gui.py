@@ -156,6 +156,12 @@ class SLAM_GUI:
         self.sdf_render.point_size = 10 * self.window.scaling
         self.sdf_render.base_color = [1.0, 1.0, 1.0, 1.0]
 
+        # sdf sample pool
+        self.sdf_pool_render = rendering.MaterialRecord()
+        self.sdf_pool_render.shader = "defaultLit"
+        self.sdf_pool_render.point_size = 1 * self.window.scaling
+        self.sdf_pool_render.base_color = [1.0, 1.0, 1.0, 1.0]
+
         # mesh 
         self.mesh_render = rendering.MaterialRecord()
         self.mesh_render.shader = "normals" # TODO: add a button to switch to lit (color)
@@ -200,6 +206,7 @@ class SLAM_GUI:
         # other geometry entities
         self.mesh = o3d.geometry.TriangleMesh()
         self.scan = o3d.geometry.PointCloud()
+        self.sdf_pool = o3d.geometry.PointCloud() # sample pool
         self.sdf_slice = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
         self.invalid_neural_points = o3d.geometry.PointCloud()
@@ -356,6 +363,12 @@ class SLAM_GUI:
         self.scan_chbox.set_on_checked(self._on_scan_chbox)
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
+
+        self.sdf_pool_chbox = gui.Checkbox("SDF Samples")
+        self.sdf_pool_chbox.checked = False
+        self.sdf_pool_chbox.set_on_checked(self._on_sdf_pool_chbox)
+        chbox_tile_3dobj.add_child(self.sdf_pool_chbox)
+        self.sdf_pool_name = "sdf_sample_pool"
 
         # self.sky_chbox = gui.Checkbox("Sky")
         # self.sky_chbox.checked = False
@@ -545,15 +558,12 @@ class SLAM_GUI:
         self.g_renderer.update_camera_intrin(self.g_camera)
         self.g_renderer.set_render_reso(self.g_camera.w, self.g_camera.h)
 
-    def add_camera(self, camera, name, color=[0, 1, 0], gt=False, size=0.01):
+    def add_camera(self, camera, name, color=[0, 1, 0], size=0.01):
         # only the cam geometry
         # img are not added
 
-        W2C = (
-            getWorld2View2(camera.R_gt, camera.T_gt)
-            if gt
-            else getWorld2View2(camera.R, camera.T)
-        )
+        W2C = getWorld2View2(camera.R, camera.T)
+
         W2C = W2C.cpu().numpy()
         C2W = np.linalg.inv(W2C)
         frustum = create_frustum(C2W, color, size=size)
@@ -708,7 +718,15 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
         else:
             self.widget3d.scene.remove_geometry(self.scan_name)
+    
+    def _on_sdf_pool_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.sdf_pool_name)
+            self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
+        else:
+            self.widget3d.scene.remove_geometry(self.sdf_pool_name)
 
+    # sdf slice
     def _on_sdf_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.sdf_name)
@@ -835,11 +853,13 @@ class SLAM_GUI:
 
         if gaussian_packet.frame_id != self.cur_frame_id:
             
-            # only update with new data
+            # only update with new data (once)
 
             self.cur_frame_id = gaussian_packet.frame_id
 
             self.gaussian_cur = gaussian_packet
+
+            # print("ARE YOU OKKKKK")
 
             self.init = True
 
@@ -885,6 +905,9 @@ class SLAM_GUI:
 
             if gaussian_packet.has_sorrounding_points:
                 cur_center_position = gaussian_packet.sorrounding_neural_points_data["center"]
+                
+                # spawn gaussians for the sorrounding map
+                # self.cur_base_gaussians are stored in GPU, might take some memory
                 self.cur_base_gaussians = spawn_gaussians(gaussian_packet.sorrounding_neural_points_data, 
                     self.decoders, None, cur_center_position,
                     dist_concat_on=self.config.dist_concat_on, 
@@ -910,6 +933,15 @@ class SLAM_GUI:
                         else selected_frustum.view_dir
                     )
                     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+
+            # else: # initialize
+            #     default_cam = CamImage()
+            #     frustum = self.add_camera(
+            #        default_cam, name="default", color=[0, 1, 0], size=frustum_size
+            #     )
+            #     viewpoint = frustum.view_dir
+            #     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+
 
             # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
             selected_cam = self.combo_cams.selected_text
@@ -949,6 +981,15 @@ class SLAM_GUI:
 
                     self.widget3d.scene.remove_geometry(self.sdf_name)
                     self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
+
+            if gaussian_packet.sdf_pool_xyz is not None:
+                if self.sdf_pool_chbox.checked:
+                    self.sdf_pool.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_pool_xyz)
+                    if gaussian_packet.sdf_pool_rgb is not None:
+                        self.sdf_pool.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_pool_rgb)
+
+                    self.widget3d.scene.remove_geometry(self.sdf_pool_name)
+                    self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
 
             if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
                 self.mesh = o3d.geometry.TriangleMesh(
@@ -1194,14 +1235,22 @@ class SLAM_GUI:
 
     # done
     def get_current_cam(self):
-        w2c = cv_gl @ self.widget3d.scene.camera.get_view_matrix()
+
+        cur_view_mat = self.widget3d.scene.camera.get_view_matrix()
+
+        has_nan = np.isnan(cur_view_mat).any()
+        if has_nan:
+            cur_view_mat = np.eye(4)
+
+        w2c = cv_gl @ cur_view_mat # should not be NaN
 
         # print(w2c)
 
         image_gui = torch.zeros(
             (1, int(self.window.size.height), int(self.widget3d_width))
         )
-        vfov_deg = self.widget3d.scene.camera.get_field_of_view()
+        vfov_deg = self.widget3d.scene.camera.get_field_of_view() # Here there's problem
+
         hfov_deg = self.vfov_to_hfov(vfov_deg, image_gui.shape[1], image_gui.shape[2])
         FoVx = np.deg2rad(hfov_deg)
         FoVy = np.deg2rad(vfov_deg)
@@ -1221,7 +1270,7 @@ class SLAM_GUI:
 
         current_cam = CamImage(-1, None, K_mat, self.config.min_range*0.2, self.config.local_map_radius*1.1,
             img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
-
+    
         # print(current_cam.camera_center)
                                                         
         return current_cam
@@ -1400,16 +1449,13 @@ class SLAM_GUI:
             render_toc = get_time()
 
             if rendering_data is not None:
-                gaussians_all_count = rendering_data["alpha_all"].shape[0]
-                gaussians_valid_count = rendering_data["local_view_gaussian_count"]
-                valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
-                mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
-                cur_visble_gaussian_count = torch.sum(rendering_data["visibility_filter"]).item()
-            else:
-                cur_visble_gaussian_count = 0
-                mean_valid_count = 0
-
-            self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_visble_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
+                if "local_view_gaussian_count" in list(rendering_data.keys()):
+                    gaussians_all_count = rendering_data["alpha_all"].shape[0]
+                    gaussians_valid_count = rendering_data["local_view_gaussian_count"]
+                    valid_ratio = 1.0 * gaussians_valid_count / gaussians_all_count
+                    mean_valid_count = valid_ratio * self.config.spawn_n_gaussian
+                    cur_visble_gaussian_count = torch.sum(rendering_data["visibility_filter"]).item()
+                    self.gaussian_info.text = "# Current view Gaussians: {} (valid: {:.1f} / {})".format(cur_visble_gaussian_count, mean_valid_count, self.config.spawn_n_gaussian)
 
             render_time = render_toc - render_tic # s
             render_freq = 1.0/render_time
@@ -1425,11 +1471,12 @@ class SLAM_GUI:
         if not self.init:
             return
 
+        # problem is here
         current_cam = self.get_current_cam() # TODO, you can also send back it to main
 
         if not self.gs_chbox.checked:
-            if self.render_img is None:
-                return
+            # if self.render_img is None:
+            #     return
             self.render_img = None
         else: # gs_chbox checked
             results = self.rasterise(current_cam)
@@ -1451,6 +1498,8 @@ class SLAM_GUI:
                 o3d.visualization.gui.Application.instance.quit()
                 print("Closing Visualization")
                 break
+            
+            # print(self.step)
 
             def update():
                 if self.button_render.is_on:
@@ -1458,12 +1507,13 @@ class SLAM_GUI:
                     if self.step % 3 == 0: # per 0.03s # 30 Hz
                         # print("UPDATE scene happens")
                         # self.scene_update() # don't do it so frequently
-                        self.render_gui()
+                        self.render_gui() # stucked here
 
                     if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
+                        # print("Receiving")
                         self.receive_data(self.q_main2vis) # this is also slow
 
-                    if self.step % 100 == 0: # per 1s
+                    if self.step % 50 == 0: # per 0.5s
                         remove_gpu_cache() # remove cache regularly
                 
                 else:

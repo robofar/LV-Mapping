@@ -92,8 +92,6 @@ class VisPacket:
         kf_window=None,
         current_pointcloud_xyz=None,
         current_pointcloud_rgb=None,
-        sdf_slice_xyz=None,
-        sdf_slice_rgb=None,
         mesh_verts=None,
         mesh_faces=None,
         mesh_verts_rgb=None,
@@ -160,12 +158,13 @@ class VisPacket:
                         if current_frame.sky_mask_on:
                             # mask the sky part
                             gtnormal[cur_sky_mask_used] = 0.0
-            
+                
                 gtcolor = self.resize_img(gtcolor)
 
-                # exposure correction for vis
-                with torch.no_grad():
-                    gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
+                if gtcolor is not None:
+                    # exposure correction for vis
+                    with torch.no_grad():
+                        gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
 
                 self.gtcolor[cam] = gtcolor
 
@@ -180,9 +179,6 @@ class VisPacket:
         self.current_pointcloud_xyz = current_pointcloud_xyz
         self.current_pointcloud_rgb = current_pointcloud_rgb
 
-        self.sdf_slice_xyz = sdf_slice_xyz
-        self.sdf_slice_rgb = sdf_slice_rgb
-
         self.mesh_verts = mesh_verts
         self.mesh_faces = mesh_faces
         self.mesh_verts_rgb = mesh_verts_rgb
@@ -193,7 +189,15 @@ class VisPacket:
 
         self.img_down_rate = img_down_rate
 
-    def add_neural_points_data(self, neural_points, only_local_map: bool = True):
+        self.sdf_slice_xyz = None
+        self.sdf_slice_rgb = None
+
+        self.sdf_pool_xyz = None
+        self.sdf_pool_rgb = None
+
+    # the sorrounding map is also added here
+    def add_neural_points_data(self, neural_points, only_local_map: bool = True, 
+                               add_sorrounding_points: bool = True):
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
@@ -206,28 +210,32 @@ class VisPacket:
 
             if only_local_map:
                 self.neural_points_data["position"] = neural_points.local_neural_points
+                self.neural_points_data["orientation"] = neural_points.local_point_orientations
                 self.neural_points_data["color"] = neural_points.local_point_colors
                 self.neural_points_data["geo_feature"] = neural_points.local_geo_features
                 self.neural_points_data["color_feature"] = neural_points.local_color_features
                 self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
 
-                sorrounding_mask = neural_points.sorrounding_mask
-                sorrounding_mask_a = sorrounding_mask[:-1]
-                if torch.sum(sorrounding_mask_a).item() > 10:
-                    self.has_sorrounding_points = True
-                    self.sorrounding_neural_points_data = {}
-                    self.sorrounding_neural_points_data["center"] = neural_points.local_position
-                    self.sorrounding_neural_points_data["position"] = neural_points.neural_points[sorrounding_mask_a]
-                    self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
-                    self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
-                    self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
-                    self.sorrounding_neural_points_data["resolution"] = neural_points.resolution
-                    self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
-                    self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
+                if add_sorrounding_points:
+                    sorrounding_mask = neural_points.sorrounding_mask
+                    sorrounding_mask_a = sorrounding_mask[:-1]
+                    if torch.sum(sorrounding_mask_a).item() > 10:
+                        self.has_sorrounding_points = True
+                        self.sorrounding_neural_points_data = {}
+                        self.sorrounding_neural_points_data["center"] = neural_points.local_position
+                        self.sorrounding_neural_points_data["position"] = neural_points.neural_points[sorrounding_mask_a]
+                        self.sorrounding_neural_points_data["orientation"] = neural_points.point_orientations[sorrounding_mask_a]
+                        self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
+                        self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
+                        self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
+                        self.sorrounding_neural_points_data["resolution"] = neural_points.resolution
+                        self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
+                        self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
 
             else:
                 self.neural_points_data["position"] = neural_points.neural_points
+                self.neural_points_data["orientation"] = neural_points.point_orientations
                 self.neural_points_data["color"] = neural_points.point_colors
                 self.neural_points_data["geo_feature"] = neural_points.geo_features
                 self.neural_points_data["color_feature"] = neural_points.color_features
@@ -269,6 +277,10 @@ class VisPacket:
         self.sdf_slice_xyz = sdf_slice_xyz
         self.sdf_slice_rgb = sdf_slice_rgb
 
+    def add_sdf_training_pool(self, sdf_pool_xyz=None, sdf_pool_rgb=None):
+        self.sdf_pool_xyz = sdf_pool_xyz
+        self.sdf_pool_rgb = sdf_pool_rgb
+
     def add_mesh(self, mesh_verts=None, mesh_faces=None, mesh_verts_rgb=None):
         self.mesh_verts = mesh_verts
         self.mesh_faces = mesh_faces
@@ -301,6 +313,7 @@ class VisPacket:
 
         return img.squeeze(0)
 
+    # deprecated
     def get_covariance(self, scaling_modifier=1):
         return self.build_covariance_from_scaling_rotation(
             self.get_xyz, self.get_scaling, scaling_modifier, self.rotation

@@ -149,6 +149,9 @@ class Config:
         self.color_mlp_level: int = 1
         self.color_mlp_hidden_dim: int = 64
 
+        self.gs_mlp_level: int = 1
+        self.gs_mlp_hidden_dim: int = 64
+
         self.decoder_freezed: bool = False # change to true after self.freeze_after_frame
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
 
@@ -231,6 +234,8 @@ class Config:
         self.gaussian_bs_ratio: float = 1.0 # gaussian_bs = bs * gaussian_bs_ratio
         self.gs_keyframe_interval: int = 2
         self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
+        self.long_term_train_down: bool = True # downsample the training image for long-term memory, faster, vague supervision in long term memory
+        
         self.img_pool_size: int = 10 # #short-term training views
         self.img_test_pool_size: int = 0 # testing views
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
@@ -604,6 +609,7 @@ class Config:
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
+
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
@@ -676,7 +682,7 @@ class Config:
         # associated parameters
         self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
-        self.window_radius = max(self.max_range+0.5, 6.0) # for the sampling data pool, should not be too small
-        self.local_map_radius = min(self.max_range*1.1, self.max_range+5.0) # for the local neural points
+        self.local_map_radius = min(self.max_range*1.05, self.max_range+5.0) # for the local neural points
+        self.window_radius = max(self.local_map_radius-self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small
         self.sorrounding_map_radius = self.local_map_radius * 2.0
         self.vis_frame_axis_len = self.max_range / 50.0

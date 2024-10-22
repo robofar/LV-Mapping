@@ -94,6 +94,9 @@ class IPBCarDataset:
             cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
             cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
             
+            # create folder if not yet there
+            cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
+            os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
 
             # skip the first frame here (not needed actually)
             # we just use from the first frame
@@ -129,7 +132,7 @@ class IPBCarDataset:
         # main cam parameters
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
         H, W = 1024, 2064 
-        
+
         # NOTE for the rear camera, from about h=920 is the ego car's tail
 
         self.intrinsic.set_intrinsics(
@@ -209,6 +212,8 @@ class IPBCarDataset:
                 cur_img_file = cur_img_file_distorted
             else:
                 undistort_on = True # otherwise, do the distortion and save the file
+
+            # print(cur_img_file)
 
             img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
             

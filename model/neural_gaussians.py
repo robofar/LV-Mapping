@@ -168,7 +168,7 @@ class NeuralPoints(nn.Module):
 
         self.local_point_orientations = torch.empty(
             (0, 4), dtype=self.dtype, device=self.device
-        )  # as quaternion
+        )  # as quaternion [w,x,y,z]
         self.local_geo_features = nn.Parameter()
         self.local_color_features = nn.Parameter()
         self.local_point_certainties = torch.empty(
@@ -1370,7 +1370,7 @@ class NeuralPoints(nn.Module):
 
         self.point_orientations = quat_multiply(
             diff_quat_torch[used_ts], self.point_orientations
-        ).to(self.point_orientations)
+        ).to(self.point_orientations) # [w,x,y,z]
 
         # gaussian parameters
         # self.xyz = transform_batch_torch(

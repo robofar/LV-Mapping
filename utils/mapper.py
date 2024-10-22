@@ -446,7 +446,7 @@ class Mapper:
         # update the data pool
         # get the data pool ready for training
 
-        # determine used poses # speed fixed
+        # determine used poses # a dirty quick fix
         self.determine_used_pose()
 
         if self.ba_done_flag:  # bundle adjustment is not done
@@ -617,7 +617,8 @@ class Mapper:
             # move oldest short-term memory to long-term memory
             while len(self.cam_short_term_train_pool) > self.config.img_pool_size: # TODO, change maximum pool size
                 oldest_short_term_train_cam = self.cam_short_term_train_pool[0]
-                oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
+                if self.config.long_term_train_down:
+                    oldest_short_term_train_cam.free_memory_at_level(self.config.gs_down_rate)
                 oldest_short_term_train_cam.in_long_term_memory = True
                 self.cam_long_term_train_pool.append(oldest_short_term_train_cam)
                 self.cam_short_term_train_pool.pop(0) # pop the oldest cam
@@ -629,7 +630,7 @@ class Mapper:
                 self.cam_short_term_train_pool.append(cur_view_cam)
                 self.train_cam_uid.append(cur_view_cam.uid)
 
-            long_term_pool_size = 4*self.config.img_pool_size # TODO, add to config
+            long_term_pool_size = 3*self.config.img_pool_size # TODO, add to config
             if len(self.cam_long_term_train_pool) > long_term_pool_size:
                 self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
                 # make sure the memory are freed
@@ -1073,6 +1074,7 @@ class Mapper:
 
         neural_points_data = {}
         neural_points_data["position"] = self.neural_points.local_neural_points
+        neural_points_data["orientation"] = self.neural_points.local_point_orientations
         neural_points_data["color"] = self.neural_points.local_point_colors
         neural_points_data["geo_feature"] = self.neural_points.local_geo_features
         neural_points_data["color_feature"] = self.neural_points.local_color_features
@@ -1082,15 +1084,13 @@ class Mapper:
         
         # 
         # neural_points_data["stability"] = self.neural_points.local_point_certainties
-        # neural_points_data["scaling"] = self.neural_points.local_scaling
-        # neural_points_data["rotation"] = self.neural_points.local_rotation
-        # neural_points_data["opacity"] = self.neural_points.local_opacity
 
         # global ones
         sorrounding_mask = self.neural_points.sorrounding_mask
         sorrounding_mask_a = sorrounding_mask[:-1]
         sorrounding_neural_points_data = {}
         sorrounding_neural_points_data["position"] = self.neural_points.neural_points[sorrounding_mask_a]
+        sorrounding_neural_points_data["orientation"] = self.neural_points.point_orientations[sorrounding_mask_a]
         sorrounding_neural_points_data["color"] = self.neural_points.point_colors[sorrounding_mask_a]
         sorrounding_neural_points_data["geo_feature"] = self.neural_points.geo_features[sorrounding_mask]
         sorrounding_neural_points_data["color_feature"] = self.neural_points.color_features[sorrounding_mask]
@@ -1136,7 +1136,11 @@ class Mapper:
             # still too slow, figure it out how to make the process faster
 
             down_rate_short_term = self.config.gs_down_rate # TODO: add to config. img downsample rate 2**down_rate, if down_rate=0, then use original img
-            down_rate_long_term = down_rate_short_term + 1
+            
+            if self.config.long_term_train_down:
+                down_rate_long_term = down_rate_short_term + 1
+            else:
+                down_rate_long_term = down_rate_short_term
 
             eval_depth_max = self.config.max_range
             eval_depth_min = self.config.min_range
@@ -1155,7 +1159,7 @@ class Mapper:
 
                 lastest_train_prob = 0.1 # TODO: add to config
 
-                # 70 % short term (10% latest), 30 % long term
+                # 60 % short term (10% latest), 40 % long term
                 dice_number = random.random()
                 if dice_number < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
                     # short-term memory 
@@ -1164,20 +1168,19 @@ class Mapper:
                         cur_img_idx = -torch.randperm(cam_count)[0]
                     viewpoint_cam: CamImage = self.cam_short_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_short_term
+                    weight_down_rate = 1.0
                     is_replay_mode = False
                     if not self.silence:
                         print(" Train on a cam from short-term memory")
                         print(" Used cam id:", viewpoint_cam.uid)
                 else:
                     # long-term memory
-                    cam_outside_local_map = True
-                    is_replay_mode = True
-                    exit_while_loop = False
-                    rand_count = 0
-
+                    
                     cur_img_idx = torch.randperm(long_term_img_pool_size)[0]
                     viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_long_term
+                    weight_down_rate = 4.0 # 2^2
+                    is_replay_mode = True
 
                     if not self.silence:
                         print(" Train on a cam from long-term memory")
@@ -1322,7 +1325,7 @@ class Mapper:
                         depth_loss = l1_loss(gt_depth_image, rendered_depth_valid)
                         # if not self.silence:
                         #     print(" Depth rendering loss (m):", depth_loss.item())
-                    depth_loss *= self.config.lambda_depth
+                    depth_loss *= (weight_down_rate * self.config.lambda_depth)
 
                 T3_5 = get_time()
 
@@ -1921,6 +1924,7 @@ class Mapper:
                 
                 neural_points_data = {}
                 neural_points_data["position"] = self.neural_points.local_neural_points
+                neural_points_data["orientation"] = self.neural_points.local_point_orientations
                 neural_points_data["color"] = self.neural_points.local_point_colors
                 neural_points_data["geo_feature"] = self.neural_points.local_geo_features
                 neural_points_data["color_feature"] = self.neural_points.local_color_features
@@ -1932,6 +1936,7 @@ class Mapper:
                 sorrounding_mask_a = sorrounding_mask[:-1]
                 sorrounding_neural_points_data = {}
                 sorrounding_neural_points_data["position"] = self.neural_points.neural_points[sorrounding_mask_a]
+                sorrounding_neural_points_data["orientation"] = self.neural_points.point_orientations[sorrounding_mask_a]
                 sorrounding_neural_points_data["color"] = self.neural_points.point_colors[sorrounding_mask_a]
                 sorrounding_neural_points_data["geo_feature"] = self.neural_points.geo_features[sorrounding_mask]
                 sorrounding_neural_points_data["color_feature"] = self.neural_points.color_features[sorrounding_mask]
@@ -2052,8 +2057,6 @@ class Mapper:
                         img_down_rate=self.config.gs_vis_down_rate)
                     
                     packet_to_vis.add_neural_points_data(self.neural_points)
-
-                    # packet_to_vis.add_neural_points_data(self.neural_points)
 
                     odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
                     packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
