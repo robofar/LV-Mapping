@@ -24,11 +24,11 @@ you can visualize the neural gaussians as point cloud in the visualizer by press
 we are using the kitti odometry dataset here, you need `image_2` and `velodyne` folder in your sequence base folder
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -vl
 ```
 
 **pass**
@@ -37,11 +37,11 @@ python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitt
 ## Run on KITTI 360 dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl --deskew
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl --deskew
 
-python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl
+python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl
 
-python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -dvl
+python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -dvl
 ```
 
 **pass**
@@ -49,7 +49,7 @@ python pin_slam.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./dat
 ## Run on KITTI MOT dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -vl
+python pings.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -vl
 
 ```
 
@@ -60,7 +60,7 @@ Used by PVG, frame 380 to 431 on sequence 01
 ## Run on VKITTI synthetic dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitti2 -dvl
+python pings.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitti2 -dvl
 
 ```
 
@@ -70,10 +70,10 @@ python pin_slam.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vk
 
 ## Run on Nuscenes dataset
 ```
-python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
 
 
-python pin_slam.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
 
 ```
 
@@ -117,13 +117,13 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 
 ```
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -vl
 ```
 
 **pass**
@@ -131,13 +131,13 @@ python pin_slam.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/w
 ## Run on IPB car dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl
 
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl --range 600 1000 1
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl --range 600 1000 1
 
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 1
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 1
 
-python pin_slam.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vl --range 50 500 1
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vl --range 50 500 1
 
 ```
 
@@ -153,7 +153,7 @@ The light across different cameras seem to be not identical, figure out a way to
 ## Run on R3Live dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -vl
+python pings.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -vl
 ```
 
 **pass**
@@ -161,18 +161,18 @@ python pin_slam.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3liv
 ## Run on VBR dataset
 
 ```
-python pin_slam.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_slam/spagna/spagna_train0/kitti_format/ -dvl
+python pings.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_slam/spagna/spagna_train0/kitti_format/ -dvl
 ```
 **pass**
 
 ## Run on TUM RGBD dataset
 
 ```
-python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
+python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
 
 rgbd_dataset_freiburg2_xyz
 
-python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_long_office_household -i ./data/TUM/ -vl --range 0 500 2
+python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_long_office_household -i ./data/TUM/ -vl --range 0 500 2
 
 ```
 
@@ -180,7 +180,7 @@ python pin_slam.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3
 
 ## Run on Bonn RGBD dataset
 ```
-python pin_slam.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgbd_bonn_static/ -dvl
+python pings.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgbd_bonn_static/ -dvl
 ```
 
 **pass**
@@ -188,9 +188,9 @@ python pin_slam.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/
 ## Run on Replica RGBD dataset
 
 ```
-python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl
+python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl
 
-python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl --range 0 2000 5
+python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl --range 0 2000 5
 
 ```
 **pass**
@@ -198,7 +198,7 @@ python pin_slam.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Repl
 ## Run on Neural RGBD dataset
 
 ```
-python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/neural_rgbd_data/breakfast_room/ -dvl 
+python pings.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/neural_rgbd_data/breakfast_room/ -dvl 
 ```
 
 **pass**
@@ -208,14 +208,14 @@ python pin_slam.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./dat
 provided by RTG-SLAM
 
 ```
-python pin_slam.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel -dvl
+python pings.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel -dvl
 ```
 
 ## Run on CKA greenhouse dataset
 ```
-python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -dvl
+python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -dvl
 
-python pin_slam.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -dvl
+python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -dvl
 ```
 
 **pass**

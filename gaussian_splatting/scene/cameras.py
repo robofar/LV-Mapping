@@ -162,6 +162,8 @@ class CamImage:
             self.sky_mask_list[3] = down_level3_sky_mask
             self.normal_img_list[3] = down_level3_normal
 
+            self.cur_best_level: int = 0
+
             self.free_memory_under_levels(img_down_rate-1)
     
     def random_patch(self, h_size=float('inf'), w_size=float('inf')):
@@ -207,12 +209,14 @@ class CamImage:
             self.depth_image_list[down_level_to_free] = None
             self.normal_img_list[down_level_to_free] = None
             self.sky_mask_list[down_level_to_free] = None
+            self.cur_best_level = down_level_to_free + 1
 
     def free_memory_under_levels(self, hightest_down_level_to_free: int = 0):
         free_levels = min(hightest_down_level_to_free+1, len(self.rgb_image_list))
         if free_levels >= 1:
             for l in range(free_levels):
                 self.free_memory_at_level(l)
+        self.cur_best_level = hightest_down_level_to_free+1
 
 
 # this is not used

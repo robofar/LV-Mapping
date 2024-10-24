@@ -11,52 +11,55 @@ process:
   vox_down_m: 0.08
 sampler:
   surface_sample_range_m: 0.25
-  surface_sample_n: 4
+  surface_sample_n: 3
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2 
 neuralpoints:
-  voxel_size_m: 0.2
+  voxel_size_m: 0.25
   search_alpha: 0.8
-  query_nn_k: 8
+  query_nn_k: 6
   feature_dim: 32
   color_feature_dim: 16
+  weighted_first: True
+decoder:
+  freeze_after_frame: 30
 loss:
   sigma_sigmoid_m: 0.08
+  weight_color: 0.1
   loss_weight_on: True
   dist_weight_scale: 0.8
+  ekional_loss_on: True
+  weight_e: 0.5
   # numerical_grad_on: True
 gs:
   monodepth_on: False # True
   exposure_correction_on: True
+  learn_color_residual: True
   view_concat_on: True
+  dist_concat_on: False
   gs_iters: 20 # 100 larger tends to have good results
-  n_gaussian: 8
-  gaussian_bs_ratio: 4.0
+  gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2 # 2
-  img_pool_size: 15 # 15
-  eval_on: False
-  img_test_pool_size: 0
-  gs_down_rate: 1
+  img_pool_size: 20 # 15
+  gs_down_rate: 2
   gs_vis_down_rate: 1
-  # lambda_ssim: 0.0
   inverse_depth_loss: True
   lambda_depth: 10.0 # 10.0
   # lambda_normal_depth: 0.05
   # lambda_normal_smooth: 0.1
   # lambda_distort: 0.0
-  lambda_mono_normal: 0.01
+  # lambda_mono_normal: 0.01
   # lambda_isotropic: 1.0
   # lambda_area: 1e-2 # 1e-3
   lambda_opacity: 2e-3 # 5e-4 # 1e-3 # 5e-4 # increase to have more valid gaussians
-  # lambda_sky: 1e-3
-  lambda_sdf_cons: 0.1
-  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss # 0.1
-  lambda_sdf: 0.2
+  lambda_sdf_cons: 0.2
+  lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss # 0.1
+  lambda_sdf: 1.0
 continual:
   batch_size_new_sample: 3000
   pool_capacity: 1e7
 tracker:
-  photo_loss: True
+  # photo_loss: True
   source_vox_down_m: 0.4
   iter_n: 50
 pgo:
@@ -65,9 +68,9 @@ pgo:
   min_loop_travel_ratio: 3.0
 optimizer: # mapper
   iters: 15
-  batch_size: 16384
+  batch_size: 8192
 eval:
-  o3d_vis_on: False # visualize the mapping or not
+  o3d_vis_on: True # visualize the mapping or not
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mesh_min_nn: 18
-  sensor_cad_path: ./cad/livox.ply
+  mesh_min_nn: 15
+  # sensor_cad_path: ./cad/livox.ply

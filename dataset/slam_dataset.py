@@ -37,6 +37,7 @@ from utils.tools import (
     transform_torch,
     voxel_down_sample_torch,
     project_points_to_cam_torch,
+    rotmat_to_degree_np
 )
 from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
@@ -165,6 +166,9 @@ class SLAMDataset():
 
         self.travel_dist = np.zeros(max_frame_number) 
         self.accu_travel_dist_for_keyframe: float = 0.0
+        self.accu_travel_degree_for_keyframe: float = 0.0
+
+        self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
         
         self.time_table = []
 
@@ -839,6 +843,7 @@ class SLAMDataset():
 
         self.last_odom_tran = inv(self.last_pose_ref) @ self.cur_pose_ref  # T_last<-cur
 
+        # here we consider both rot and tran
         if tranmat_close_to_identity(
             self.last_odom_tran, 1e-3, self.config.voxel_size_m * 0.1
         ):
@@ -861,6 +866,8 @@ class SLAMDataset():
             self.odom_poses[cur_frame_id] = cur_odom_pose
 
         cur_frame_travel_dist = np.linalg.norm(self.last_odom_tran[:3, 3])
+        cur_frame_travel_degree = np.abs(rotmat_to_degree_np(self.last_odom_tran[:3, :3])) # 0-180
+
         if (
             cur_frame_travel_dist > self.config.surface_sample_range_m * 40.0
         ):  # too large translation in one frame --> lose track
@@ -870,6 +877,7 @@ class SLAMDataset():
 
         # for GS training keyframes
         self.accu_travel_dist_for_keyframe += cur_frame_travel_dist
+        self.accu_travel_degree_for_keyframe += cur_frame_travel_degree
 
         accu_travel_dist = self.travel_dist[cur_frame_id-1] + cur_frame_travel_dist
         self.travel_dist[cur_frame_id] = accu_travel_dist

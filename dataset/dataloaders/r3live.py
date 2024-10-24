@@ -57,7 +57,7 @@ class R3LiveDataset:
     def __init__(self, data_dir, *_, **__):
         
         self.load_img = False # default
-        self.use_only_colorized_points = True
+        self.use_only_colorized_points = False
 
         self.livox_dir = os.path.join(data_dir, "livox_points", "data/")
         self.scan_files = sorted(glob.glob(self.livox_dir + "*.bin"))
@@ -80,6 +80,7 @@ class R3LiveDataset:
 
         self.K_mats = {}
         self.T_c_l_mats = {}
+        self.dist_coeffs = {}
        
         self.fx = 863.4241
         self.fy = 863.4171
@@ -100,6 +101,8 @@ class R3LiveDataset:
                                       cy=self.cy)
 
         self.K_mats[self.main_cam_name] = K_mat
+
+        self.dist_coeffs[self.main_cam_name] = np.array([-0.1080, 0.1050, -1.2872e-04, 5.7923e-05, -0.0222])
 
         T_l_c = np.eye(4)
         T_l_c[:3,:3] = np.array([[-0.00113207, -0.0158688, 0.999873],
@@ -133,13 +136,26 @@ class R3LiveDataset:
         point_count = np.shape(points)[0] # 24000 for livox
         point_ts = np.arange(point_count)*1.0/point_count
 
-        if self.load_img: # default
-            img = self.read_img(self.img_files[idx]) # just for vis here
+        if self.load_img: # default on
 
+            cur_img_file = self.img_files[idx]
+
+            img_file_split = cur_img_file.split("/")
+            img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+            cur_img_file_distorted = "/".join(img_file_split)
+
+            if os.path.exists(cur_img_file_distorted):
+                undistort_on = False # if already exists the undistorted file, then use it
+                cur_img_file = cur_img_file_distorted
+            else:
+                undistort_on = True # otherwise, do the distortion and save the file
+
+            img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[self.main_cam_name], self.dist_coeffs[self.main_cam_name]) 
+        
             points_color = np.ones_like(points)
 
             # project to the image plane to get the corresponding color
-            points_color, depth_map = self.project_points_to_cam(points, points_color, img, 
+            points_color, depth_map = self.project_points_to_cam(points, points_color, img_cam, 
                 self.T_c_l_mats[self.main_cam_name], self.K_mats[self.main_cam_name])
 
             if self.use_only_colorized_points:
@@ -151,7 +167,7 @@ class R3LiveDataset:
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_color[:,:3]))
 
-            img_dict = {self.main_cam_name: img}
+            img_dict = {self.main_cam_name: img_cam}
             depth_img_dict = {self.main_cam_name: depth_map}
 
             frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
@@ -202,11 +218,23 @@ class R3LiveDataset:
         points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4))[:, :4].astype(np.float64)
         return points # N, 4
     
-    def read_img(self, img_file: str):
+    def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
+        
         img = cv2.imread(img_file)
+
+        # apply undistortion:
+        if undistort_on and K_mat is not None and dist_coeffs is not None:
+            img = cv2.undistort(img, K_mat, dist_coeffs)
+            img_file_split = img_file.split("/")
+            img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+            out_img_file = "/".join(img_file_split)
+
+            cv2.imwrite(out_img_file, img)
+        
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         return img
+
 
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         

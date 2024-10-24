@@ -127,21 +127,29 @@ class VisPacket:
 
             self.local_gaussian_count = self.gaussian_xyz.shape[0]
 
-        # self.keyframe = keyframe
-        self.current_frames = current_frames
-        self.cam_list = []
+        self.current_frames = current_frames # as Dict, key use cam_id
+        
+        self.keyframes = keyframes # as Dict, key use uid
 
+        self.cam_list = {}
+        if current_frames is not None:
+            self.cam_list = list(current_frames.keys())            
+
+        self.keyframe_list = {}
+        if keyframes is not None:
+            self.keyframe_list = list(keyframes.keys())
+
+        # for cur frames and also for the train frames
         self.gtcolor = {}
         self.gtdepth = {}
         self.gtnormal = {}
 
         # add camera frames, set gtcolor, gtdepth, gtnormal
-        self.add_current_frames(current_frames, img_down_rate)
-        
-        self.keyframes = keyframes
-        self.finish = finish
-        self.kf_window = kf_window
+        self.add_cam_frames(current_frames, img_down_rate)
 
+        # # add train frames, better to also set the gtcolor, gtdepth, gtnormal
+        self.add_cam_frames(keyframes, img_down_rate) # could take too much memory (FIXME)
+        
         self.add_scan(current_pointcloud_xyz, current_pointcloud_rgb)
 
         self.add_mesh(mesh_verts, mesh_faces, mesh_verts_rgb)
@@ -156,21 +164,27 @@ class VisPacket:
         self.sdf_pool_xyz = None
         self.sdf_pool_rgb = None
 
+        self.kf_window = kf_window
 
-    def add_current_frames(self, current_frames, img_down_rate: int =0):
+        self.finish = finish
 
-        if current_frames is not None:
-            self.cam_list = list(current_frames.keys())
+
+    def add_cam_frames(self, cam_frames, img_down_rate: int = 0):
+
+        if cam_frames is not None:
             
-            for cam in self.cam_list:
-                current_frame = current_frames[cam]
+            for cam in list(cam_frames.keys()):
+
+                current_frame = cam_frames[cam]
+
+                cur_img_down_rate = max(img_down_rate, current_frame.cur_best_level)
                 
-                if current_frame.rgb_image_list[img_down_rate] is not None:
+                if current_frame.rgb_image_list[cur_img_down_rate] is not None:
                     
-                    gtcolor = current_frame.rgb_image_list[img_down_rate]
+                    gtcolor = current_frame.rgb_image_list[cur_img_down_rate]
                     if current_frame.sky_mask_on:
                         # mask the sky part
-                        cur_sky_mask = current_frame.sky_mask_list[img_down_rate] # still torch
+                        cur_sky_mask = current_frame.sky_mask_list[cur_img_down_rate] # still torch
                         cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
                         gtcolor[cur_sky_mask_used] = 1.0
                     
@@ -183,14 +197,14 @@ class VisPacket:
                     self.gtcolor[cam] = gtcolor
                     
                     if current_frame.depth_on:
-                        gtdepth = current_frame.depth_image_list[img_down_rate]
+                        gtdepth = current_frame.depth_image_list[cur_img_down_rate]
                         gtdepth = self.resize_img(gtdepth, is_sparse=True)
                     else:
                         gtdepth = None
                     self.gtdepth[cam] = gtdepth
                     
                     if current_frame.mono_normal_on:
-                        gtnormal = current_frame.normal_img_list[img_down_rate]
+                        gtnormal = current_frame.normal_img_list[cur_img_down_rate]
                         if current_frame.sky_mask_on:
                             # mask the sky part
                             gtnormal[cur_sky_mask_used] = 0.0

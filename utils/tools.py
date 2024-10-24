@@ -255,8 +255,8 @@ def setup_optimizer(
             )
 
     
-    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
+    lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
     feat_opt_dict = {
@@ -344,7 +344,7 @@ def unfreeze_model(model: nn.Module):
 
 def freeze_decoders(mlps, config):
     if not config.silence:
-        print("Freeze the decoder")
+        print("Freeze the decoders")
     
     keys = list(mlps.keys())
     for key in keys:
@@ -612,6 +612,19 @@ def quat_inverse(quat: torch.tensor):
     quat_inv = torch.stack((w, -x, -y, -z), dim=1)
     
     return quat_inv
+
+def rotmat_to_degree_np(Rmat):
+    # Ensure R is a valid rotation matrix
+    # assert np.allclose(np.dot(Rmat, Rmat.T), np.eye(3))  # R * R.T should be identity
+    # assert np.isclose(np.linalg.det(Rmat), 1.0)       # Determinant should be 1
+    
+    # Compute the rotation angle in radians using the trace of the matrix
+    angle_rad = np.arccos((np.trace(Rmat) - 1) / 2.0)
+    
+    # Convert to degrees
+    angle_deg = np.degrees(angle_rad)
+    
+    return angle_deg
 
 # def vec2quat(vec: torch.tensor):
 #     v = v / v.norm()

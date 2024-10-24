@@ -110,7 +110,7 @@ class Config:
         # If True may lead to larger memory consumption, but is more robust while the reconstruction.
         self.from_sample_points: bool = True
         self.from_all_samples: bool = False  # even use the freespace samples (for better ESDF mapping at a cost of larger memory consumption)
-        self.map_surface_ratio: float = 0.5 # ratio * surface sample std, use those samples for initializing neural points
+        self.map_surface_ratio: float = 0.2 # FIXME # ratio * surface sample std, use those samples for initializing neural points
 
         # local map
         self.diff_ts_local: float = 400.0 # deprecated (use travel distance instead)
@@ -236,6 +236,7 @@ class Config:
         # gs keyframes
         self.gs_keyframe_interval: int = 2
         self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
+        self.gs_keyframe_accu_travel_degree: float = 10.0 # unit: degree
 
         self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
         self.long_term_train_down: bool = True # downsample the training image for long-term memory, faster, vague supervision in long term memory
@@ -489,10 +490,14 @@ class Config:
             self.geo_mlp_level = config_args["decoder"].get("mlp_level", self.geo_mlp_level)
             # dimension of the mlp's hidden layer
             self.geo_mlp_hidden_dim = config_args["decoder"].get("mlp_hidden_dim", self.geo_mlp_hidden_dim) 
+            
+            self.gs_mlp_level = config_args["decoder"].get("gs_mlp_level", self.gs_mlp_level)
+            self.gs_mlp_hidden_dim = config_args["decoder"].get("gs_mlp_hidden_dim", self.gs_mlp_hidden_dim)
+            
             # freeze the decoder after runing for x frames (used for incremental mapping to avoid forgeting)
             self.freeze_after_frame = config_args["decoder"].get("freeze_after_frame", self.freeze_after_frame)
 
-        # TODO, now set to the same as geo mlp, but actually can be different
+        # FIXME, now set to the same as geo mlp, but actually can be different
         self.color_mlp_level = self.geo_mlp_level
         self.color_mlp_hidden_dim = self.geo_mlp_hidden_dim
         self.sem_mlp_level = self.geo_mlp_level
@@ -613,8 +618,9 @@ class Config:
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
-            self.gs_keyframe_accu_travel_dist = config_args["gs"].get("gs_keyframe_accu_dist", self.max_range*0.02) # default value set to be self.max_range*0.02
-            
+            self.gs_keyframe_accu_travel_dist = config_args["gs"].get("gs_keyframe_accu_dist", self.max_range*0.02) # default value set to be self.max_range*0.03
+            self.gs_keyframe_accu_travel_degree = config_args["gs"].get("gs_keyframe_accu_degree", self.gs_keyframe_accu_travel_degree)
+
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
 
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)

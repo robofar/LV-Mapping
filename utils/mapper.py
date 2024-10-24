@@ -136,8 +136,7 @@ class Mapper:
         self.test_cam_uid = [] 
 
         # used training views in this frame # for visualization
-        self.cur_frame_train_views = []
-
+        self.cur_frame_train_views = {}
 
         # current exposure parameters for each camera
         self.cams_exposure_ab = {}
@@ -612,15 +611,20 @@ class Mapper:
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
         # maybe also consider the accumulated rotation (TODO)
-        keyframe_on = (frame_id == 0) or (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist)
+        keyframe_on = (frame_id == 0) or \
+            (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist) or \
+            (self.dataset.accu_travel_degree_for_keyframe > self.config.gs_keyframe_accu_travel_degree)
 
         # training views
         if keyframe_on and frame_id % self.config.gs_keyframe_interval==0:
             
+            self.dataset.gs_train_frame_count += 1
+            self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
+            self.dataset.accu_travel_degree_for_keyframe = 0.0 # set back to zero
+
             if not self.silence:
                 print("New training frame added for frame {}".format(frame_id))
 
-            self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
             # better to use the newly added gaussians ratio (FIXME)
             # move oldest short-term memory to long-term memory
             while len(self.cam_short_term_train_pool) > self.config.img_pool_size:
@@ -638,7 +642,7 @@ class Mapper:
                 self.cam_short_term_train_pool.append(cur_view_cam)
                 self.train_cam_uid.append(cur_view_cam.uid)
 
-            long_term_pool_size = 3*self.config.img_pool_size # TODO, add to config
+            long_term_pool_size = 2*self.config.img_pool_size # TODO, add to config
             if len(self.cam_long_term_train_pool) > long_term_pool_size:
                 self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
                 # make sure the memory are freed
@@ -1073,7 +1077,7 @@ class Mapper:
             # TODO: add camera exposures # add all cams in the train pool
         )
 
-        self.cur_frame_train_views = [] # set back to empty
+        self.cur_frame_train_views = {} # set back to empty
 
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
@@ -1222,8 +1226,9 @@ class Mapper:
 
                 if render_pkg is None:
                     continue
-
-                self.cur_frame_train_views.append(viewpoint_cam)
+                
+                # record the cam views used for training at this timestep
+                self.cur_frame_train_views[viewpoint_cam.uid] = viewpoint_cam
 
                 T3 = get_time()
 
@@ -1300,9 +1305,9 @@ class Mapper:
 
                 # special issue for ipb car dataset (rear camera, remove the ego-car part for loss calculation)
                 if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
-                    pixel_h_used = int(920/1024*gt_depth_image.shape[1])
+                    pixel_h_used = int(910/1024*gt_depth_image.shape[1])
                 elif cam_name == "front":
-                    pixel_h_used = int(1008/1024*gt_depth_image.shape[1])
+                    pixel_h_used = int(1000/1024*gt_depth_image.shape[1])
                 else:  
                     pixel_h_used = -1
 

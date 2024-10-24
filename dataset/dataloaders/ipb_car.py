@@ -124,10 +124,11 @@ class IPBCarDataset:
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
 
         # read reference poses (by Louis)
-        if os.path.exists(os.path.join(data_dir, "poses")):
-            self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy")) # is this the pose in LiDAR frame? (ask louis)
-        
-        # print(self.gt_poses)
+        poses_file = os.path.join(data_dir, "poses.txt")
+        if os.path.exists(poses_file):
+            self.gt_poses = self.read_kitti_format_poses(poses_file)
+            # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
+            # print("gt poses for {} frames".format(np.shape(self.gt_poses)[0]))
         
         # main cam parameters
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
@@ -168,6 +169,9 @@ class IPBCarDataset:
         points = points[valid_mask]
         point_ts = point_ts[valid_mask]
         
+        lidar_h_point_count = np.shape(points)[0]
+        # from 0 to lidar_h_point_count-1: lidar_h
+        # from lidar_h_point_count to end: lidar_v
 
         # TODO: it's not correct to firstly combine the two point clouds are then apply undistortion
         # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
@@ -291,10 +295,10 @@ class IPBCarDataset:
         # print(img_associated_idx)
         return img_ts_associated, img_associated_idx        
 
-    # read bin format
-    def read_point_cloud(self, scan_file: str):
-        points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4)).astype(np.float64)
-        return points[:, :4] # N, 4
+    # # read bin format
+    # def read_point_cloud(self, scan_file: str):
+    #     points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4)).astype(np.float64)
+    #     return points[:, :4] # N, 4
     
     # read ply format
     def read_point_cloud_ply(self, scan_file: str):
@@ -334,7 +338,7 @@ class IPBCarDataset:
         if undistort_on and K_mat is not None and dist_coeffs is not None:
             img = cv2.undistort(img, K_mat, dist_coeffs)
             img_file_split = img_file.split("/")
-            img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+            img_file_split[-2] = "data_undistorted" # data --> data_undistorted # ugly fix here
             out_img_file = "/".join(img_file_split)
             # print(out_img_file)
 
@@ -432,3 +436,28 @@ class IPBCarDataset:
         if ndim==2:
             u = u[0]; v=v[0]; depth=depth[0]
         return u, v, depth
+
+
+    def read_kitti_format_poses(self, filename: str):
+        """
+        read pose file (with the kitti format)
+        returns -> np.array, transformation before calibration transformation
+        if the format is incorrect, return None
+        """
+        poses = []
+        with open(filename, 'r') as file:            
+            for line in file:
+                values = line.strip().split()
+                if len(values) < 12: # FIXME: > 12 means maybe it's a 4x4 matrix
+                    print('Not a kitti format pose file')
+                    return None
+
+                values = [float(value) for value in values]
+                pose = np.zeros((4, 4))
+                pose[0, 0:4] = values[0:4]
+                pose[1, 0:4] = values[4:8]
+                pose[2, 0:4] = values[8:12]
+                pose[3, 3] = 1.0
+                poses.append(pose)
+        
+        return np.array(poses)

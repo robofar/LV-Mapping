@@ -263,6 +263,8 @@ class SLAM_GUI:
         viewpoint_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         vp_subtile1 = gui.Vert(0.5 * em, gui.Margins(margin))
         vp_subtile2 = gui.Vert(0.5 * em, gui.Margins(margin))
+        vp_subtile3 = gui.Vert(0.5 * em, gui.Margins(margin))
+        vp_subtile4 = gui.Vert(0.5 * em, gui.Margins(margin))
         
         # h = gui.Horiz(0.25 * em, gui.Margins(margin)) 
         # self._arcball_button = gui.Button("Arcball")
@@ -299,24 +301,35 @@ class SLAM_GUI:
         
         vp_subtile1.add_child(chbox_tile)
 
-        ##Combo panels
+        ##Combo panels for current frames
         combo_tile = gui.Vert(0.5 * em, gui.Margins(margin))
-
-        ## Jump to the camera viewpoint
-        # self.combo_kf = gui.Combobox()
-        # self.combo_kf.set_on_selection_changed(self._on_combo_kf)
-        # combo_tile.add_child(gui.Label("Camera list"))
-        # combo_tile.add_child(self.combo_kf)
-        # vp_subtile2.add_child(combo_tile)
 
         self.combo_cams = gui.Combobox()
         self.combo_cams.set_on_selection_changed(self._on_combo_cams)
-        combo_tile.add_child(gui.Label("Camera list"))
+        combo_tile.add_child(gui.Label("Current cameras"))
         combo_tile.add_child(self.combo_cams)
         vp_subtile2.add_child(combo_tile)
 
+        ##Combo panels for train frames
+        combo_tile2 = gui.Vert(0.5 * em, gui.Margins(margin))
+        self.combo_train_cams = gui.Combobox()
+        self.combo_train_cams.set_on_selection_changed(self._on_combo_train_cams)
+        combo_tile2.add_child(gui.Label("Train cameras"))
+        combo_tile2.add_child(self.combo_train_cams)
+        vp_subtile3.add_child(combo_tile2)
+
+        ##Combo panels for preset views # TODO
+        combo_tile3 = gui.Vert(0.5 * em, gui.Margins(margin))
+        self.combo_preset_cams = gui.Combobox()
+        # self.combo_preset_cams.set_on_selection_changed(self._on_combo_preset_cams) 
+        combo_tile3.add_child(gui.Label("Preset views"))
+        combo_tile3.add_child(self.combo_preset_cams)
+        vp_subtile4.add_child(combo_tile3)
+
         viewpoint_tile.add_child(vp_subtile1)
         viewpoint_tile.add_child(vp_subtile2)
+        viewpoint_tile.add_child(vp_subtile3)
+        viewpoint_tile.add_child(vp_subtile4)
         self.panel.add_child(viewpoint_tile)
 
         self.panel.add_child(gui.Label("3D Objects"))
@@ -584,13 +597,15 @@ class SLAM_GUI:
         # only the cam geometry
         # img are not added
 
+        # here keyframe are actually the train frames
+
         W2C = getWorld2View2(camera.R, camera.T)
         W2C = W2C.cpu().numpy()
         C2W = np.linalg.inv(W2C)
         frustum = create_frustum(C2W, color, size=size)
         if name not in self.keyframe_dict.keys():
             frustum = create_frustum(C2W, color, size=size)
-            # self.combo_cams.add_item(name) # TODO
+            self.combo_train_cams.add_item(name) # TODO
             self.keyframe_dict[name] = frustum
             self.widget3d.scene.add_geometry(name, frustum.line_set, self.train_frame_render) # add camera frame to visualizer
         frustum = self.keyframe_dict[name]
@@ -651,6 +666,17 @@ class SLAM_GUI:
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
         self.update_img_show(new_val)
+
+    def _on_combo_train_cams(self, new_val, new_idx):
+        frustum = self.keyframe_dict[new_val]
+        viewpoint = (
+                    frustum.view_dir_behind
+                    if self.staybehind_chbox.checked
+                    else frustum.view_dir
+                )
+        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+
+        self.update_img_show(new_val, from_cur_frame=False)
 
     # def _on_gs_chbox(self, is_checked, name=None):
     #     names = self.frustum_dict.keys() if name is None else [name]
@@ -803,8 +829,7 @@ class SLAM_GUI:
         self.q_vis2main.put(packet)
 
     def _on_screenshot_btn(self):
-        if self.render_img is None:
-            return
+        
         dt = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         save_dir = self.save_path / "screenshots" / dt
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -816,6 +841,9 @@ class SLAM_GUI:
         img = np.asarray(app.render_to_image(self.widget3d.scene, width, height))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cv2.imwrite(f"{filename}-gui.png", img)
+
+        if self.render_img is None:
+            return
         img = np.asarray(self.render_img)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cv2.imwrite(f"{filename}.png", img)
@@ -934,25 +962,27 @@ class SLAM_GUI:
                     )
                     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
-
-            # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
-            selected_cam = self.combo_cams.selected_text
-            self.update_img_show(selected_cam)
+                    # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
+                    self.update_img_show(selected_cam)            
 
             if gaussian_packet.keyframes is not None: # as Camera class
                 
+                # remove old stuff from last frame
                 for keyframe_name in list(self.keyframe_dict.keys()): 
                     self.widget3d.scene.remove_geometry(keyframe_name)
 
                 self.keyframe_dict = {} # set back to empty
+                self.combo_train_cams.clear_items() # set back to empty
 
-                for cam in gaussian_packet.keyframes:
-                    if cam.in_long_term_memory:
+                # add new stuff from this frame
+                for cam in gaussian_packet.keyframe_list:
+                    cur_keyframe =  gaussian_packet.keyframes[cam]
+                    if cur_keyframe.in_long_term_memory:
                         frustum_color = [0.5, 0.5, 0]
                     else:
                         frustum_color = [1, 1, 0]
                     frustum = self.add_keyframe(
-                        cam, name=cam.uid, color=frustum_color, size=frustum_size
+                        cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=frustum_size
                     ) 
 
             # TODO: add evaluation online, visualize the error map here
@@ -1062,6 +1092,7 @@ class SLAM_GUI:
 
 
     def update_img_show(self, cam_name, 
+                        from_cur_frame: bool = True,
                         online_eval_on: bool = True, 
                         show_depth_error: bool = False):
 
@@ -1099,7 +1130,7 @@ class SLAM_GUI:
             self.in_normal_widget.update_image(normal_color_o3d)
 
         if online_eval_on:
-            render_results = self.render_cur_view(cam_name)
+            render_results = self.render_cur_view(cam_name, from_cur_frame)
 
             if render_results is not None:
 
@@ -1149,18 +1180,23 @@ class SLAM_GUI:
                     #     render_img = o3d.geometry.Image(depth_color)
 
 
-    def render_cur_view(self, cam_name):
+    def render_cur_view(self, cam_name, from_cur_frame: bool = True):
 
         if cam_name not in list(self.gaussian_cur.gtcolor.keys()):
             return None
 
-        cur_frame_cam_img = self.gaussian_cur.current_frames[cam_name]
+        if from_cur_frame:
+            cur_frame_cam = self.gaussian_cur.current_frames[cam_name]
+        else:
+            cur_frame_cam = self.gaussian_cur.keyframes[cam_name]
 
-        cur_frame_rendering_data = render(cur_frame_cam_img, 
+        down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
+
+        cur_frame_rendering_data = render(cur_frame_cam, 
             None, self.gaussian_cur.neural_points_data, 
             self.decoders, self.cur_base_gaussians, self.background,
             scaling_modifier=self.scaling_slider.double_value, 
-            down_rate=self.config.gs_vis_down_rate, 
+            down_rate=down_rate_used, 
             dist_concat_on=self.config.dist_concat_on, 
             view_concat_on=self.config.view_concat_on, 
             correct_exposure=False,

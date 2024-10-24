@@ -380,11 +380,15 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if config.gs_on:
             # when train gs we do not do SDF training seperately except for the first frame
             cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0 
+            frame_count_for_freeze_check = dataset.gs_train_frame_count
         else:
             cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
+            frame_count_for_freeze_check = frame_id
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
-        if frame_id == config.freeze_after_frame: # freeze the decoder after certain frame 
+            
+        # freeze the decoder after certain frame 
+        if not config.decoder_freezed and (frame_count_for_freeze_check == config.freeze_after_frame):
             freeze_decoders(mlp_dict, config)
             config.decoder_freezed = True
 
@@ -436,6 +440,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # V: Mesh reconstruction and visualization
         cur_mesh = None
         cur_sdf_slice = None
+        pool_pcd = None
 
         # set the point cloud for visualization
         dataset.update_o3d_map()

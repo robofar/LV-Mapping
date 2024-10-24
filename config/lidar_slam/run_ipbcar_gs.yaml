@@ -6,10 +6,11 @@ setting:
   color_channel: 3
   color_map_on: True
 process:
-  min_range_m: 2.5
+  min_range_m: 3.0
   max_range_m: 60.0
   vox_down_m: 0.10
   estimate_normal: False
+  dynamic_sdf_ratio_thre: 1.0
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 2
@@ -25,7 +26,7 @@ neuralpoints:
   weighted_first: False
   # map_surface_ratio: 1.0 # x surface_sample_range_m would be added to the map 
 decoder:
-  freeze_after_frame: 40
+  freeze_after_frame: 30
 loss:
   sigma_sigmoid_m: 0.1
   weight_color: 0.1
@@ -48,7 +49,7 @@ gs:
   exposure_correction_on: False
   learn_color_residual: False
   view_concat_on: True
-  dist_concat_on: False
+  dist_concat_on: False # TODO: check
   gs_iters: 100 # 50
   gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2
@@ -59,8 +60,9 @@ gs:
   inverse_depth_loss: True
   lambda_depth: 20.0 # 20.0
   lambda_opacity: 1e-3 # 1e-3 # increase to have more valid gaussians
+  # lambda_isotropic: 1.0
   # lambda_area: 1e-4 # 1e-3
-  lambda_mono_normal: 0.01
+  # lambda_mono_normal: 0.01
   # lambda_normal_depth: 0.1 # check this
   # consist_normal_fixed: True
   lambda_sdf_cons: 0.2

@@ -557,7 +557,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # ------------------
     # Scale (view dependent or not) ? # TODO
-    max_gaussian_scale = 2.0 * neural_point_resolution
+    max_gaussian_scale = 4.0 * neural_point_resolution
     dist_ratio = 0.0
     if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1
