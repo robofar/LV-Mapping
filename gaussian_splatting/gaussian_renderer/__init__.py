@@ -54,6 +54,7 @@ def render(viewpoint_camera: CamImage,
            bg_color: torch.Tensor, 
            scaling_modifier: float = 1.0, 
            down_rate: int = 0, 
+           min_visible_neural_point_ratio: float = 0.0,
            verbose: bool = False,
            replay_mode: bool = False,
            dist_concat_on: bool = False, 
@@ -191,7 +192,7 @@ def render(viewpoint_camera: CamImage,
 
         visible_neural_point_ratio = visible_neural_point_count / neural_point_count
 
-        if visible_neural_point_ratio < 0.05 and replay_mode: # is 0.05 too small?
+        if visible_neural_point_ratio < min_visible_neural_point_ratio and replay_mode: # is 0.05 too small?
             print("Too small ratio of visible neural points, skip this frame ")
             return None
 

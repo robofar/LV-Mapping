@@ -37,11 +37,11 @@ python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ 
 ## Run on KITTI 360 dataset
 
 ```
-python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl --deskew
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti360 00 -i ./data/kitti360/ -vlg --deskew
 
-python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -dvl
+python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 00 -i ./data/kitti360/ -vlg
 
-python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -dvl
+python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/kitti360/ -vlg
 ```
 
 **pass**
@@ -60,7 +60,7 @@ Used by PVG, frame 380 to 431 on sequence 01
 ## Run on VKITTI synthetic dataset
 
 ```
-python pings.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitti2 -dvl
+python pings.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitti2 -vlg
 
 ```
 
@@ -70,10 +70,10 @@ python pings.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitt
 
 ## Run on Nuscenes dataset
 ```
-python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -vlg
 
 
-python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -dvl
+python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -vlg
 
 ```
 
@@ -161,14 +161,14 @@ python pings.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/h
 ## Run on VBR dataset
 
 ```
-python pings.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_slam/spagna/spagna_train0/kitti_format/ -dvl
+python pings.py ./config/lidar_slam/run_vbr_gs.yaml vbr -i ./data/vbr/vbr_slam/spagna/spagna_train0/kitti_format/ -vlg
 ```
 **pass**
 
 ## Run on TUM RGBD dataset
 
 ```
-python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -dvl
+python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_desk -i ./data/TUM/ -vlg
 
 rgbd_dataset_freiburg2_xyz
 
@@ -180,7 +180,7 @@ python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_lo
 
 ## Run on Bonn RGBD dataset
 ```
-python pings.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgbd_bonn_static/ -dvl
+python pings.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgbd_bonn_static/ -vlg
 ```
 
 **pass**
@@ -188,9 +188,9 @@ python pings.py ./config/rgbd_slam/run_bonn_gs.yaml bonn -i ./data/bonn_rgbd/rgb
 ## Run on Replica RGBD dataset
 
 ```
-python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl
+python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -vlg
 
-python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -dvl --range 0 2000 5
+python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica/room0 -vlg --range 0 2000 5
 
 ```
 **pass**
@@ -198,7 +198,7 @@ python pings.py ./config/rgbd_slam/run_replica_gs.yaml replica -i ./data/Replica
 ## Run on Neural RGBD dataset
 
 ```
-python pings.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/neural_rgbd_data/breakfast_room/ -dvl 
+python pings.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/neural_rgbd_data/breakfast_room/ -vlg 
 ```
 
 **pass**
@@ -208,14 +208,14 @@ python pings.py ./config/rgbd_slam/run_neuralrgbd_gs.yaml neuralrgbd -i ./data/n
 provided by RTG-SLAM
 
 ```
-python pings.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel -dvl
+python pings.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel -vlg
 ```
 
 ## Run on CKA greenhouse dataset
 ```
-python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -dvl
+python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -vlg
 
-python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -dvl
+python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -vlg
 ```
 
 **pass**

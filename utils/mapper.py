@@ -136,7 +136,7 @@ class Mapper:
         self.test_cam_uid = [] 
 
         # used training views in this frame # for visualization
-        self.cur_frame_train_views = {}
+        self.cur_frame_train_views = None
 
         # current exposure parameters for each camera
         self.cams_exposure_ab = {}
@@ -641,6 +641,9 @@ class Mapper:
                 cur_view_cam.train_view = True
                 self.cam_short_term_train_pool.append(cur_view_cam)
                 self.train_cam_uid.append(cur_view_cam.uid)
+            
+            # range filter
+            self.cam_long_term_train_pool = [cam_long_term for cam_long_term in self.cam_long_term_train_pool if (torch.norm(self.used_poses[cam_long_term.frame_id,:3,3]-self.used_poses[frame_id,:3,3], 2) < self.config.sorrounding_map_radius)] 
 
             long_term_pool_size = 2*self.config.img_pool_size # TODO, add to config
             if len(self.cam_long_term_train_pool) > long_term_pool_size:
@@ -1218,6 +1221,7 @@ class Mapper:
 
                 render_pkg = render(viewpoint_cam, None, neural_points_data, 
                     self.decoders, sorrounding_spawn_results, background, down_rate=train_down_rate, 
+                    min_visible_neural_point_ratio=self.config.min_visible_neural_point_ratio,
                     replay_mode=is_replay_mode, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
@@ -1979,8 +1983,9 @@ class Mapper:
                 
                 self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
 
-                eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
-                # used_cam_name = self.dataset.cam_names
+                eval_cam_name = self.dataset.cam_names # use all the cams
+                # eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
+        
                 for cam_name in self.dataset.cam_names:
 
                     K_mat = self.dataset.K_mats[cam_name]

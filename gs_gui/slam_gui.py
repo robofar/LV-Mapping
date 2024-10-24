@@ -18,6 +18,7 @@ from OpenGL import GL as gl
 
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
+from gaussian_splatting.utils.image_utils import psnr
 from gs_gui.gl_render import util, util_gau
 from gs_gui.gl_render.render_ogl import OpenGLRenderer
 from gs_gui.gui_utils import (
@@ -72,7 +73,7 @@ class SLAM_GUI:
         if params_gui is not None:
             self.decoders = params_gui.decoders
             self.background = params_gui.background
-            self.init = True
+            # self.init = False
             self.q_main2vis = params_gui.q_main2vis
             self.q_vis2main = params_gui.q_vis2main
             self.config = params_gui.config
@@ -389,6 +390,7 @@ class SLAM_GUI:
         # self.sky_chbox.checked = False
         # self.sky_chbox.set_on_checked(self._on_sky_chbox)
         # chbox_tile_3dobj.add_child(self.sky_chbox)
+        # self.widget3d.scene.show_skybox(True) # does not work
 
         chbox_tile_3dobj_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
@@ -519,7 +521,21 @@ class SLAM_GUI:
         self.rendered_depth_widget = gui.ImageWidget()
         self.rendered_depth_error_widget = gui.ImageWidget()
 
-        tab_input.add_child(gui.Label("Input Color/Depth/Normal"))
+        tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
+        
+        view_info_tile = gui.Horiz(1.0 * em, gui.Margins(margin))
+
+        self.cur_view_info = gui.Label("Camera: ")
+        view_info_tile.add_child(self.cur_view_info)
+
+        self.cur_view_psnr_info = gui.Label("PSNR: ")
+        view_info_tile.add_child(self.cur_view_psnr_info)
+
+        self.cur_view_depthl1_info = gui.Label("Depth L1 (m): ")
+        view_info_tile.add_child(self.cur_view_depthl1_info)
+
+        tab_input.add_child(view_info_tile)
+        
         tab_input.add_child(self.in_rgb_widget)
 
         tab_input.add_child(self.rendered_rgb_widget)
@@ -889,8 +905,6 @@ class SLAM_GUI:
 
             self.gaussian_cur = gaussian_packet
 
-            self.init = True
-
             if gaussian_packet.frame_id is not None:
                 self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
                     
@@ -928,6 +942,8 @@ class SLAM_GUI:
                 if self.invalid_neural_point_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
                     self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
+
+                # FIXME
 
                 # show feature PCA color (TODO)
 
@@ -1078,7 +1094,15 @@ class SLAM_GUI:
                 if self.range_circle_chbox.checked: 
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
-    
+
+
+        # set up inital camera # no camera
+        if len(gaussian_packet.cam_list) == 0 and not self.init:
+            bounds = self.widget3d.scene.bounding_box
+            self.widget3d.setup_camera(60, bounds, bounds.get_center()) # field of view, bound, center
+
+        self.init = True
+
         if gaussian_packet.finish:
             print("Received terminate signal")
             # clean up the pipe
@@ -1104,8 +1128,8 @@ class SLAM_GUI:
             selected_gtcolor = selected_gtdepth = selected_gtnormal = None
 
         if selected_gtcolor is not None:
-            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) * 255
-            rgb_np = rgb.byte().permute(1, 2, 0).contiguous().cpu().numpy()
+            rgb = torch.clamp(selected_gtcolor, min=0, max=1.0) 
+            rgb_np = (rgb * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy()
             rgb_o3d = o3d.geometry.Image(rgb_np)
             self.in_rgb_widget.update_image(rgb_o3d)
 
@@ -1129,13 +1153,35 @@ class SLAM_GUI:
             normal_color_o3d = o3d.geometry.Image(normal_color)
             self.in_normal_widget.update_image(normal_color_o3d)
 
+        cur_psnr = None
+        cur_depthl1 = None
+
+        if from_cur_frame:
+            cur_frame_cam = self.gaussian_cur.current_frames[cam_name]
+        else:
+            cur_frame_cam = self.gaussian_cur.keyframes[cam_name]
+
+        down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
+
         if online_eval_on:
-            render_results = self.render_cur_view(cam_name, from_cur_frame)
+
+            with torch.no_grad():
+                render_results = render(cur_frame_cam, 
+                    None, self.gaussian_cur.neural_points_data, 
+                    self.decoders, self.cur_base_gaussians, self.background,
+                    scaling_modifier=self.scaling_slider.double_value, 
+                    down_rate=down_rate_used, 
+                    dist_concat_on=self.config.dist_concat_on, 
+                    view_concat_on=self.config.view_concat_on, 
+                    correct_exposure=False,
+                    learn_color_residual=self.config.learn_color_residual)
 
             if render_results is not None:
+                
+                rendered_rgb = torch.clamp(render_results["render"], min=0, max=1.0)
 
                 rendered_rgb_np = (
-                    (torch.clamp(render_results["render"], min=0, max=1.0) * 255)
+                    (rendered_rgb * 255)
                     .byte()
                     .permute(1, 2, 0)
                     .contiguous()
@@ -1145,22 +1191,26 @@ class SLAM_GUI:
                 rendered_rgb_o3d = o3d.geometry.Image(rendered_rgb_np)
                 self.rendered_rgb_widget.update_image(rendered_rgb_o3d)
 
-                if show_depth_error:
+                cur_psnr = psnr(rendered_rgb, rgb).mean().item()
 
-                    eval_depth_max = self.config.max_range
-                    eval_depth_min = self.config.min_range
-                    diff_depth_max_show = eval_depth_max * 0.05 # unit: m
+                eval_depth_max = self.config.max_range * 0.8
+                eval_depth_min = self.config.min_range
+                diff_depth_max_show = eval_depth_max * 0.05 # unit: m
 
-                    rendered_depth = cur_frame_rendering_data["surf_depth"]
-                    cur_gt_depth = cur_frame_cam_img.depth_image_list[self.config.gs_vis_down_rate]
-                    if rendered_depth is not None and cur_gt_depth is not None:
-                        
-                        depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
-                        diff_depth = torch.abs(rendered_depth - cur_gt_depth)
+                rendered_depth = render_results["surf_depth"]
+                cur_gt_depth = selected_gtdepth
+                if rendered_depth is not None and cur_gt_depth is not None:
+                    
+                    depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
+                    diff_depth = torch.abs(rendered_depth - cur_gt_depth)
+                    diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
+                    cur_depthl1 = np.mean(diff_depth_masked)
+
+                    if show_depth_error:
+
                         diff_depth[~depth_valid_mask] = 0.0
-
                         diff_depth_np = diff_depth.detach().cpu().numpy()
-
+                        
                         diff_depth_color_np = (colorize_depth_maps(diff_depth_np, 0.0, diff_depth_max_show, cmap="inferno_r")[0]*255.0).astype(np.uint8)
                         diff_depth_color_np = np.transpose(diff_depth_color_np, (1, 2, 0)) # H, W, 3
                         diff_depth_color_np = np.ascontiguousarray(diff_depth_color_np)
@@ -1171,13 +1221,19 @@ class SLAM_GUI:
                         diff_depth_o3d = o3d.geometry.Image(diff_depth_color_np)
 
                         self.rendered_depth_error_widget.update_image(diff_depth_o3d)
+        
+        if cur_frame_cam.train_view:
+            train_view_info = "train"
+        else:
+            train_view_info = "test"
 
-                    #     depth = depth.detach().cpu().numpy()
-                    #     # max_depth = np.max(depth)
-                    #     depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
-                    #     depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
-                    #     depth_color = np.ascontiguousarray(depth_color)
-                    #     render_img = o3d.geometry.Image(depth_color)
+        self.cur_view_info.text = "Camera: {} [{}]".format(cur_frame_cam.uid, train_view_info)
+        
+        if cur_psnr is not None:
+            self.cur_view_psnr_info.text = "PSNR: {:.3f}".format(cur_psnr)
+        
+        if cur_depthl1 is not None:
+            self.cur_view_depthl1_info.text = "Depth L1 (m): {:.3f}".format(cur_depthl1)
 
 
     def render_cur_view(self, cam_name, from_cur_frame: bool = True):
@@ -1192,15 +1248,16 @@ class SLAM_GUI:
 
         down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
-        cur_frame_rendering_data = render(cur_frame_cam, 
-            None, self.gaussian_cur.neural_points_data, 
-            self.decoders, self.cur_base_gaussians, self.background,
-            scaling_modifier=self.scaling_slider.double_value, 
-            down_rate=down_rate_used, 
-            dist_concat_on=self.config.dist_concat_on, 
-            view_concat_on=self.config.view_concat_on, 
-            correct_exposure=False,
-            learn_color_residual=self.config.learn_color_residual)
+        with torch.no_grad():
+            cur_frame_rendering_data = render(cur_frame_cam, 
+                None, self.gaussian_cur.neural_points_data, 
+                self.decoders, self.cur_base_gaussians, self.background,
+                scaling_modifier=self.scaling_slider.double_value, 
+                down_rate=down_rate_used, 
+                dist_concat_on=self.config.dist_concat_on, 
+                view_concat_on=self.config.view_concat_on, 
+                correct_exposure=False,
+                learn_color_residual=self.config.learn_color_residual)
 
         return cur_frame_rendering_data
 

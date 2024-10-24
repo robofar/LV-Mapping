@@ -247,6 +247,9 @@ class Config:
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
+        
+        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
+        
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
         self.lambda_ssim: float = 0.2 # weight for ssim
@@ -626,6 +629,8 @@ class Config:
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)
             self.gs_vis_down_rate = config_args["gs"].get("gs_vis_down_rate", self.gs_vis_down_rate)
+            self.min_visible_neural_point_ratio = config_args["gs"].get("min_visible_neural_point_ratio", self.min_visible_neural_point_ratio)
+            
             self.inverse_depth_loss = config_args["gs"].get("inverse_depth_loss", self.inverse_depth_loss)
             
             self.lambda_ssim= float(config_args["gs"].get("lambda_ssim", self.lambda_ssim)) # weight for ssim, set to zero for faster training

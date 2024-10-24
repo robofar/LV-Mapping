@@ -53,7 +53,7 @@ gs:
   gs_iters: 100 # 50
   gaussian_bs_ratio: 2.0
   gs_keyframe_interval: 2
-  img_pool_size: 40 # TODO
+  img_pool_size: 60 # TODO
   gs_down_rate: 1
   gs_vis_down_rate: 1
   # lambda_ssim: 0.0

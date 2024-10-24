@@ -70,6 +70,7 @@ parser.add_argument('--wandb_on', '-w', action='store_true', help='Turn on the w
 parser.add_argument('--save_map', '-s', action='store_true', help='Save the PIN map after SLAM')
 parser.add_argument('--save_mesh', '-m', action='store_true', help='Save the reconstructed mesh after SLAM')
 parser.add_argument('--save_merged_pc', '-p', action='store_true', help='Save the merged point cloud after SLAM')
+parser.add_argument('--gs_on', '-g', action='store_true', help='Turn on GS')
 parser.add_argument('--deskew', action='store_true', help='Try to deskew the LiDAR scans')
 
 args, unknown = parser.parse_known_args()
@@ -93,6 +94,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         config.silence = not args.log_on
         config.wandb_vis_on = args.wandb_on
         config.gs_vis_on = args.visualize
+        config.gs_on = args.gs_on # ADDED
         config.save_map = args.save_map
         config.save_mesh = args.save_mesh
         config.save_merged_pc = args.save_merged_pc
@@ -360,7 +362,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
-        dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
+        if config.gs_on:
+            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
@@ -386,7 +389,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             frame_count_for_freeze_check = frame_id
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
-            
+
         # freeze the decoder after certain frame 
         if not config.decoder_freezed and (frame_count_for_freeze_check == config.freeze_after_frame):
             freeze_decoders(mlp_dict, config)
