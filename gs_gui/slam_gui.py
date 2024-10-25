@@ -77,6 +77,9 @@ class SLAM_GUI:
             self.q_main2vis = params_gui.q_main2vis
             self.q_vis2main = params_gui.q_vis2main
             self.config = params_gui.config
+            self.gs_default_on = params_gui.gs_default_on
+            self.robot_default_on = params_gui.robot_default_on
+            self.neural_point_default_on = params_gui.neural_point_default_on
         
         if self.config is not None:
             setup_seed(self.config.seed)
@@ -247,19 +250,24 @@ class SLAM_GUI:
         margin = 0.5 * em
         
         self.panel = gui.Vert(0.5 * em, gui.Margins(margin))
+
+        # tabs.add_tab("Setting", tab_info) # FIXME
+
+        slider_line = gui.Horiz(1.0 * em, gui.Margins(margin))
         
-        self.button = gui.ToggleSwitch("Resume / Pause SLAM")
-        self.button.is_on = True
-        self.button.set_on_clicked(self._on_button)
-        self.panel.add_child(self.button)
+        # these are not button, but rather switch
+        self.slider_slam = gui.ToggleSwitch("Resume / Pause SLAM")
+        self.slider_slam.is_on = True
+        self.slider_slam.set_on_clicked(self._on_slam_slider)
+        slider_line.add_child(self.slider_slam)
 
-        self.button_render = gui.ToggleSwitch("Resume / Pause Rendering")
-        self.button_render.is_on = True # default on
-        # self.button_render.set_on_clicked(self._on_button_render)
-        self.panel.add_child(self.button_render)
+        self.slider_render = gui.ToggleSwitch("Resume / Pause Rendering")
+        self.slider_render.is_on = True # default on
+        slider_line.add_child(self.slider_render)
 
+        self.panel.add_child(slider_line)
 
-        self.panel.add_child(gui.Label("Viewpoint Options"))
+        # self.panel.add_child(gui.Label("Viewpoint Options"))
 
         viewpoint_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         vp_subtile1 = gui.Vert(0.5 * em, gui.Margins(margin))
@@ -327,10 +335,16 @@ class SLAM_GUI:
         combo_tile3.add_child(self.combo_preset_cams)
         vp_subtile4.add_child(combo_tile3)
 
+        self.reset_view_btn = gui.Button("Reset")
+        self.reset_view_btn.set_on_clicked(
+            self._on_reset_view_btn
+        )  # set the callback function
+
         viewpoint_tile.add_child(vp_subtile1)
         viewpoint_tile.add_child(vp_subtile2)
         viewpoint_tile.add_child(vp_subtile3)
         viewpoint_tile.add_child(vp_subtile4)
+        viewpoint_tile.add_child(self.reset_view_btn)
         self.panel.add_child(viewpoint_tile)
 
         self.panel.add_child(gui.Label("3D Objects"))
@@ -338,7 +352,7 @@ class SLAM_GUI:
         chbox_tile_3dobj = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         self.gs_chbox = gui.Checkbox("GS Rendering")
-        self.gs_chbox.checked = False
+        self.gs_chbox.checked = self.gs_default_on
         # self.gs_chbox.set_on_checked(self._on_gs_chbox)
         chbox_tile_3dobj.add_child(self.gs_chbox)
 
@@ -396,7 +410,7 @@ class SLAM_GUI:
 
         # TODO
         self.neural_point_chbox = gui.Checkbox("Neural Points")
-        self.neural_point_chbox.checked = False
+        self.neural_point_chbox.checked = self.neural_point_default_on
         self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
         chbox_tile_3dobj_2.add_child(self.neural_point_chbox)
         self.neural_point_name = "neural_points"
@@ -415,7 +429,7 @@ class SLAM_GUI:
 
 
         self.cad_chbox = gui.Checkbox("Robot")
-        self.cad_chbox.checked = True
+        self.cad_chbox.checked = self.robot_default_on
         self.cad_chbox.set_on_checked(self._on_cad_chbox)
         chbox_tile_3dobj_2.add_child(self.cad_chbox)
         self.cad_name = "sensor_cad"
@@ -527,6 +541,9 @@ class SLAM_GUI:
 
         self.cur_view_info = gui.Label("Camera: ")
         view_info_tile.add_child(self.cur_view_info)
+
+        self.cur_exposure_info = gui.Label("Exposure: ")
+        view_info_tile.add_child(self.cur_exposure_info)
 
         self.cur_view_psnr_info = gui.Label("PSNR: ")
         view_info_tile.add_child(self.cur_view_psnr_info)
@@ -830,9 +847,9 @@ class SLAM_GUI:
     #             else:
     #                 self.widget3d.scene.remove_geometry(name)
 
-    def _on_button(self, is_on):
+    def _on_slam_slider(self, is_on):
         packet = Packet_vis2main()
-        packet.flag_pause = not self.button.is_on
+        packet.flag_pause = not self.slider_slam.is_on
         self.q_vis2main.put(packet)
 
     def _on_slider(self, value):
@@ -863,6 +880,9 @@ class SLAM_GUI:
         img = np.asarray(self.render_img)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cv2.imwrite(f"{filename}.png", img)
+
+    def _on_reset_view_btn(self):
+        self.center_bev()
 
     def _set_mouse_mode(self, is_on):
         if is_on:
@@ -952,6 +972,7 @@ class SLAM_GUI:
                 
                 # spawn gaussians for the sorrounding map
                 # self.cur_base_gaussians are stored in GPU, might take some memory
+
                 self.cur_base_gaussians = spawn_gaussians(gaussian_packet.sorrounding_neural_points_data, 
                     self.decoders, None, cur_center_position,
                     dist_concat_on=self.config.dist_concat_on, 
@@ -1098,8 +1119,7 @@ class SLAM_GUI:
 
         # set up inital camera # no camera
         if len(gaussian_packet.cam_list) == 0 and not self.init:
-            bounds = self.widget3d.scene.bounding_box
-            self.widget3d.setup_camera(60, bounds, bounds.get_center()) # field of view, bound, center
+            self.center_bev()
 
         self.init = True
 
@@ -1113,6 +1133,11 @@ class SLAM_GUI:
             self.q_vis2main = None
             self.q_main2vis = None
             self.process_finished = True
+
+    def center_bev(self):
+        # set the view point to BEV of the current 3d objects
+        bounds = self.widget3d.scene.bounding_box
+        self.widget3d.setup_camera(60, bounds, bounds.get_center())  # field of view, bound, center
 
 
     def update_img_show(self, cam_name, 
@@ -1157,9 +1182,9 @@ class SLAM_GUI:
         cur_depthl1 = None
 
         if from_cur_frame:
-            cur_frame_cam = self.gaussian_cur.current_frames[cam_name]
+            cur_frame_cam: CamImage = self.gaussian_cur.current_frames[cam_name]
         else:
-            cur_frame_cam = self.gaussian_cur.keyframes[cam_name]
+            cur_frame_cam: CamImage = self.gaussian_cur.keyframes[cam_name]
 
         down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
@@ -1178,7 +1203,7 @@ class SLAM_GUI:
 
             if render_results is not None:
                 
-                rendered_rgb = torch.clamp(render_results["render"], min=0, max=1.0)
+                rendered_rgb = torch.clamp(render_results["render"], 0.0, 1.0)
 
                 rendered_rgb_np = (
                     (rendered_rgb * 255)
@@ -1228,6 +1253,7 @@ class SLAM_GUI:
             train_view_info = "test"
 
         self.cur_view_info.text = "Camera: {} [{}]".format(cur_frame_cam.uid, train_view_info)
+        self.cur_exposure_info.text = "Exposure: ({:.3f} , {:.3f})".format(cur_frame_cam.exposure_a.item(), cur_frame_cam.exposure_b.item())
         
         if cur_psnr is not None:
             self.cur_view_psnr_info.text = "PSNR: {:.3f}".format(cur_psnr)
@@ -1585,7 +1611,7 @@ class SLAM_GUI:
             # print(self.step)
 
             def update():
-                if self.button_render.is_on:
+                if self.slider_render.is_on:
                     # print("UPDATE scene")
                     if self.step % 3 == 0: # per 0.03s # 30 Hz
                         self.render_gui() # stucked here

@@ -72,6 +72,8 @@ def render(viewpoint_camera: CamImage,
     # if neural_points.count() == 0: # not yet started
     #     return None
 
+    T0 = get_time()
+
     dtype = torch.float32
     device = viewpoint_camera.device
 
@@ -86,6 +88,7 @@ def render(viewpoint_camera: CamImage,
 
     # TODO: document this part, figure out why
     if cam_pose is not None:
+        # if we input the cam_pose here, then we set up the camera parameters here
         cam_pose = cam_pose.to(dtype=dtype, device=device)
         T_cw = torch.linalg.inv(cam_pose)
         cam_world_view_tran = T_cw.T # first inverse, then transpose
@@ -171,6 +174,11 @@ def render(viewpoint_camera: CamImage,
         )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+    T1 = get_time()
+
+    prepare_time = T1 -T0
+    # print("Rendering prepare time (ms): ", prepare_time*1e3) # ~ 0.2 ms, not too slow
 
     visible_neural_point_ratio = 0.0
     gaussian_count = 0
@@ -442,7 +450,7 @@ def render(viewpoint_camera: CamImage,
 
 def spawn_gaussians(neural_points_data: Dict,
                     decoders: Dict[str, Decoder],
-                    visble_mask: torch.tensor = None,
+                    visible_mask: torch.tensor = None,
                     cam_origin: torch.tensor = None, 
                     dist_concat_on: bool = False, 
                     view_concat_on: bool = False,
@@ -450,7 +458,8 @@ def spawn_gaussians(neural_points_data: Dict,
                     scale_filter_on: bool = False,
                     z_far: float = 100.0,
                     dist_adaptive_scale: bool = False,
-                    learn_color_residual: bool = True):
+                    learn_color_residual: bool = True,
+                    view_direction_xy_only: bool = True): 
 
     neural_point_position = neural_points_data["position"]
     neural_point_orientation = neural_points_data["orientation"] # as quat
@@ -468,22 +477,26 @@ def spawn_gaussians(neural_points_data: Dict,
     if "valid_mask" in list(neural_points_data.keys()):
         neural_point_valid_mask = neural_points_data["valid_mask"]
 
+    spawn_mask = None
+    if visible_mask is not None and neural_point_valid_mask is not None:
+        spawn_mask = visible_mask & neural_point_valid_mask
+    elif visible_mask is not None and neural_point_valid_mask is None:
+        spawn_mask = visible_mask
+    elif visible_mask is None and neural_point_valid_mask is not None:
+        spawn_mask = neural_point_valid_mask
 
-    if visble_mask is not None:
-        if neural_point_valid_mask is not None:
-            visble_mask = visble_mask & neural_point_valid_mask # only visble and also valid neural points will be used 
-
-        neural_point_position = neural_point_position[visble_mask]
-        neural_point_orientation = neural_point_orientation[visble_mask]
-        neural_point_color = neural_point_color[visble_mask]
+    if spawn_mask is not None:
+        neural_point_position = neural_point_position[spawn_mask]
+        neural_point_orientation = neural_point_orientation[spawn_mask]
+        neural_point_color = neural_point_color[spawn_mask]
 
         if neural_point_free_mask is not None:
-            neural_point_free_mask = neural_point_free_mask[visble_mask]
+            neural_point_free_mask = neural_point_free_mask[spawn_mask]
 
-        visible_idx = torch.nonzero(visble_mask)
+        visible_idx = torch.nonzero(spawn_mask)
         visible_idx = torch.cat((visible_idx.view(-1), torch.tensor([-1]).to(visible_idx)))
 
-        # print(" Current Visible neural point count: {:d}".format(torch.sum(visble_mask).item()))
+        # print(" Current Visible neural point count: {:d}".format(torch.sum(spawn_mask).item()))
 
         neural_point_geo_features = neural_point_geo_features[visible_idx]
         neural_point_color_features = neural_point_color_features[visible_idx]
@@ -509,6 +522,11 @@ def spawn_gaussians(neural_points_data: Dict,
     if cam_origin is not None:
         cam_origin = cam_origin.float()
         view_direction = neural_point_position - cam_origin # N, 3
+
+        # now by default, we only concat the horizontal view direction, to deal with the bev issue
+        if view_direction_xy_only:
+            view_direction[:,-1] = 0
+
         view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
         # normalize
         view_direction = view_direction / view_distance
@@ -558,7 +576,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # ------------------
     # Scale (view dependent or not) ? # TODO
-    max_gaussian_scale = 4.0 * neural_point_resolution
+    max_gaussian_scale = 2.0 * neural_point_resolution
     dist_ratio = 0.0
     if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1

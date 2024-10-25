@@ -3,6 +3,7 @@
 # @author    Yue Pan     [yue.pan@igg.uni-bonn.de]
 # Copyright (c) 2024 Yue Pan, all rights reserved
 
+import argparse
 import glob
 import os
 import sys
@@ -14,7 +15,7 @@ import torch
 import torch.multiprocessing as mp
 from rich import print
 
-from dataset.slam_dataset import SLAMDataset
+from dataset.slam_dataset import SLAMDataset, read_kitti_format_poses
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
@@ -33,30 +34,40 @@ from gs_gui.gui_utils import VisPacket, ParamsGUI
     load the pings and pose and render the video 
 '''
 
-# parser = argparse.ArgumentParser()
-# arser.add_argument('dataset_name', type=str, nargs='?', help='[Optional] Name of a specific dataset, example: kitti, mulran, or rosbag (when -d is set)')
-# parser.add_argument('--experiment_path', '-e', type=str, default=None, help='Path to the experiment folder of the run that you want to inspect')
-# parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to the point cloud input directory (this will override the pc_path in config file)')
+parser = argparse.ArgumentParser()
+parser.add_argument('experiment_path', type=str, help='Path to a certain experiment folder storing the PINGS map')
+parser.add_argument('--center_frame_id', '-f', type=int, default=0, help='PINGS local map center frame id')
+parser.add_argument('--show_global', '-g', action='store_true', default=False, help='show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
+args, unknown = parser.parse_known_args()
 
 def inspect_pings_map():
 
-    config = Config()
-    if len(sys.argv) > 1:
-        result_folder = sys.argv[1]
-        yaml_files = glob.glob(f"{result_folder}/*.yaml")
-        if len(yaml_files) > 1: # Check if there is exactly one YAML file
-            sys.exit("There are multiple YAML files. Please handle accordingly.")
-        elif len(yaml_files) == 0:  # If no YAML files are found
-            sys.exit("No YAML files found in the specified path.")
-        config.load(yaml_files[0])
-        model_path = os.path.join(result_folder, "model", "pin_map.pth")
-        config.model_path = model_path
-    else:
-        sys.exit("Please provide the path to the result folder.\n\
-                 Try: python inspect_pings.py xxx/result/path\
-                [optional: mesh_res_m] [optional: cropped.ply]  [optional: output_mesh_file] [optional: mc_nn]")
+    experiment_path = args.experiment_path
 
-    print("[bold green]Load PIN Map[/bold green]","📍" )
+    yaml_files = glob.glob(f"{experiment_path}/*.yaml")
+    if len(yaml_files) > 1: # Check if there is exactly one YAML file
+        sys.exit("There are multiple YAML files. Please handle accordingly.")
+    elif len(yaml_files) == 0:  # If no YAML files are found
+        sys.exit("No YAML files found in the specified path.")
+    
+    config = Config()
+    config.load(yaml_files[0])
+
+    model_path = os.path.join(experiment_path, "model", "pin_map.pth")
+    pose_path = os.path.join(experiment_path, "slam_poses_kitti.txt")
+    config.model_path = model_path
+    config.pose_path = pose_path
+
+    center_frame_id = int(args.center_frame_id)
+
+    print("Please provide the path to the result folder.\n\
+            Try: python inspect_pings.py xxx/result/path\
+            [optional: -f center_frame]")
+
+    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_11-46-52 100
+    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_13-31-54 10
+
+    print("[bold green]Load PINGS Map[/bold green]","📍" )
 
     run_path = setup_experiment(config, sys.argv, debug_mode=True)
     config.use_dataloader = True
@@ -99,23 +110,23 @@ def inspect_pings_map():
     loaded_model = torch.load(model_path)
     neural_points = loaded_model["neural_points"]
 
-    load_decoders(loaded_model, mlp_dict) # FIXME
+    # load decoders
+    load_decoders(loaded_model, mlp_dict) 
 
-    # print(mlp_dict["gauss_xyz"])
-
-    # print(neural_points.neural_points)
+    slam_poses = read_kitti_format_poses(config.pose_path)
+    frame_count = len(slam_poses)
+    slam_poses = np.array(slam_poses)
 
     # # dataset
     # dataset = SLAMDataset(config)
-
     # dataset.read_frame_with_loader(0, init_pose = True, use_image=True) 
 
     # reset neural points
-
-    ref_position = neural_points.neural_points[0]
-    ref_pose = torch.eye(4, device=config.device)
-    ref_pose[:3,3] = ref_position
-
+    center_frame_id = min(center_frame_id, frame_count-1)
+    ref_pose = torch.tensor(slam_poses[center_frame_id], device=config.device, dtype=config.dtype)
+    ref_position = ref_pose[:3,3]
+    # ref_position = neural_points.neural_points[0]
+    
     neural_points.recreate_hash(ref_position, with_ts=False)
 
     # mesh reconstructor
@@ -136,26 +147,18 @@ def inspect_pings_map():
             q_main2vis=q_main2vis,
             q_vis2main=q_vis2main,
             config=config,
+            gs_default_on=True,
+            robot_default_on=False,
+            neural_point_default_on=True,
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
         gui_process.start()
         # time.sleep(2) # second
 
-        # dummy camera
-        dummy_K = np.eye(3)
-        dummy_K[0,0] = dummy_K[1,1] = 500
-        dummy_K[0,2] = dummy_K[1,2] = 300
-        dummy_cam: CamImage = CamImage(frame_id=0, rgb_image=None, K_mat=dummy_K, img_width=600, img_height=600)
-        
-        dummy_cam.set_pose(ref_pose)
-        
-        dummy_cams = {"dummy": dummy_cam}
-        # is there a way to set the camera in visualizer?
-
-        # packet_to_vis: VisPacket = VisPacket(frame_id=0, img_down_rate=config.gs_vis_down_rate)
-        packet_to_vis: VisPacket = VisPacket(frame_id=0, current_frames=dummy_cams, img_down_rate=config.gs_vis_down_rate)
-        packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
+        packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
+        packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global))
+        packet_to_vis.add_traj(slam_poses=slam_poses)
         
         q_main2vis.put(packet_to_vis)
 

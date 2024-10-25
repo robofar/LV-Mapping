@@ -163,86 +163,6 @@ class Mapper:
 
         self.lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(self.device) 
 
-    def dynamic_filter(self, points_torch, type_2_on: bool = True):
-
-        if type_2_on:
-            points_torch.requires_grad_(True)
-
-        geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
-            points_torch, accumulate_stability=False
-        )
-
-        sdf_pred = self.sdf_mlp.sdf(
-            geo_feature
-        )  # predict the scaled sdf with the feature # [N, K, 1]
-        if not self.config.weighted_first:
-            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
-
-        # print(sdf_pred[sdf_pred>2.0])
-
-        if type_2_on:
-            sdf_grad = get_gradient(
-                points_torch, sdf_pred
-            ).detach()  # use analytical gradient here
-            grad_norm = sdf_grad.norm(dim=-1, keepdim=True).squeeze()
-
-        # Strategy 1 [used]
-        # measurements at the certain freespace would be filtered
-        # dynamic objects are those have the measurement in the certain freespace
-        static_mask = (certainty < self.config.dynamic_certainty_thre) | (
-            sdf_pred < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
-        )
-
-        # Strategy 2 [not used]
-        # dynamic objects's sdf are often underestimated or unstable (already used for source point cloud)
-        if type_2_on:
-            min_grad_norm = self.config.dynamic_min_grad_norm_thre
-            certainty_thre = self.config.dynamic_certainty_thre
-            static_mask_2 = (grad_norm > min_grad_norm) | (certainty < certainty_thre)
-            static_mask = static_mask & static_mask_2
-
-        return static_mask
-
-    def dynamic_filter_neural_points(self):
-
-        geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
-            self.neural_points.local_neural_points, accumulate_stability=False
-        )
-
-        sdf_pred = self.sdf_mlp.sdf(geo_feature)    
-        # predict the scaled sdf with the feature # [N, K, 1]
-        if not self.config.weighted_first:
-            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
-
-        # print(sdf_pred[sdf_pred>2.0])
-
-        static_mask = (certainty < self.config.dynamic_certainty_thre) | (
-            sdf_pred < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
-        )
-
-        return static_mask
-
-    def determine_used_pose(self):
-        
-        cur_frame = self.dataset.processed_frame
-        if self.config.pgo_on:
-            self.used_poses = torch.tensor(
-                self.dataset.pgo_poses[:cur_frame+1],
-                device=self.device,
-                dtype=torch.float64,
-            )
-        elif self.config.track_on:
-            self.used_poses = torch.tensor(
-                self.dataset.odom_poses[:cur_frame+1],
-                device=self.device,
-                dtype=torch.float64,
-            )
-        elif self.dataset.gt_pose_provided:  # for pure reconstruction with known pose
-            self.used_poses = torch.tensor(
-                self.dataset.gt_poses[:cur_frame+1],
-                device=self.device, 
-                dtype=torch.float64
-            )
 
     # begin mapping
     def process_frame(
@@ -599,6 +519,86 @@ class Mapper:
         # print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
         # print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
     
+    def dynamic_filter(self, points_torch, type_2_on: bool = True):
+
+        if type_2_on:
+            points_torch.requires_grad_(True)
+
+        geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
+            points_torch, accumulate_stability=False
+        )
+
+        sdf_pred = self.sdf_mlp.sdf(
+            geo_feature
+        )  # predict the scaled sdf with the feature # [N, K, 1]
+        if not self.config.weighted_first:
+            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
+
+        # print(sdf_pred[sdf_pred>2.0])
+
+        if type_2_on:
+            sdf_grad = get_gradient(
+                points_torch, sdf_pred
+            ).detach()  # use analytical gradient here
+            grad_norm = sdf_grad.norm(dim=-1, keepdim=True).squeeze()
+
+        # Strategy 1 [used]
+        # measurements at the certain freespace would be filtered
+        # dynamic objects are those have the measurement in the certain freespace
+        static_mask = (certainty < self.config.dynamic_certainty_thre) | (
+            sdf_pred < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+        )
+
+        # Strategy 2 [not used]
+        # dynamic objects's sdf are often underestimated or unstable (already used for source point cloud)
+        if type_2_on:
+            min_grad_norm = self.config.dynamic_min_grad_norm_thre
+            certainty_thre = self.config.dynamic_certainty_thre
+            static_mask_2 = (grad_norm > min_grad_norm) | (certainty < certainty_thre)
+            static_mask = static_mask & static_mask_2
+
+        return static_mask
+
+    def dynamic_filter_neural_points(self):
+
+        geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
+            self.neural_points.local_neural_points, accumulate_stability=False
+        )
+
+        sdf_pred = self.sdf_mlp.sdf(geo_feature)    
+        # predict the scaled sdf with the feature # [N, K, 1]
+        if not self.config.weighted_first:
+            sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
+
+        # print(sdf_pred[sdf_pred>2.0])
+
+        static_mask = (certainty < self.config.dynamic_certainty_thre) | (
+            sdf_pred < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+        )
+
+        return static_mask
+
+    def determine_used_pose(self):
+        
+        cur_frame = self.dataset.processed_frame
+        if self.config.pgo_on:
+            self.used_poses = torch.tensor(
+                self.dataset.pgo_poses[:cur_frame+1],
+                device=self.device,
+                dtype=torch.float64,
+            )
+        elif self.config.track_on:
+            self.used_poses = torch.tensor(
+                self.dataset.odom_poses[:cur_frame+1],
+                device=self.device,
+                dtype=torch.float64,
+            )
+        elif self.dataset.gt_pose_provided:  # for pure reconstruction with known pose
+            self.used_poses = torch.tensor(
+                self.dataset.gt_poses[:cur_frame+1],
+                device=self.device, 
+                dtype=torch.float64
+            )
 
     def update_cam_pool(self, frame_id: int):
         # set camera poses
@@ -749,62 +749,6 @@ class Mapper:
         self.global_coord_pool = transform_batch_torch(
             self.global_coord_pool, pose_diff_torch[self.time_pool]
         )
-
-    # for visualization
-    def get_data_pool_o3d(self, down_rate=1, only_cur_data=False):
-
-        if only_cur_data:
-            pool_coord_np = (
-                self.global_coord_pool[-self.cur_sample_count :: 3]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-        else:
-            pool_coord_np = (
-                self.global_coord_pool[::down_rate]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-
-        data_pool_pc_o3d = o3d.geometry.PointCloud()
-        data_pool_pc_o3d.points = o3d.utility.Vector3dVector(pool_coord_np)
-
-        if self.sdf_label_pool is None:
-            return data_pool_pc_o3d
-            
-        if only_cur_data:
-            pool_label_np = (
-                self.sdf_label_pool[-self.cur_sample_count :: 3]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-        else:
-            pool_label_np = (
-                self.sdf_label_pool[::down_rate]
-                .cpu()
-                .detach()
-                .numpy()
-                .astype(np.float64)
-            )
-
-        min_sdf = self.config.free_sample_end_dist_m * -2.0
-        max_sdf = -min_sdf
-        pool_label_np = np.clip(
-            (pool_label_np - min_sdf) / (max_sdf - min_sdf), 0.0, 1.0
-        )
-
-        color_map = cm.get_cmap("seismic")
-        colors = color_map(1.0 - pool_label_np)[:, :3].astype(np.float64) # change to blue (+) ---> red (-)
-
-        data_pool_pc_o3d.colors = o3d.utility.Vector3dVector(colors)
-
-        return data_pool_pc_o3d
 
     def free_pool(self):
         self.coord_pool = None
@@ -1995,6 +1939,7 @@ class Mapper:
 
                     T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
+                    # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.set_pose(T_w_c)
 
@@ -2006,7 +1951,7 @@ class Mapper:
                             down_rate=eval_down_rate, 
                             dist_concat_on=self.config.dist_concat_on, 
                             view_concat_on=self.config.view_concat_on, 
-                            correct_exposure=True,
+                            correct_exposure=True, 
                             learn_color_residual=self.config.learn_color_residual) # render gaussians 
 
                         # rendered results
@@ -2244,6 +2189,62 @@ class Mapper:
     #         print(f"Save the mesh resulting from TSDF fusion to {output_path}")
 
     #     return tsdf_fusion_mesh
+
+    # for visualization
+    def get_data_pool_o3d(self, down_rate=1, only_cur_data=False):
+
+        if only_cur_data:
+            pool_coord_np = (
+                self.global_coord_pool[-self.cur_sample_count :: 3]
+                .cpu()
+                .detach()
+                .numpy()
+                .astype(np.float64)
+            )
+        else:
+            pool_coord_np = (
+                self.global_coord_pool[::down_rate]
+                .cpu()
+                .detach()
+                .numpy()
+                .astype(np.float64)
+            )
+
+        data_pool_pc_o3d = o3d.geometry.PointCloud()
+        data_pool_pc_o3d.points = o3d.utility.Vector3dVector(pool_coord_np)
+
+        if self.sdf_label_pool is None:
+            return data_pool_pc_o3d
+            
+        if only_cur_data:
+            pool_label_np = (
+                self.sdf_label_pool[-self.cur_sample_count :: 3]
+                .cpu()
+                .detach()
+                .numpy()
+                .astype(np.float64)
+            )
+        else:
+            pool_label_np = (
+                self.sdf_label_pool[::down_rate]
+                .cpu()
+                .detach()
+                .numpy()
+                .astype(np.float64)
+            )
+
+        min_sdf = self.config.free_sample_end_dist_m * -2.0
+        max_sdf = -min_sdf
+        pool_label_np = np.clip(
+            (pool_label_np - min_sdf) / (max_sdf - min_sdf), 0.0, 1.0
+        )
+
+        color_map = cm.get_cmap("seismic")
+        colors = color_map(1.0 - pool_label_np)[:, :3].astype(np.float64) # change to blue (+) ---> red (-)
+
+        data_pool_pc_o3d.colors = o3d.utility.Vector3dVector(colors)
+
+        return data_pool_pc_o3d
 
 
     # joint optimization of PIN map and the poses in the sliding window

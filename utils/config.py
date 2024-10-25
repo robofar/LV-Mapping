@@ -248,7 +248,7 @@ class Config:
         self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
         
-        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
+        self.min_visible_neural_point_ratio: float = 0.05 # only train when the visible local neural point in this frame is larger than this threshold
         
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights

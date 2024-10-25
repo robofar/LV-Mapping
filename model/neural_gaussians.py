@@ -1607,6 +1607,7 @@ class NeuralPoints(nn.Module):
         
         self.local_valid_color_mask = None
         self.local_valid_gs_mask = None
+        self.local_free_gs_mask = None
         
         self.local_mask = None
         self.global2local = None
