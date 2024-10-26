@@ -234,12 +234,12 @@ class Config:
         self.gaussian_bs_ratio: float = 1.0 # gaussian_bs = bs * gaussian_bs_ratio
         
         # gs keyframes
-        self.gs_keyframe_interval: int = 2
+        self.gs_keyframe_interval: int = 1
         self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
         self.gs_keyframe_accu_travel_degree: float = 10.0 # unit: degree
 
         self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
-        self.long_term_train_down: bool = True # downsample the training image for long-term memory, faster, vague supervision in long term memory
+        self.long_term_train_down: bool = False # downsample the training image for long-term memory, faster, vague supervision in long term memory
         
         self.img_pool_size: int = 10 # #short-term training views
         self.img_test_pool_size: int = 0 # testing views
@@ -373,7 +373,7 @@ class Config:
         self.cam_cad_path = "./cad/camera.ply"
 
         # GS visualizer
-        self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
+        self.visualizer_split_width_ratio: float = 0.7 # left 0.6, right 0.4
 
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
 
@@ -625,6 +625,8 @@ class Config:
             self.gs_keyframe_accu_travel_degree = config_args["gs"].get("gs_keyframe_accu_degree", self.gs_keyframe_accu_travel_degree)
 
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
+            self.short_term_train_prob = config_args["gs"].get("short_term_train_prob", self.short_term_train_prob)
+            self.long_term_train_down = config_args["gs"].get("long_term_train_down", self.long_term_train_down)
 
             self.img_test_pool_size = config_args["gs"].get("img_test_pool_size", self.img_test_pool_size)
             self.gs_down_rate = config_args["gs"].get("gs_down_rate", self.gs_down_rate)

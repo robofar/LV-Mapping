@@ -1131,21 +1131,21 @@ class Mapper:
                     train_down_rate = down_rate_short_term
                     weight_down_rate = 1.0
                     is_replay_mode = False
-                    if not self.silence:
-                        print(" Train on a cam from short-term memory")
-                        print(" Used cam id:", viewpoint_cam.uid)
+                    # if not self.silence:
+                    #     print(" Train on a cam from short-term memory")
+                    #     print(" Used cam id:", viewpoint_cam.uid)
                 else:
                     # long-term memory
                     
                     cur_img_idx = torch.randperm(long_term_img_pool_size)[0]
                     viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_long_term
-                    weight_down_rate = 4.0 # 2^2
+                    weight_down_rate = 4^(down_rate_long_term-down_rate_short_term)
                     is_replay_mode = True
 
-                    if not self.silence:
-                        print(" Train on a cam from long-term memory")
-                        print(" Used cam id:", viewpoint_cam.uid)
+                    # if not self.silence:
+                    #     print(" Train on a cam from long-term memory")
+                    #     print(" Used cam id:", viewpoint_cam.uid)
 
                 cam_name = viewpoint_cam.cam_id
 
@@ -1170,7 +1170,8 @@ class Mapper:
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
-                    learn_color_residual=self.config.learn_color_residual) # render gaussians 
+                    learn_color_residual=self.config.learn_color_residual,
+                    front_only_on=False) # render gaussians  # FIXME: front only
 
                 if render_pkg is None:
                     continue
@@ -1363,8 +1364,9 @@ class Mapper:
                 # Opacity regularization loss (prefer large value, prefer positive value)
                 # let the opacity to be ideally larger
                 opacity_loss = 0.0
+                constraint_min_alpha = 0.1
                 if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight)
-                    masked_alpha_mask = (alpha_all<0) # now only let those gaussians has negative opacity to increase their opacity
+                    masked_alpha_mask = (alpha_all<constraint_min_alpha) # now only let those gaussians has negative opacity to increase their opacity # TODO: something weird
                     if torch.sum(masked_alpha_mask) > 0: 
                         opacity_loss = 0.0 - (alpha_all[masked_alpha_mask]).mean() # alpha value between [0, 2]
                         # if not self.silence:
@@ -1384,7 +1386,6 @@ class Mapper:
                 constraint_mask = local_visible_mask # also use the free ones now (FIXME)
 
                 # also only restrict the gaussians with large alpha
-                constraint_min_alpha = 0.1  # TODO, better to add this to config
                 large_alpha_mask = (gaussian_alpha > constraint_min_alpha).squeeze(-1)
                 # print(large_alpha_mask.shape)
                 constraint_mask = constraint_mask & large_alpha_mask

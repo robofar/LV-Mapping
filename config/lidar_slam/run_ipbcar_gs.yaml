@@ -6,7 +6,7 @@ setting:
   color_channel: 3
   color_map_on: True
 process:
-  min_range_m: 2.5
+  min_range_m: 2.0
   max_range_m: 60.0
   vox_down_m: 0.10
   estimate_normal: False
@@ -18,7 +18,7 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.3
+  voxel_size_m: 0.3 # 0.3
   search_alpha: 0.5
   query_nn_k: 6
   feature_dim: 32 # 32
@@ -30,8 +30,8 @@ decoder:
 loss:
   sigma_sigmoid_m: 0.1
   weight_color: 0.1
-  loss_weight_on: True
-  dist_weight_scale: 0.8
+  # loss_weight_on: True
+  # dist_weight_scale: 0.8
   ekional_loss_on: True
   weight_e: 0.5
 continual:
@@ -47,18 +47,16 @@ pgo:
 gs:
   monodepth_on: False
   exposure_correction_on: False
-  learn_color_residual: False
   view_concat_on: True
-  dist_concat_on: False # TODO: check
+  dist_concat_on: True # TODO: check
   gs_iters: 100 # 50
   gaussian_bs_ratio: 2.0
-  gs_keyframe_interval: 2
-  img_pool_size: 48 # TODO
+  img_pool_size: 40 # TODO
   gs_down_rate: 1
   gs_vis_down_rate: 1
   inverse_depth_loss: True
-  lambda_depth: 20.0 # 20.0
-  lambda_opacity: 1e-3 # 1e-3 # increase to have more valid gaussians
+  lambda_depth: 10.0 # 20.0
+  lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   # lambda_isotropic: 1.0
   # lambda_area: 1e-4 # 1e-3
   # lambda_mono_normal: 0.01

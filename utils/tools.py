@@ -182,7 +182,7 @@ def setup_optimizer(
     lr_gs_scale = 1e-3
     lr_gs_rot = 1e-3
     lr_gs_alpha = 1e-3
-    lr_gs_color = 2e-2 # better to be larger, like 1e-2 # FIXME
+    lr_gs_color = 1e-2 # better to be larger, like 1e-2 # FIXME
 
     # lr_gs_xyz = 1e-4
     # lr_gs_scale = 1e-4
@@ -255,8 +255,8 @@ def setup_optimizer(
             )
 
     
-    lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
+    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
+    lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
     feat_opt_dict = {

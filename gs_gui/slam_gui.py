@@ -80,6 +80,7 @@ class SLAM_GUI:
             self.gs_default_on = params_gui.gs_default_on
             self.robot_default_on = params_gui.robot_default_on
             self.neural_point_default_on = params_gui.neural_point_default_on
+            self.mesh_default_on = params_gui.mesh_default_on
         
         if self.config is not None:
             setup_seed(self.config.seed)
@@ -131,8 +132,7 @@ class SLAM_GUI:
             rendering.ColorGrading.ToneMapping.LINEAR,
         )
         self.widget3d.scene.view.set_color_grading(cg_settings)
-
-        self.widget3d.scene.show_skybox(False)
+        # self.widget3d.scene.show_skybox(False)
 
         self.window.add_child(self.widget3d)
 
@@ -170,7 +170,11 @@ class SLAM_GUI:
 
         # mesh 
         self.mesh_render = rendering.MaterialRecord()
-        self.mesh_render.shader = "normals" # TODO: add a button to switch to lit (color)
+        if self.mesh_default_on:
+            self.mesh_render.shader = "defaultLit"
+        else:
+            self.mesh_render.shader = "normals" 
+        
         # self.mesh_render.base_color = [0.5, 0.5, 0.5, 0.5]
 
         # trajectory
@@ -281,11 +285,6 @@ class SLAM_GUI:
         # self._arcball_button.vertical_padding_em = 0
         # self._arcball_button.set_on_clicked(self._set_mouse_mode_rotate)
 
-        # self._fly_button = gui.Button("Fly")
-        # self._fly_button.horizontal_padding_em = 0.5
-        # self._fly_button.vertical_padding_em = 0
-        # self._fly_button.set_on_clicked(self._set_mouse_mode_fly)
-
         # h.add_child(self._arcball_button)
         # h.add_child(self._fly_button)
 
@@ -303,7 +302,8 @@ class SLAM_GUI:
         self.staybehind_chbox.checked = True
         chbox_tile.add_child(self.staybehind_chbox)
 
-        self.fly_chbox = gui.Checkbox("Fly Mode")
+        self.fly_chbox = gui.Checkbox("Fly")
+        # NOTE: in fly mode, you can control like a game using WASD,Q,Z,E,R, up, right, left, down
         self.fly_chbox.checked = False
         self.fly_chbox.set_on_checked(self._set_mouse_mode)
         chbox_tile.add_child(self.fly_chbox)
@@ -351,17 +351,22 @@ class SLAM_GUI:
 
         chbox_tile_3dobj = gui.Horiz(0.5 * em, gui.Margins(margin))
 
-        self.gs_chbox = gui.Checkbox("GS Rendering")
+        self.gs_chbox = gui.Checkbox("GS")
         self.gs_chbox.checked = self.gs_default_on
         # self.gs_chbox.set_on_checked(self._on_gs_chbox)
         chbox_tile_3dobj.add_child(self.gs_chbox)
+
+        self.backface_chbox = gui.Checkbox("Backface")
+        self.backface_chbox.checked = False
+        # self.backface_chbox.set_on_checked(self._on_backface_chbox)
+        chbox_tile_3dobj.add_child(self.backface_chbox)
 
         self.cameras_chbox = gui.Checkbox("Cameras")
         self.cameras_chbox.checked = True
         self.cameras_chbox.set_on_checked(self._on_cameras_chbox)
         chbox_tile_3dobj.add_child(self.cameras_chbox)
 
-        self.keyframe_chbox = gui.Checkbox("Train Frames")
+        self.keyframe_chbox = gui.Checkbox("Train Cams")
         self.keyframe_chbox.checked = True
         self.keyframe_chbox.set_on_checked(self._on_keyframes_chbox)
         chbox_tile_3dobj.add_child(self.keyframe_chbox)
@@ -378,13 +383,13 @@ class SLAM_GUI:
         # chbox_tile_3dobj.add_child(self.axis_chbox)
 
         self.mesh_chbox = gui.Checkbox("PIN Mesh")
-        self.mesh_chbox.checked = False
+        self.mesh_chbox.checked = self.mesh_default_on
         self.mesh_chbox.set_on_checked(self._on_mesh_chbox)
         chbox_tile_3dobj.add_child(self.mesh_chbox)
         self.mesh_name = "pin_mesh"
 
         self.cmesh_chbox = gui.Checkbox("Colorized Mesh")
-        self.cmesh_chbox.checked = False
+        self.cmesh_chbox.checked = self.mesh_default_on
         self.cmesh_chbox.set_on_checked(self._on_cmesh_chbox)
         chbox_tile_3dobj.add_child(self.cmesh_chbox)
 
@@ -434,13 +439,13 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.cad_chbox)
         self.cad_name = "sensor_cad"
 
-        self.gt_traj_chbox = gui.Checkbox("GT Trajectory")
+        self.gt_traj_chbox = gui.Checkbox("GT Traj.")
         self.gt_traj_chbox.checked = False
         self.gt_traj_chbox.set_on_checked(self._on_gt_traj_chbox)
         chbox_tile_3dobj_2.add_child(self.gt_traj_chbox)
         self.gt_traj_name = "gt_trajectory"
 
-        self.slam_traj_chbox = gui.Checkbox("SLAM Trajectory")
+        self.slam_traj_chbox = gui.Checkbox("SLAM Traj.")
         self.slam_traj_chbox.checked = False
         self.slam_traj_chbox.set_on_checked(self._on_slam_traj_chbox)
         chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
@@ -615,14 +620,18 @@ class SLAM_GUI:
         W2C = W2C.cpu().numpy()
         C2W = np.linalg.inv(W2C)
         frustum = create_frustum(C2W, color, size=size)
+        
         if name not in self.frustum_dict.keys():
-            frustum = create_frustum(C2W, color, size=size)
+            # frustum = create_frustum(C2W, color, size=size)
             self.combo_cams.add_item(name)
-            self.frustum_dict[name] = frustum
-            self.widget3d.scene.add_geometry(name, frustum.line_set, self.cur_frame_render) # add camera frame to visualizer
-        frustum = self.frustum_dict[name]
+        
         frustum.update_pose(C2W)
-        self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
+        self.frustum_dict[name] = frustum
+        self.widget3d.scene.add_geometry(name, frustum.line_set, self.cur_frame_render) # add camera frame to visualizer
+        
+        # frustum = self.frustum_dict[name]
+        # frustum.update_pose(C2W)
+        # self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
         self.widget3d.scene.show_geometry(name, self.cameras_chbox.checked)
         return frustum
 
@@ -637,13 +646,14 @@ class SLAM_GUI:
         C2W = np.linalg.inv(W2C)
         frustum = create_frustum(C2W, color, size=size)
         if name not in self.keyframe_dict.keys():
-            frustum = create_frustum(C2W, color, size=size)
+            # frustum = create_frustum(C2W, color, size=size)
             self.combo_train_cams.add_item(name) # TODO
             self.keyframe_dict[name] = frustum
+            frustum.update_pose(C2W)
             self.widget3d.scene.add_geometry(name, frustum.line_set, self.train_frame_render) # add camera frame to visualizer
-        frustum = self.keyframe_dict[name]
-        frustum.update_pose(C2W)
-        self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
+        # frustum = self.keyframe_dict[name]
+        # frustum.update_pose(C2W)
+        # self.widget3d.scene.set_geometry_transform(name, C2W.astype(np.float64))
         self.widget3d.scene.show_geometry(name, self.keyframe_chbox.checked)
         return frustum
 
@@ -819,6 +829,9 @@ class SLAM_GUI:
     def _on_sky_chbox(self, is_checked):
         self.widget3d.scene.show_skybox(is_checked)
 
+    # def _on_backface_chbox(self, is_checked):
+    #     self.widget3d.enable_back_face_culling(is_checked) 
+    #     # self.mesh_render.show_back_face = is_checked
 
     # def _on_kf_window_chbox(self, is_checked):
     #     if self.kf_window is None:
@@ -883,6 +896,8 @@ class SLAM_GUI:
 
     def _on_reset_view_btn(self):
         self.center_bev()
+        self.fly_chbox.checked = False
+        self.widget3d.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA_SPHERE)
 
     def _set_mouse_mode(self, is_on):
         if is_on:
@@ -983,8 +998,12 @@ class SLAM_GUI:
             
             frustum_size = self.config.max_range*0.008
 
+            # load cameras
             if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
                 
+                for cam_name in list(self.frustum_dict.keys()): 
+                    self.widget3d.scene.remove_geometry(cam_name)
+
                 for cam in gaussian_packet.cam_list:
                     frustum = self.add_camera(
                         gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
@@ -1076,17 +1095,18 @@ class SLAM_GUI:
                     self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
                 if gaussian_packet.slam_poses is None:
-
+                    
+                    self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
+                    self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
+                    
                     if self.cad_chbox.checked:
-                        self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                        self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
                         self.widget3d.scene.remove_geometry(self.cad_name)
                         self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
                     
                     self.range_circle = copy.deepcopy(self.range_circle_origin)
-                    self.range_circle.transform(gaussian_packet.gt_poses[-1])
+                    self.range_circle.transform(gaussian_packet.gt_poses[-1])  
 
-                    if self.range_circle_chbox.checked:    
+                    if self.range_circle_chbox.checked: 
                         self.widget3d.scene.remove_geometry(self.range_circle_name)
                         self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
 
@@ -1103,16 +1123,19 @@ class SLAM_GUI:
                     self.widget3d.scene.remove_geometry(self.slam_traj_name)
                     self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
                 
+                self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
+                self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
+
                 if self.cad_chbox.checked:
-                    self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                    self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
+                    
                     self.widget3d.scene.remove_geometry(self.cad_name)
                     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
 
                 self.range_circle = copy.deepcopy(self.range_circle_origin)
                 self.range_circle.transform(gaussian_packet.slam_poses[-1])
-
+                
                 if self.range_circle_chbox.checked: 
+                    
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
 
@@ -1199,7 +1222,8 @@ class SLAM_GUI:
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=False,
-                    learn_color_residual=self.config.learn_color_residual)
+                    learn_color_residual=self.config.learn_color_residual,
+                    front_only_on=(not self.backface_chbox.checked))
 
             if render_results is not None:
                 
@@ -1260,32 +1284,6 @@ class SLAM_GUI:
         
         if cur_depthl1 is not None:
             self.cur_view_depthl1_info.text = "Depth L1 (m): {:.3f}".format(cur_depthl1)
-
-
-    def render_cur_view(self, cam_name, from_cur_frame: bool = True):
-
-        if cam_name not in list(self.gaussian_cur.gtcolor.keys()):
-            return None
-
-        if from_cur_frame:
-            cur_frame_cam = self.gaussian_cur.current_frames[cam_name]
-        else:
-            cur_frame_cam = self.gaussian_cur.keyframes[cam_name]
-
-        down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
-
-        with torch.no_grad():
-            cur_frame_rendering_data = render(cur_frame_cam, 
-                None, self.gaussian_cur.neural_points_data, 
-                self.decoders, self.cur_base_gaussians, self.background,
-                scaling_modifier=self.scaling_slider.double_value, 
-                down_rate=down_rate_used, 
-                dist_concat_on=self.config.dist_concat_on, 
-                view_concat_on=self.config.view_concat_on, 
-                correct_exposure=False,
-                learn_color_residual=self.config.learn_color_residual)
-
-        return cur_frame_rendering_data
 
     
     def overlaid_img(self, foreground_img_np, background_img_np, alpha_foreground: float = 0.7):
@@ -1555,7 +1553,8 @@ class SLAM_GUI:
                 dist_concat_on=self.config.dist_concat_on, 
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=False,
-                learn_color_residual=self.config.learn_color_residual)
+                learn_color_residual=self.config.learn_color_residual,
+                front_only_on=(not self.backface_chbox.checked))
             
             render_toc = get_time()
 

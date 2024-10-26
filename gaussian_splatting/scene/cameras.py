@@ -183,7 +183,7 @@ class CamImage:
         if cam_pose is not None: # we also directly load the camera pose here
 
             T_cw = torch.linalg.inv(cam_pose).to(dtype=self.dtype, device=self.device) 
-
+            
             self.world_view_transform = (T_cw.T)
             self.camera_center = torch.linalg.inv(self.world_view_transform)[3, :3]
             self.full_proj_transform = self.world_view_transform @ self.projection_matrix 

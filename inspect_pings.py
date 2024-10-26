@@ -37,7 +37,10 @@ from gs_gui.gui_utils import VisPacket, ParamsGUI
 parser = argparse.ArgumentParser()
 parser.add_argument('experiment_path', type=str, help='Path to a certain experiment folder storing the PINGS map')
 parser.add_argument('--center_frame_id', '-f', type=int, default=0, help='PINGS local map center frame id')
-parser.add_argument('--show_global', '-g', action='store_true', default=False, help='show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
+parser.add_argument('--show_mesh', '-m', action='store_true', default=False, help='Show the PINGS mesh')
+parser.add_argument('--show_global', '-g', action='store_true', default=False, help='Show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
+parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes resolution (in meter) for mesh reconstruction')
+parser.add_argument('--mesh_min_nn_k', type=int, default=-1, help='SDF querying min neighbor neural point count for mesh reconstruction')
 args, unknown = parser.parse_known_args()
 
 def inspect_pings_map():
@@ -64,8 +67,11 @@ def inspect_pings_map():
             Try: python inspect_pings.py xxx/result/path\
             [optional: -f center_frame]")
 
-    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_11-46-52 100
-    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_13-31-54 10
+    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_11-46-52 -g
+    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_13-31-54 -f 10
+    # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_15-36-50
+    # example: (good) roundabout inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_18-59-40 -g
+
 
     print("[bold green]Load PINGS Map[/bold green]","📍" )
 
@@ -132,6 +138,28 @@ def inspect_pings_map():
     # mesh reconstructor
     mesher = Mesher(config, neural_points, mlp_dict)
 
+    cur_mesh = None
+    if args.show_mesh:
+
+        print("Reconstruct mesh from the SDF")
+
+        down_rate = 31 # prime number
+        mesh_vox_size_m = args.mesh_mc_m
+        mesh_min_nn_k_used = args.mesh_min_nn_k
+        if args.mesh_mc_m < 0:
+            mesh_vox_size_m = config.voxel_size_m*0.6 # use the default value
+        if args.mesh_min_nn_k < 0:
+            mesh_min_nn_k_used = config.mesh_min_nn # use the default value
+        
+        neural_pcd = neural_points.get_neural_points_o3d(query_global=args.show_global, color_mode=2, random_down_ratio=down_rate)
+        mesh_aabb = neural_pcd.get_axis_aligned_bounding_box()
+        chunks_aabb = split_chunks(neural_pcd, mesh_aabb, mesh_vox_size_m*100) 
+        print("Number of chunks for reconstruction:", len(chunks_aabb))
+        print("Marching cubes resolution: {:.2f} m".format(mesh_vox_size_m))
+
+        out_mesh_path = None
+        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, mesh_vox_size_m, out_mesh_path, False, False, \
+                                                    config.color_on, filter_isolated_mesh=True, mesh_min_nn=mesh_min_nn_k_used)
 
     # GS visualizer
     # I really don't know why this does not work
@@ -149,7 +177,8 @@ def inspect_pings_map():
             config=config,
             gs_default_on=True,
             robot_default_on=False,
-            neural_point_default_on=True,
+            neural_point_default_on=False,
+            mesh_default_on=True,
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
@@ -159,6 +188,8 @@ def inspect_pings_map():
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global))
         packet_to_vis.add_traj(slam_poses=slam_poses)
+        if cur_mesh is not None:
+            packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
         
         q_main2vis.put(packet_to_vis)
 

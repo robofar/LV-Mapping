@@ -1,5 +1,6 @@
 import queue
 
+import copy
 import cv2
 import numpy as np
 import open3d as o3d
@@ -15,15 +16,19 @@ cv_gl = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 
 class Frustum:
     def __init__(self, line_set, view_dir=None, view_dir_behind=None, size=None):
-        self.line_set = line_set
+        self.line_set_origin = line_set
         self.view_dir = view_dir
         self.view_dir_behind = view_dir_behind
         self.size = size
 
     def update_pose(self, pose):
+
+        self.line_set = copy.deepcopy(self.line_set_origin)
+        self.line_set.transform(pose)
+
         points = np.asarray(self.line_set.points)
-        points_hmg = np.hstack([points, np.ones((points.shape[0], 1))])
-        points = (pose @ points_hmg.transpose())[0:3, :].transpose()
+        # points_hmg = np.hstack([points, np.ones((points.shape[0], 1))])
+        # points = (pose @ points_hmg.transpose())[0:3, :].transpose()
 
         base = np.array([[0.0, 0.0, 0.0]]) * self.size
         base_hmg = np.hstack([base, np.ones((base.shape[0], 1))])
@@ -379,6 +384,7 @@ class ParamsGUI:
         gs_default_on: bool = False,
         robot_default_on: bool = True,
         neural_point_default_on: bool = False,
+        mesh_default_on: bool = False,
     ):
         self.decoders = decoders # dict of MLPs
         
@@ -390,3 +396,4 @@ class ParamsGUI:
         self.gs_default_on = gs_default_on
         self.robot_default_on = robot_default_on
         self.neural_point_default_on = neural_point_default_on
+        self.mesh_default_on = mesh_default_on

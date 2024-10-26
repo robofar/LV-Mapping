@@ -60,7 +60,8 @@ def render(viewpoint_camera: CamImage,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            correct_exposure: bool = True,
-           learn_color_residual: bool = True):
+           learn_color_residual: bool = True,
+           front_only_on: bool = True):
 
     """
     Render the scene. 
@@ -111,7 +112,7 @@ def render(viewpoint_camera: CamImage,
     normalize_depth_on = True # render normalized depth (with D = D/opacity)
     perpix_depth_on = True
     default_on = True
-    front_only_on = True # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
+    # front_only_on = False # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
     # check if we shall set to False
     # front_only_on = False
 
