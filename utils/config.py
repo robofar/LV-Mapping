@@ -200,7 +200,7 @@ class Config:
         self.init_iter_ratio: int = 40 # train init_iter_ratio x iters for the first frame to kick the SLAM off
         self.opt_adam: bool = True  # use adam (default) or sgd as the gradient descent optimizer
         self.bs: int = 16384 # batch size
-        self.lr: float = 0.01 # learning rate for map parameters and MLP
+        self.lr: float = 0.01 # learning rate for the neural point feature
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
         self.lr_ba_map: float = 0.01 # learning rate for map during bundle adjustment
         self.weight_decay: float = 0.0 # weight_decay is only applied to the latent codes for the l2 regularization
@@ -357,7 +357,7 @@ class Config:
         
         # mesh reconstruction, marching cubes related
         self.mc_res_m: float = 0.3 # resolution for marching cubes
-        self.pad_voxel: int = 2 # pad x voxels on each side
+        self.pad_voxel: int = 3 # pad x voxels on each side
         self.skip_top_voxel: int = 2 # slip the top x voxels (mainly for visualization indoor, remove the roof)
         self.mc_mask_on: bool = True # use mask for marching cubes to avoid the artifacts
         self.mesh_min_nn: int = 8  # The minimum number of the neighbor neural points for a valid SDF prediction for meshing, too small would cause some artifacts (more complete but less accurate), too large would lead to lots of holes (more accurate but less complete)
@@ -373,7 +373,7 @@ class Config:
         self.cam_cad_path = "./cad/camera.ply"
 
         # GS visualizer
-        self.visualizer_split_width_ratio: float = 0.7 # left 0.6, right 0.4
+        self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
 
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
 

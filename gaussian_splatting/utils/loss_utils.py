@@ -155,6 +155,7 @@ def create_window(window_size, channel):
     window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
     return window
 
+
 def ssim(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
     window = create_window(window_size, channel)

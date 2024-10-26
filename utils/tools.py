@@ -139,7 +139,7 @@ def setup_optimizer(
     lr_ratio=1.0,
 ) -> Optimizer:
     
-    lr_cur = config.lr * lr_ratio
+    lr_neural_point = config.lr * lr_ratio
     lr_pose = config.lr_pose
     
     # weight_decay is for L2 regularization
@@ -147,10 +147,14 @@ def setup_optimizer(
     weight_decay_mlp = 0.0
     opt_setting = []
 
+    lr_sdf = 0.01
+    lr_color = 0.01
+    lr_sem = 0.01
+
     if mlp_sdf_param is not None:
         mlp_sdf_param_opt_dict = {
             "params": mlp_sdf_param,
-            "lr": lr_cur,
+            "lr": lr_sdf,
             "weight_decay": weight_decay_mlp,
             "name": "sdf_mlp_param",
         }
@@ -158,7 +162,7 @@ def setup_optimizer(
     if config.color_on and mlp_color_param is not None:
         mlp_color_param_opt_dict = {
             "params": mlp_color_param,
-            "lr": lr_cur,
+            "lr": lr_color,
             "weight_decay": weight_decay_mlp,
             "name": "color_mlp_param",
         }
@@ -166,7 +170,7 @@ def setup_optimizer(
     if config.semantic_on and mlp_sem_param is not None:
         mlp_sem_param_opt_dict = {
             "params": mlp_sem_param,
-            "lr": lr_cur,
+            "lr": lr_sem,
             "weight_decay": weight_decay_mlp,
             "name": "sem_mlp_param",
         }
@@ -256,12 +260,12 @@ def setup_optimizer(
 
     
     # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
+    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
     feat_opt_dict = {
         "params": neural_point_feat,
-        "lr": lr_cur_feature,
+        "lr": lr_neural_point,
         "weight_decay": weight_decay_feature,
         "name": "neural_point_features",
     }

@@ -24,11 +24,11 @@ you can visualize the neural gaussians as point cloud in the visualizer by press
 we are using the kitti odometry dataset here, you need `image_2` and `velodyne` folder in your sequence base folder
 
 ```
-python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 00 -i ./data/kitti/ -vlsg
 
-python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 04 -i ./data/kitti/ -vlsg
 
-python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -vl
+python pings.py ./config/lidar_slam/run_kitti_gs.yaml kitti 07 -i ./data/kitti/ -vlsg
 ```
 
 **pass**

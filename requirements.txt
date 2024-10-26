@@ -22,6 +22,7 @@ torchmetrics==1.4.1
 -e submodules/diff-gaussian-surfel-rasterization # editable install # Gaussian Surfels
 # -e submodules/diff-gaussian-rasterization # editable install # original 3D GS
 -e submodules/depth-diff-gaussian-rasterization # editable install # 3D GS with depth rendering
+-e submodules/fused-ssim
 # for gs visualizer
 PyOpenGL
 glfw

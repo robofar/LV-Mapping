@@ -45,6 +45,8 @@ from gaussian_splatting.utils.general_utils import rotation2normal
 from gaussian_splatting.utils.sh_utils import RGB2SH, SH2RGB
 from gaussian_splatting.scene.cameras import CamImage
 
+from fused_ssim import fused_ssim
+
 from gs_gui.gui_utils import VisPacket
 
 class Mapper:
@@ -1265,7 +1267,8 @@ class Mapper:
 
                 loss_rgb_l1 = l1_loss(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
                 if self.config.lambda_ssim > 0.0:
-                    ssim_value = ssim(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
+                    # ssim_value = ssim(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
+                    ssim_value = fused_ssim(rendered_rgb_image_for_loss.unsqueeze(0), gt_rgb_image_for_loss.unsqueeze(0)) # have to be 4 dim
                     rgb_loss = (1.0 - self.config.lambda_ssim) * loss_rgb_l1 + self.config.lambda_ssim * (1.0 - ssim_value)
                 else:
                     rgb_loss = loss_rgb_l1 # l1 only, ssim might take a long time
@@ -1674,7 +1677,8 @@ class Mapper:
                     down_rate=vis_down_rate, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
-                    correct_exposure=self.config.exposure_correction_on) # render gaussians 
+                    correct_exposure=self.config.exposure_correction_on, 
+                    front_only_on=False) # render gaussians 
 
                 # T3 = get_time()
 
@@ -1779,7 +1783,7 @@ class Mapper:
 
                 # cur psnr
                 cur_pnsr = psnr(renderd_image, rgb_img).mean().item()
-                cur_ssim = ssim(renderd_image, rgb_img).item()
+                cur_ssim = fused_ssim(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0), train=False).item()
 
                 if lpips_eval_on:
                     cur_lpips = self.lpips(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0)).item()
@@ -1953,7 +1957,8 @@ class Mapper:
                             dist_concat_on=self.config.dist_concat_on, 
                             view_concat_on=self.config.view_concat_on, 
                             correct_exposure=True, 
-                            learn_color_residual=self.config.learn_color_residual) # render gaussians 
+                            learn_color_residual=self.config.learn_color_residual,
+                            front_only_on=False) # render gaussians 
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -1969,10 +1974,19 @@ class Mapper:
                             mask_broadcasted = cur_sky_mask.repeat(3,1,1)
                             gt_rgb_img[mask_broadcasted] = bg_3d.expand_as(gt_rgb_img)[mask_broadcasted]
 
-                        cur_pnsr = psnr(rendered_rgb_image, gt_rgb_img).mean().item()
-                        cur_ssim = ssim(rendered_rgb_image, gt_rgb_img).item()
+                        if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
+                            pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
+                        else:  
+                            pixel_h_used = -1
+
+                        rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
+                        gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
+
+                        cur_pnsr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                        cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
+                        # cur_ssim = ssim(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).item()
                         if lpips_eval_on:
-                            cur_lpips = self.lpips(rendered_rgb_image.unsqueeze(0), gt_rgb_img.unsqueeze(0)).item()
+                            cur_lpips = self.lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
                         else:
                             cur_lpips = -1.0 # not available
 
