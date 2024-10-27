@@ -104,7 +104,7 @@ class Config:
         self.feature_dim: int = 8  # length of the feature for each grid feature
         self.color_feature_dim: int = 8
         self.sem_feature_dim: int = 8
-        self.feature_std: float = 0.0  # grid feature initialization standard deviation (zero initialization)
+        self.feature_std: float = 0.01 # FIXME  # grid feature initialization standard deviation (zero initialization)
 
         # Use all the surface samples or just the exact measurements to build the neural points map
         # If True may lead to larger memory consumption, but is more robust while the reconstruction.
@@ -238,17 +238,21 @@ class Config:
         self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
         self.gs_keyframe_accu_travel_degree: float = 10.0 # unit: degree
 
-        self.short_term_train_prob: float = 0.6 # the probabilibilty of sampling a cam from short-term memory for training
+        self.lastest_train_prob: float = 0.1 # the probabilibilty of sampling a cam from the lastest observation for training
+        self.short_term_train_prob: float = 0.5 # the probabilibilty of sampling a cam from short-term memory for training
         self.long_term_train_down: bool = False # downsample the training image for long-term memory, faster, vague supervision in long term memory
         
         self.img_pool_size: int = 10 # #short-term training views
+        self.long_term_pool_size: int = 80
         self.img_test_pool_size: int = 0 # testing views
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
         
-        self.min_visible_neural_point_ratio: float = 0.05 # only train when the visible local neural point in this frame is larger than this threshold
+        self.train_front_only: bool = True
+
+        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
         
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
@@ -361,7 +365,7 @@ class Config:
         self.skip_top_voxel: int = 2 # slip the top x voxels (mainly for visualization indoor, remove the roof)
         self.mc_mask_on: bool = True # use mask for marching cubes to avoid the artifacts
         self.mesh_min_nn: int = 8  # The minimum number of the neighbor neural points for a valid SDF prediction for meshing, too small would cause some artifacts (more complete but less accurate), too large would lead to lots of holes (more accurate but less complete)
-        self.min_cluster_vertices: int = 300 # if a connected's vertices number is smaller than this value, it would get filtered (as a postprocessing to filter outliers)
+        self.min_cluster_vertices: int = 500 # if a connected's vertices number is smaller than this value, it would get filtered (as a postprocessing to filter outliers)
         self.keep_local_mesh: bool = False # keep the local mesh in the visualizer or not (don't delete them could cause a too large memory consumption)
         self.infer_bs: int = 4096 # batch size for inference
 
@@ -615,16 +619,19 @@ class Config:
             self.dist_concat_on = config_args["gs"].get("dist_concat_on", self.dist_concat_on)
             self.view_concat_on = config_args["gs"].get("view_concat_on", self.view_concat_on)
 
+            self.train_front_only = config_args["gs"].get("train_front_only", self.train_front_only)
+
             self.learn_color_residual = config_args["gs"].get("learn_color_residual", self.learn_color_residual)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
             
             self.gs_keyframe_interval = config_args["gs"].get("gs_keyframe_interval", self.gs_keyframe_interval)
-            self.gs_keyframe_accu_travel_dist = config_args["gs"].get("gs_keyframe_accu_dist", self.max_range*0.02) # default value set to be self.max_range*0.03
+            self.gs_keyframe_accu_travel_dist = config_args["gs"].get("gs_keyframe_accu_dist", self.max_range*0.02) # default value set to be self.max_range*0.03 # TODO: change this later
             self.gs_keyframe_accu_travel_degree = config_args["gs"].get("gs_keyframe_accu_degree", self.gs_keyframe_accu_travel_degree)
 
             self.img_pool_size = config_args["gs"].get("img_pool_size", self.img_pool_size)
+            self.long_term_pool_size = config_args["gs"].get("long_term_img_pool_size", 3*self.img_pool_size) # TODO
             self.short_term_train_prob = config_args["gs"].get("short_term_train_prob", self.short_term_train_prob)
             self.long_term_train_down = config_args["gs"].get("long_term_train_down", self.long_term_train_down)
 

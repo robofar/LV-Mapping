@@ -216,6 +216,7 @@ class SLAMDataset():
         self.cur_sem_labels_torch = None
         self.cur_sem_labels_full = None
         self.cur_point_normals = None
+        self.cur_point_lidar_idx_torch = None
 
         self.cur_point_cloud_mono_depth = None # point cloud results from image mono (metric) depth estimation
         self.cur_point_normals_mono_depth = None
@@ -283,6 +284,7 @@ class SLAMDataset():
 
         points = None
         point_ts = None
+        point_lidar_idx = None
         img_dict = None
         depth_dict = None
         imus = None
@@ -298,6 +300,8 @@ class SLAMDataset():
                 points = frame_data["points"] # may also contain intensity or color
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
+            if "point_lidar_idx" in dict_keys: # the point belong to which lidar, now we support the multi-lidar system
+                point_lidar_idx = frame_data["point_lidar_idx"]
             if "imus" in dict_keys: # TODO: add from Pinochio
                 self.cur_frame_imus = frame_data["imus"]
             if "img" in dict_keys and use_image: # support multiple cameras
@@ -574,6 +578,9 @@ class SLAMDataset():
 
         if self.config.deskew: 
             self.get_point_ts(point_ts)
+
+        if point_lidar_idx is not None:
+            self.cur_point_lidar_idx_torch = torch.tensor(point_lidar_idx, device=self.device, dtype=int)
 
     def read_frame(self, frame_id, init_pose: bool = True):
 
@@ -1516,12 +1523,13 @@ def read_point_cloud(
 
         points = pc_load["positions"]
 
-        if "t" in keys:
-            ts = pc_load["t"] * 1e-8
-        elif "timestamp" in keys:
-            ts = pc_load["timestamp"]
-        else:
-            ts = None
+        time_fields = ["t", "ts", "time", "timestamp", "timestamps"]
+
+        ts = None
+        for time_field in time_fields:
+            if time_field in keys:
+                ts = pc_load[time_field]
+                break
 
         if "colors" in keys and color_channel == 3:
             colors = pc_load["colors"]  # if they are available

@@ -45,6 +45,8 @@ class IPBCarDataset:
         
         self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
+        self.min_lidar_radius_m = 0.5
+
         self.lidar_h_topic_name = "horizontal" 
         self.lidar_v_topic_name = "vertical" 
         
@@ -76,6 +78,7 @@ class IPBCarDataset:
         self.K_mats = {}
         self.dist_coeffs = {}
         self.T_c_l_mats = {}
+        self.T_l_l_mats = [] 
 
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
@@ -155,10 +158,12 @@ class IPBCarDataset:
         # toc_read_pc = get_time()
         # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
 
-        valid_mask = ~np.all(np.abs(points[:,:3]) < 1.0, axis=1) 
+        valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
         points = points[valid_mask]
         point_ts = point_ts[valid_mask]
         
+        point_lidar_idx = np.zeros_like(point_ts) # all zero
+
         lidar_h_point_count = np.shape(points)[0]
         # from 0 to lidar_h_point_count-1: lidar_h
         # from lidar_h_point_count to end: lidar_v
@@ -175,12 +180,15 @@ class IPBCarDataset:
             lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
             lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
 
-            valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < 1.0, axis=1) 
+            valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < self.min_lidar_radius_m, axis=1) 
             lidar_v_points = lidar_v_points[valid_mask]
             lidar_v_points_ts = lidar_v_points_ts[valid_mask]
 
-            points = np.concatenate((points, lidar_v_points), axis=0) # 2N, 4
+            lidar_v_point_lidar_idx = np.ones_like(lidar_v_points_ts)
+
+            points = np.concatenate((points, lidar_v_points), axis=0) # K, 4
             point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
+            point_lidar_idx = np.concatenate((point_lidar_idx, lidar_v_point_lidar_idx), axis=0)
 
         if self.load_img:
             img_dict = {}
@@ -233,16 +241,17 @@ class IPBCarDataset:
             #     points = points[with_rgb_mask]
             #     points_rgb = points_rgb[with_rgb_mask]
             #     point_ts = point_ts[with_rgb_mask]
+            #     point_lidar_idx = point_lidar_idx[with_rgb_mask]
 
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             # print(point_ts) # correct
 
-            frame_data = {"points": points, "point_ts": point_ts, "img": img_dict}
-            # frame_data = {"points": points, "point_ts": point_ts, "img": img_dict, "depth": depth_img_dict}
+            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict}
+            # frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict, "depth": depth_img_dict}
         else:
-            frame_data = {"points": points, "point_ts": point_ts}
+            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx}
 
         return frame_data
 
@@ -356,6 +365,7 @@ class IPBCarDataset:
             T_cf_lh = np.array(lidar_h_calib["extrinsics"])
             T_cf_lv = np.array(lidar_v_calib["extrinsics"])
             self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
+            self.T_l_l_mats.append(self.T_lv_lh)
 
             for cam_name in self.cam_list:
                 cur_cam_calib_name = "camera{}image_raw".format(cam_name)

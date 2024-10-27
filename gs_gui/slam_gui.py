@@ -1221,7 +1221,7 @@ class SLAM_GUI:
                     down_rate=down_rate_used, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
-                    correct_exposure=False,
+                    correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=(not self.backface_chbox.checked))
 

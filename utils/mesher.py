@@ -94,7 +94,7 @@ class Mesher:
             mc_mask = None
 
         with torch.no_grad():  # eval step
-            for n in tqdm(range(iter_n), disable=self.silence):
+            for n in tqdm(range(iter_n), disable=True):
                 head = n * bs
                 tail = min((n + 1) * bs, sample_count)
                 batch_coord = coord[head:tail, :]
@@ -374,8 +374,8 @@ class Mesher:
         Returns:
             ([verts], [faces]), mesh vertices and triangle faces
         """
-        if not self.silence:
-            print("Marching cubes ...")
+        # if not self.silence:
+        #     print("Marching cubes ...")
         # the input are all already numpy arraies
         verts, faces = np.zeros((0, 3)), np.zeros((0, 3))
         try:

@@ -27,13 +27,16 @@ neuralpoints:
   # map_surface_ratio: 1.0 # x surface_sample_range_m would be added to the map 
 decoder:
   freeze_after_frame: 30
+  gs_mlp_level: 1
+  gs_mlp_hidden_dim: 128
 loss:
   sigma_sigmoid_m: 0.1
-  weight_color: 0.1
+  weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
   ekional_loss_on: True
-  weight_e: 0.5
+  numerical_grad: False # FIXME
+  weight_e: 1.0 # 2.0 # not much differences
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7 # this is often the part that takes a lot of memory
@@ -46,14 +49,16 @@ pgo:
   virtual_side_count: 6
 gs:
   monodepth_on: False
-  exposure_correction_on: False
+  exposure_correction_on: True
   view_concat_on: True
-  dist_concat_on: True # TODO: check
+  dist_concat_on: False # TODO: check
   gs_iters: 100 # 50
-  gaussian_bs_ratio: 2.0
+  gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 40 # TODO
+  short_term_train_prob: 0.5
   gs_down_rate: 1
   gs_vis_down_rate: 1
+  # gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: True
   lambda_depth: 10.0 # 20.0
   lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
@@ -64,10 +69,11 @@ gs:
   # consist_normal_fixed: True
   lambda_sdf_cons: 0.2
   lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss
-  lambda_sdf: 1.0 # 0.1 # what should this value be like
+  lambda_sdf: 0.2 # 0.1 # what should this value be like # I don't know
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
+  learning_rate: 0.002 # neural point feature lr
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply

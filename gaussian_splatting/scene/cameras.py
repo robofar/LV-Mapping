@@ -75,7 +75,8 @@ class CamImage:
 
         # init value
         self.R = torch.eye(3, dtype=self.dtype, device=self.device)
-        self.T = torch.zeros(3, dtype=self.dtype, device=self.device)
+        # this is not the camera center in world frame, use camera_center instead
+        self.T = torch.zeros(3, dtype=self.dtype, device=self.device) 
 
         self.set_pose(cam_pose)
 
@@ -183,13 +184,17 @@ class CamImage:
         if cam_pose is not None: # we also directly load the camera pose here
 
             T_cw = torch.linalg.inv(cam_pose).to(dtype=self.dtype, device=self.device) 
-            
+
             self.world_view_transform = (T_cw.T)
             self.camera_center = torch.linalg.inv(self.world_view_transform)[3, :3]
             self.full_proj_transform = self.world_view_transform @ self.projection_matrix 
             
             self.R = T_cw[:3, :3] # rotation part
             self.T = T_cw[:3, 3] # translation part
+
+    def set_exposure(self, exposure_a, exposure_b):
+        self.exposure_a = exposure_a
+        self.exposure_b = exposure_b
 
     def set_depth_img(self, depth_img_torch):
         if depth_img_torch is not None:  # 1, H, W
@@ -275,16 +280,16 @@ class Camera(nn.Module):
         self.camera_center = self.world_view_transform.inverse()[3, :3]
 
 
-# what does this mean?
-class MiniCam:
-    def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
-        self.image_width = width
-        self.image_height = height    
-        self.FoVy = fovy
-        self.FoVx = fovx
-        self.znear = znear
-        self.zfar = zfar
-        self.world_view_transform = world_view_transform
-        self.full_proj_transform = full_proj_transform
-        view_inv = torch.inverse(self.world_view_transform)
-        self.camera_center = view_inv[3][:3]
+# # what does this mean?
+# class MiniCam:
+#     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
+#         self.image_width = width
+#         self.image_height = height    
+#         self.FoVy = fovy
+#         self.FoVx = fovx
+#         self.znear = znear
+#         self.zfar = zfar
+#         self.world_view_transform = world_view_transform
+#         self.full_proj_transform = full_proj_transform
+#         view_inv = torch.inverse(self.world_view_transform)
+#         self.camera_center = view_inv[3][:3]

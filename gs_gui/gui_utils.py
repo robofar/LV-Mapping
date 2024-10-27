@@ -195,9 +195,9 @@ class VisPacket:
                     
                     gtcolor = self.resize_img(gtcolor)
 
-                    # exposure correction for vis
-                    with torch.no_grad(): # - /
-                        gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
+                    # exposure correction for vis (don't apply this, we only apply exposure correction to render views to let them align with the real obseravtion)
+                    # with torch.no_grad(): # - /
+                    #     gtcolor = (gtcolor - current_frame.exposure_b) /  torch.exp(current_frame.exposure_a)
 
                     self.gtcolor[cam] = gtcolor
                     

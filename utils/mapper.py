@@ -142,6 +142,7 @@ class Mapper:
 
         # current exposure parameters for each camera
         self.cams_exposure_ab = {}
+        self.per_cam_exposure_ab = {} # dict of dict, contains dict per cam
 
         self.gs_total_iter = 0
         self.gs_iter_window = config.gs_bs * config.gs_iters * config.img_pool_size
@@ -645,11 +646,14 @@ class Mapper:
                 self.train_cam_uid.append(cur_view_cam.uid)
             
             # range filter
-            self.cam_long_term_train_pool = [cam_long_term for cam_long_term in self.cam_long_term_train_pool if (torch.norm(self.used_poses[cam_long_term.frame_id,:3,3]-self.used_poses[frame_id,:3,3], 2) < self.config.sorrounding_map_radius)] 
+            view_range = 0.5 * (self.config.sorrounding_map_radius + self.config.max_range)
+            self.cam_long_term_train_pool = [cam_long_term for cam_long_term in self.cam_long_term_train_pool \
+             if (torch.norm(self.used_poses[cam_long_term.frame_id,:3,3]-self.used_poses[frame_id,:3,3], 2) \
+                < view_range)] 
 
-            long_term_pool_size = 2*self.config.img_pool_size # TODO, add to config
-            if len(self.cam_long_term_train_pool) > long_term_pool_size:
-                self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, long_term_pool_size)
+            # capacity filter
+            if len(self.cam_long_term_train_pool) > self.config.long_term_pool_size:
+                self.cam_long_term_train_pool = random.sample(self.cam_long_term_train_pool, self.config.long_term_pool_size)
                 # make sure the memory are freed
 
         # also add some testing views (all the others are then testing views), now it's deprecated, we do not do online evaluation
@@ -1013,6 +1017,8 @@ class Mapper:
 
         cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
+        # lr_ratio = 1.0 if self.config.decoder_freezed else 10.0
+
         opt = setup_optimizer(
             self.config,
             neural_point_feat,
@@ -1023,6 +1029,7 @@ class Mapper:
             mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
             mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
             cams = cams_param,
+            # lr_ratio=lr_ratio,
             # TODO: add camera exposures # add all cams in the train pool
         )
 
@@ -1032,6 +1039,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         cur_local_map_center = self.used_poses[-1,:3,3]
+        print("Cur local map center: ", cur_local_map_center)
 
         neural_points_data = {}
         neural_points_data["position"] = self.neural_points.local_neural_points
@@ -1118,20 +1126,21 @@ class Mapper:
 
                 cam_count = len(self.dataset.cam_names)
                 
-                # firstly train with the most recent observations? # TODO
+                cur_min_visible_neural_point_ratio = 0.005 # 0.001 # don't restrict this
 
-                lastest_train_prob = 0.1 # TODO: add to config
+                short_term_train_prob = 1 - (1-self.config.short_term_train_prob)*(long_term_img_pool_size/self.config.long_term_pool_size)
 
-                # 60 % short term (10% latest), 40 % long term
+                # 50 % short term (10% latest), 50 % long term history
                 dice_number = random.random()
-                if dice_number < self.config.short_term_train_prob or long_term_img_pool_size==0: # [ 0, 1 ], 0.5 then means 50 % prob.
+                if dice_number < short_term_train_prob: # [ 0, 1 ], 0.5 then means 50 % prob.
                     # short-term memory 
                     cur_img_idx = torch.randperm(short_term_img_pool_size)[0]
-                    if dice_number < lastest_train_prob: # train more on the most recent imgs
+                    if dice_number < self.config.lastest_train_prob: # train more on the most recent imgs
                         cur_img_idx = -torch.randperm(cam_count)[0]
                     viewpoint_cam: CamImage = self.cam_short_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_short_term
                     weight_down_rate = 1.0
+
                     is_replay_mode = False
                     # if not self.silence:
                     #     print(" Train on a cam from short-term memory")
@@ -1143,6 +1152,9 @@ class Mapper:
                     viewpoint_cam: CamImage = self.cam_long_term_train_pool[cur_img_idx]
                     train_down_rate = down_rate_long_term
                     weight_down_rate = 4^(down_rate_long_term-down_rate_short_term)
+                    dist_to_cur_frame = torch.norm((viewpoint_cam.camera_center - cur_local_map_center), 2)
+                    if dist_to_cur_frame > self.config.local_map_radius: # out of the local map, then we have a min threshold for visual neural point in the local map
+                        cur_min_visible_neural_point_ratio = self.config.min_visible_neural_point_ratio
                     is_replay_mode = True
 
                     # if not self.silence:
@@ -1153,10 +1165,10 @@ class Mapper:
 
                 gt_rgb_image = viewpoint_cam.rgb_image_list[train_down_rate] # 3, H, W
 
-                if self.config.exposure_correction_on and not self.silence:
-                    cur_exposure_a = viewpoint_cam.exposure_a.item()
-                    cur_exposure_b = viewpoint_cam.exposure_b.item()
-                    print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
+                # if self.config.exposure_correction_on and not self.silence:
+                #     cur_exposure_a = viewpoint_cam.exposure_a.item()
+                #     cur_exposure_b = viewpoint_cam.exposure_b.item()
+                #     print("Cur cam view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure_a, cur_exposure_b))
                 
                 if viewpoint_cam.depth_on:
                     gt_depth_image = viewpoint_cam.depth_image_list[train_down_rate] # 1, H, W
@@ -1167,13 +1179,13 @@ class Mapper:
 
                 render_pkg = render(viewpoint_cam, None, neural_points_data, 
                     self.decoders, sorrounding_spawn_results, background, down_rate=train_down_rate, 
-                    min_visible_neural_point_ratio=self.config.min_visible_neural_point_ratio,
+                    min_visible_neural_point_ratio=cur_min_visible_neural_point_ratio,
                     replay_mode=is_replay_mode, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
-                    front_only_on=False) # render gaussians  # FIXME: front only
+                    front_only_on=self.config.train_front_only) # render gaussians  # FIXME: front only
 
                 if render_pkg is None:
                     continue
@@ -1280,7 +1292,7 @@ class Mapper:
                 depth_loss = 0.0
                 valid_depth_mask = None
                 if rendered_depth is not None and gt_depth_image is not None and self.config.lambda_depth > 0:
-                    valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
+                    valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     # print(gt_depth_image)
                     rendered_depth_valid = rendered_depth[valid_depth_mask]
@@ -1400,8 +1412,8 @@ class Mapper:
 
                 constraint_count = torch.sum(constraint_mask).item() # TODO: for isotropic and area loss, we actually also need to consider free gaussians
 
-                if not self.silence:
-                    print(" # Gaussians for 3D losses in current view:", constraint_count) # non-free visible gaussians
+                # if not self.silence:
+                #     print(" # Gaussians for 3D losses in current view:", constraint_count) # non-free visible gaussians
 
                 isotropic_loss = area_loss = sdf_consistency_loss = sdf_normal_consistency_loss = 0.0
 
@@ -1462,8 +1474,8 @@ class Mapper:
                         # # TODO: why there are fewer and fewer valid points TODO
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()
-                        if not self.silence:
-                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                        # if not self.silence:
+                        #     print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
                         # also consider the certainty
                         # static_mask = (sampled_guassians_sdf < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m)
@@ -1489,8 +1501,8 @@ class Mapper:
                         gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))                           
                         sdf_normal_consistency_loss = gaussian_normal_error.mean()
 
-                        if not self.silence:
-                            print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
+                        # if not self.silence:
+                        #     print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
 
                         sdf_consistency_loss *= self.config.lambda_sdf_cons
                         sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
@@ -1604,6 +1616,11 @@ class Mapper:
             # self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
 
+            if cams_param is not None:
+                for cam_param in cams_param:
+                    self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
+
+
             self.gs_total_iter += (self.config.gs_bs * iter_count)
 
         # disabled for now
@@ -1678,7 +1695,7 @@ class Mapper:
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on, 
-                    front_only_on=False) # render gaussians 
+                    front_only_on=self.config.train_front_only) # render gaussians 
 
                 # T3 = get_time()
 
@@ -1861,6 +1878,19 @@ class Mapper:
         self.test_depthl1_list = []
         self.test_depth_rmse_list = []
 
+    def record_per_cam_exposure(self):
+
+        exposure_record_uids = list(self.cams_exposure_ab.keys())
+        for exposure_record_uid in exposure_record_uids:
+            exposure_record = exposure_record_uid.split('_')
+            exposure_record_cam = exposure_record[1]
+            exposure_record_frame = int(exposure_record[0])
+            if exposure_record_cam not in list(self.per_cam_exposure_ab.keys()):
+                self.per_cam_exposure_ab[exposure_record_cam] = {}
+            else:
+                (self.per_cam_exposure_ab[exposure_record_cam])[exposure_record_frame] = self.cams_exposure_ab[exposure_record_uid]
+
+
     def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
                         eval_down_rate=0, skip_end_count: int = 0, 
                         lpips_eval_on: bool = False):
@@ -1874,6 +1904,8 @@ class Mapper:
         assert self.config.use_dataloader, "Only data loader version is supported currently"
 
         with torch.no_grad():
+            
+            self.record_per_cam_exposure()
 
             background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
             bg_3d = background.view(3, 1, 1)
@@ -1947,6 +1979,19 @@ class Mapper:
                     # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.set_pose(T_w_c)
+                    
+                    
+                    cur_uid = cur_view_cam.uid
+                    cur_cam_id = cur_view_cam.cam_id # cam_name
+                    cur_frame_id = cur_view_cam.frame_id # frame_id
+
+                    # find the closest train view exposure
+                    if self.config.exposure_correction_on:
+                        closest_train_frame_id = min(self.per_cam_exposure_ab[cur_cam_id].keys(), key=lambda k: (abs(k - cur_frame_id), k))
+                        cur_exposure = (self.per_cam_exposure_ab[cur_cam_id])[closest_train_frame_id]
+                        cur_view_cam.set_exposure(cur_exposure[0], cur_exposure[1])
+                        
+                        # print(cur_view_cam)
 
                     if cam_name in eval_cam_name:
 
@@ -1956,9 +2001,9 @@ class Mapper:
                             down_rate=eval_down_rate, 
                             dist_concat_on=self.config.dist_concat_on, 
                             view_concat_on=self.config.view_concat_on, 
-                            correct_exposure=True, 
+                            correct_exposure=self.config.exposure_correction_on, 
                             learn_color_residual=self.config.learn_color_residual,
-                            front_only_on=False) # render gaussians 
+                            front_only_on=self.config.train_front_only)
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -1995,6 +2040,8 @@ class Mapper:
                             print("Current view PSNR  ↑ :", f"{cur_pnsr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
+                            if self.config.exposure_correction_on:
+                                print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
 
                         if cur_view_cam.depth_on and rendered_depth is not None: 
                             eval_depth_max = self.config.max_range * 0.8
@@ -2013,6 +2060,8 @@ class Mapper:
 
                         if cur_view_cam.uid in self.train_cam_uid:
                             # as train views
+                            if not self.silence:
+                                print("Evalualted as a train view")
                             self.train_psnr_list.append(cur_pnsr)
                             self.train_ssim_list.append(cur_ssim)
                             self.train_lpips_list.append(cur_lpips)
@@ -2022,6 +2071,8 @@ class Mapper:
                         
                         else:
                             # as test views
+                            if not self.silence:
+                                print("Evaluated as a test view")
                             self.test_psnr_list.append(cur_pnsr)
                             self.test_ssim_list.append(cur_ssim)
                             self.test_lpips_list.append(cur_lpips)

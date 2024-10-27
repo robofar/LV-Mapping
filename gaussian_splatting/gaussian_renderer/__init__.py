@@ -202,7 +202,10 @@ def render(viewpoint_camera: CamImage,
         visible_neural_point_ratio = visible_neural_point_count / neural_point_count
 
         if visible_neural_point_ratio < min_visible_neural_point_ratio and replay_mode: # is 0.05 too small?
-            print("Too small ratio of visible neural points, skip this frame ")
+            if verbose:
+                print("Too small ratio of visible neural points, skip this frame {}".format(viewpoint_camera.uid))
+                # print(visible_neural_point_ratio)
+
             return None
 
         # Spawn Gaussians
