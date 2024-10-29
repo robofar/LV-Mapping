@@ -78,17 +78,19 @@ class IPBCarDataset:
         self.K_mats = {}
         self.dist_coeffs = {}
         self.T_c_l_mats = {}
-        self.T_l_l_mats = [] 
+        self.T_l_lm_mats = [] # inter-lidar transformation, from the main LiDAR (horizontal) to other LiDARs (vertical)
+        self.ts_ref_ratio_diffs = [0.0]
+
 
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
         self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply")) # we use bin here, can not be directly visualized but would be much smaller
-        # self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
+        self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
 
         # vertical lidar
         self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
         self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
-        # self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
+        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
 
         # img_size: 2064x1024
 
@@ -110,8 +112,8 @@ class IPBCarDataset:
 
             self.img_files[cam_name] = cur_img_files
 
-            # cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
-            # self.img_ts[cam_name] = cur_img_ts
+            cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
+            self.img_ts[cam_name] = cur_img_ts
 
         # read calib
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
@@ -149,7 +151,8 @@ class IPBCarDataset:
         
         # tic_read_pc = get_time()
 
-        # print("H Lidar ts: {}".format(self.lidar_horizontal_ts[idx]))
+        h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
+        # print("H Lidar ts: {}".format(h_lidar_ref_ts))
 
         # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
         # read bin is very fast
@@ -160,7 +163,9 @@ class IPBCarDataset:
 
         valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
         points = points[valid_mask]
-        point_ts = point_ts[valid_mask]
+        point_ts = point_ts[valid_mask] # unit: s
+
+        # print(point_ts)
         
         point_lidar_idx = np.zeros_like(point_ts) # all zero
 
@@ -172,6 +177,10 @@ class IPBCarDataset:
         # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
         # For multiple-LiDAR cases, you still have something to deal with
         if not self.use_only_lidar_h:
+            
+            v_lidar_ref_ts = self.lidar_vertical_ts[idx]
+            # print("V Lidar ts: {}".format(v_lidar_ref_ts))
+
             lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
             # print(np.shape(lidar_v_points)[0])
 
@@ -183,6 +192,13 @@ class IPBCarDataset:
             valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < self.min_lidar_radius_m, axis=1) 
             lidar_v_points = lidar_v_points[valid_mask]
             lidar_v_points_ts = lidar_v_points_ts[valid_mask]
+
+            # this is actually not a very big number, consider it later FIXME
+            # lidar_v_points_ts += (v_lidar_ref_ts - h_lidar_ref_ts) # convert to the same reference time of the horizontal lidar
+
+            added_ref_ts_ratio = (h_lidar_ref_ts - v_lidar_ref_ts) / 0.1
+            self.ts_ref_ratio_diffs[0] = added_ref_ts_ratio
+            # print(added_ref_ts_ratio)
 
             lidar_v_point_lidar_idx = np.ones_like(lidar_v_points_ts)
 
@@ -365,7 +381,7 @@ class IPBCarDataset:
             T_cf_lh = np.array(lidar_h_calib["extrinsics"])
             T_cf_lv = np.array(lidar_v_calib["extrinsics"])
             self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
-            self.T_l_l_mats.append(self.T_lv_lh)
+            self.T_l_lm_mats.append(self.T_lv_lh)
 
             for cam_name in self.cam_list:
                 cur_cam_calib_name = "camera{}image_raw".format(cam_name)

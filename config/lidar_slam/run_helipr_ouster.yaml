@@ -1,0 +1,50 @@
+setting:
+  name: "test_helipr"
+  output_root: "./experiments"
+  pc_path: "./data/HeLiPR/Town03/" # data has some problem, stack at 16716/22481
+  # pc_path: "./data/HeLiPR/Bridge03/"
+  # pc_path: "./data/HeLiPR/Roundabout03/"
+  deskew: True
+process:
+  min_range_m: 3.0
+  max_range_m: 80.0
+  min_z_m: -10.0
+  vox_down_m: 0.08
+sampler:
+  surface_sample_range_m: 0.25
+  surface_sample_n: 4
+  free_sample_begin_ratio: 0.3
+  free_sample_end_dist_m: 1.2
+  free_front_sample_n: 2 
+neuralpoints:
+  voxel_size_m: 0.4
+  search_alpha: 0.5
+loss:
+  sigma_sigmoid_m: 0.08
+  loss_weight_on: True
+  dist_weight_scale: 0.8
+continual:
+  batch_size_new_sample: 1000
+  pool_capacity: 2e7
+  pool_filter_freq: 10
+tracker:
+  source_vox_down_m: 0.6
+  iter_n: 50
+  valid_nn_k: 5
+pgo:
+  map_context: True
+  context_cosdist: 0.3
+  virtual_side_count: 10
+  virtual_step_m: 2.0
+  local_map_latency: 10
+  min_loop_travel_ratio: 3.0
+  local_loop_dist_thre: 25.0 # 20.0
+  max_loop_dist_ratio: 5.0
+optimizer: # mapper
+  iters: 15
+  batch_size: 16384
+  adaptive_iters: True
+eval:
+  sensor_cad_path: ./cad/kitti_car.ply
+  mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  mesh_min_nn: 15

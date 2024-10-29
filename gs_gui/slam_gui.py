@@ -772,6 +772,10 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) # TODO: add pin-slam mesh
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
+
+        # packet = Packet_vis2main()
+        # packet.flag_mesh = is_checked
+        # self.q_vis2main.put(packet)
     
     def _on_cmesh_chbox(self, is_checked):
         if is_checked:
@@ -957,23 +961,24 @@ class SLAM_GUI:
                 neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
                 neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
-                valid_neural_point_position = neural_point_position[neural_point_valid_mask]
-                valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
-                
+                valid_neural_point_position = neural_point_position[neural_point_valid_mask]                
                 invalid_neural_point_position = neural_point_position[~neural_point_valid_mask]
-                invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
-                invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis
 
                 self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position)
-                self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color)
-
                 self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position)
-                self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color)
 
-                if self.neural_point_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.neural_point_name)
-                    self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
-                
+                if np.shape(neural_point_colors)[0] > 0:
+                    valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
+                    invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
+                    invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis
+
+                    self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color)                
+                    self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color)
+
+                self.widget3d.scene.remove_geometry(self.neural_point_name)
+                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
+                self.widget3d.scene.show_geometry(self.neural_point_name, self.neural_point_chbox.checked)
+            
                 if self.invalid_neural_point_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
                     self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)

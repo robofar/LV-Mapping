@@ -42,8 +42,6 @@ class Config:
         self.num_workers: int = 12 # number of worker for the dataloader
         self.device: str = "cuda"  # use "cuda" or "cpu"
         self.gpu_id: str = "0"  # used GPU id
-        self.dtype = torch.float32 # default torch tensor data type
-        self.tran_dtype = torch.float64 # dtype used for all the transformation and poses
 
         # dataset specific
         self.kitti_correction_on: bool = False # intrinsic vertical angle correction # issue 11
@@ -104,7 +102,7 @@ class Config:
         self.feature_dim: int = 8  # length of the feature for each grid feature
         self.color_feature_dim: int = 8
         self.sem_feature_dim: int = 8
-        self.feature_std: float = 0.01 # FIXME  # grid feature initialization standard deviation (zero initialization)
+        self.feature_std: float = 0.0 # FIXME  # grid feature initialization standard deviation (zero initialization)
 
         # Use all the surface samples or just the exact measurements to build the neural points map
         # If True may lead to larger memory consumption, but is more robust while the reconstruction.
@@ -201,6 +199,8 @@ class Config:
         self.opt_adam: bool = True  # use adam (default) or sgd as the gradient descent optimizer
         self.bs: int = 16384 # batch size
         self.lr: float = 0.01 # learning rate for the neural point feature
+        self.lr_mlp_base: float = 0.01
+        self.lr_exposure: float = 0.001
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
         self.lr_ba_map: float = 0.01 # learning rate for map during bundle adjustment
         self.weight_decay: float = 0.0 # weight_decay is only applied to the latent codes for the l2 regularization
@@ -252,7 +252,7 @@ class Config:
         
         self.train_front_only: bool = True
 
-        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
+        self.min_visible_neural_point_ratio: float = 0.15 # only train when the visible local neural point in this frame is larger than this threshold
         
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
@@ -393,6 +393,9 @@ class Config:
         self.republish_raw_input: bool = False # publish the raw input point cloud or not
         self.timeout_duration_s: int = 30 # in seconds, exit after receiving no topic for x seconds 
 
+    def setup_dtype(self):
+        self.dtype = torch.float32 # default torch tensor data type
+        self.tran_dtype = torch.float64 # dtype used for all the transformation and poses
 
     def load(self, config_file):
         config_args = yaml.safe_load(open(os.path.abspath(config_file)))
@@ -539,8 +542,8 @@ class Config:
             self.pool_filter_freq = config_args["continual"].get("pool_filter_freq", 1)
         
         # tracker
-        self.track_on = config_args.get("tracker", False) # only on if indicated
-        if self.track_on:
+        if "tracker" in config_args:
+            self.track_on = True
             if self.color_on:
                 self.photometric_loss_on = config_args["tracker"].get("photo_loss", self.photometric_loss_on)
                 if self.photometric_loss_on:
@@ -561,29 +564,29 @@ class Config:
 
         # pgo
         if self.track_on:
-            self.pgo_on = config_args.get("pgo", False) # only on if indicated
-        if self.pgo_on: 
-            self.local_map_context = config_args["pgo"].get("map_context", self.local_map_context)
-            self.loop_with_feature = config_args["pgo"].get("loop_with_feature", self.loop_with_feature)
-            self.local_map_context_latency = config_args["pgo"].get('local_map_latency', self.local_map_context_latency)
-            self.context_virtual_side_count = config_args["pgo"].get("virtual_side_count", self.context_virtual_side_count)
-            self.context_virtual_step_m = config_args["pgo"].get("virtual_step_m", self.voxel_size_m * 4.0)
-            self.npmc_max_dist = config_args["pgo"].get("npmc_max_dist", self.max_range * 0.7)
-            self.pgo_freq = config_args["pgo"].get("pgo_freq_frame", self.pgo_freq)
-            self.pgo_with_pose_prior = config_args["pgo"].get("with_pose_prior", self.pgo_with_pose_prior)
-            # default cov (constant for all the edges)
-            self.pgo_tran_std = float(config_args["pgo"].get("tran_std", self.pgo_tran_std))
-            self.pgo_rot_std = float(config_args["pgo"].get("rot_std", self.pgo_rot_std))
-            # use default or estimated cov
-            self.use_reg_cov_mat = config_args["pgo"].get("use_reg_cov", False)
-            # merge the neural point map or not after the loop, merge the map may lead to some holes
-            self.pgo_error_thre = float(config_args["pgo"].get("pgo_error_thre_frame", self.pgo_error_thre_frame))
-            self.pgo_max_iter = config_args["pgo"].get("pgo_max_iter", self.pgo_max_iter) 
-            self.pgo_merge_map = config_args["pgo"].get("merge_map", False) 
-            self.context_cosdist_threshold = config_args["pgo"].get("context_cosdist", self.context_cosdist_threshold) 
-            self.min_loop_travel_dist_ratio = config_args["pgo"].get("min_loop_travel_ratio", self.min_loop_travel_dist_ratio) 
-            self.loop_dist_drift_ratio_thre = config_args["pgo"].get("max_loop_dist_ratio", self.loop_dist_drift_ratio_thre)
-            self.local_loop_dist_thre = config_args["pgo"].get("local_loop_dist_thre", self.voxel_size_m * 5.0)
+            if "pgo" in config_args:
+                self.pgo_on = True
+                self.local_map_context = config_args["pgo"].get("map_context", self.local_map_context)
+                self.loop_with_feature = config_args["pgo"].get("loop_with_feature", self.loop_with_feature)
+                self.local_map_context_latency = config_args["pgo"].get('local_map_latency', self.local_map_context_latency)
+                self.context_virtual_side_count = config_args["pgo"].get("virtual_side_count", self.context_virtual_side_count)
+                self.context_virtual_step_m = config_args["pgo"].get("virtual_step_m", self.voxel_size_m * 4.0)
+                self.npmc_max_dist = config_args["pgo"].get("npmc_max_dist", self.max_range * 0.7)
+                self.pgo_freq = config_args["pgo"].get("pgo_freq_frame", self.pgo_freq)
+                self.pgo_with_pose_prior = config_args["pgo"].get("with_pose_prior", self.pgo_with_pose_prior)
+                # default cov (constant for all the edges)
+                self.pgo_tran_std = float(config_args["pgo"].get("tran_std", self.pgo_tran_std))
+                self.pgo_rot_std = float(config_args["pgo"].get("rot_std", self.pgo_rot_std))
+                # use default or estimated cov
+                self.use_reg_cov_mat = config_args["pgo"].get("use_reg_cov", False)
+                # merge the neural point map or not after the loop, merge the map may lead to some holes
+                self.pgo_error_thre = float(config_args["pgo"].get("pgo_error_thre_frame", self.pgo_error_thre_frame))
+                self.pgo_max_iter = config_args["pgo"].get("pgo_max_iter", self.pgo_max_iter) 
+                self.pgo_merge_map = config_args["pgo"].get("merge_map", False) 
+                self.context_cosdist_threshold = config_args["pgo"].get("context_cosdist", self.context_cosdist_threshold) 
+                self.min_loop_travel_dist_ratio = config_args["pgo"].get("min_loop_travel_ratio", self.min_loop_travel_dist_ratio) 
+                self.loop_dist_drift_ratio_thre = config_args["pgo"].get("max_loop_dist_ratio", self.loop_dist_drift_ratio_thre)
+                self.local_loop_dist_thre = config_args["pgo"].get("local_loop_dist_thre", self.voxel_size_m * 5.0)
             
         # mapping optimizer
         if "optimizer" in config_args:

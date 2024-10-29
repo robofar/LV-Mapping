@@ -12,7 +12,9 @@ import shutil
 import subprocess
 import sys
 import time
+import imageio
 import warnings
+import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -56,6 +58,12 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     else:
         torch.cuda.empty_cache()
 
+    # this would make the processing slower, disabling it when you are not debugging
+    # torch.autograd.set_detect_anomaly(True)
+
+    # set the random seed for all
+    setup_seed(config.seed)
+
     if not debug_mode:
         access = 0o755
         os.makedirs(run_path, access, exist_ok=True)
@@ -69,10 +77,13 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
         map_path = os.path.join(run_path, "map")
         model_path = os.path.join(run_path, "model")
         log_path = os.path.join(run_path, "log")
+        meta_data_path = os.path.join(run_path, "meta")
         os.makedirs(mesh_path, access, exist_ok=True)
         os.makedirs(map_path, access, exist_ok=True)
         os.makedirs(model_path, access, exist_ok=True)
         os.makedirs(log_path, access, exist_ok=True)
+        os.makedirs(meta_data_path, access, exist_ok=True)
+
 
         if config.wandb_vis_on:
             # set up wandb
@@ -99,18 +110,19 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
                 run_str = "python3 " + " ".join(argv)
                 reproduce_shell.write(run_str)
 
-    # set the random seed for all
+        # disable lidar deskewing when not input per frame 
+        if config.step_frame > 1:
+            config.deskew = False
+
+        # write the full configs to yaml file
+        config_dict = vars(config)
+        config_out_path = os.path.join(meta_data_path, "config_all.yaml")
+        with open(config_out_path, 'w') as file:
+            yaml.dump(config_dict, file, default_flow_style=False)
+
+    # set up dtypes, note that torch stuff cannot be write to yaml, so we set it up after write out the yaml for the whole config
+    config.setup_dtype()
     torch.set_default_dtype(config.dtype)
-
-    # this would make the processing slower, disabling it when you are not debugging
-    # torch.autograd.set_detect_anomaly(True)
-
-    # set the random seed for all
-    setup_seed(config.seed)
-
-    # disable lidar deskewing when not input per frame 
-    if config.step_frame > 1:
-        config.deskew = False
 
     return run_path
 
@@ -147,9 +159,10 @@ def setup_optimizer(
     weight_decay_mlp = 0.0
     opt_setting = []
 
-    lr_sdf = 0.01
-    lr_color = 0.01
-    lr_sem = 0.01
+    # 0.01
+    lr_sdf = config.lr_mlp_base
+    lr_color = config.lr_mlp_base
+    lr_sem = config.lr_mlp_base
 
     if mlp_sdf_param is not None:
         mlp_sdf_param_opt_dict = {
@@ -176,12 +189,7 @@ def setup_optimizer(
         }
         opt_setting.append(mlp_sem_param_opt_dict)
     
-    # lr_gs_xyz = 1e-2
-    # lr_gs_scale = 1e-2
-    # lr_gs_rot = 1e-2
-    # lr_gs_alpha = 1e-2
-    # lr_gs_color = 1e-2
-
+    # TODO: add to config
     lr_gs_xyz = 1e-3
     lr_gs_scale = 1e-3
     lr_gs_rot = 1e-3
@@ -240,7 +248,7 @@ def setup_optimizer(
         poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
 
-    lr_exposure = 0.001 # TODO: 0.01
+    lr_exposure = config.lr_exposure # 0.001
     if cams is not None:
         for cam in cams:
             opt_setting.append(
@@ -434,13 +442,14 @@ def load_decoder(config, geo_mlp, sem_mlp, color_mlp):
         color_mlp.load_state_dict(loaded_model["color_mlp"])
         freeze_model(color_mlp)  # fixed the decoder
 
-def load_decoders(loaded_model, mlp_dict):
+def load_decoders(loaded_model, mlp_dict, freeze_decoders: bool = True):
 
     for key in list(loaded_model.keys()):
         if key != "neural_points":
             if loaded_model[key] is not None:
                 mlp_dict[key].load_state_dict(loaded_model[key])
-                freeze_model(mlp_dict[key])
+                if freeze_decoders:
+                    freeze_model(mlp_dict[key])
 
     print("Pretrained decoders loaded")
 
@@ -853,10 +862,12 @@ def split_chunks(
     # print("# Chunk for meshing: ", chunk_count)
     return chunk_aabb
 
-
+# FIXME: for multi-lidar version, it's not implemented in a neat way
 # torch version of lidar undistortion (deskewing)
 def deskewing(
-    points: torch.tensor, ts: torch.tensor, pose: torch.tensor, ts_ref_pose=0.5
+    points: torch.tensor, ts: torch.tensor, 
+    pose: torch.tensor, ts_ref_pose=0.5, 
+    points_lidar_idx = None, T_l_lm_list = None, ts_diff_list = None,
 ):
     """
         LiDAR point cloud deskewing (motion compensation) function,
@@ -864,6 +875,9 @@ def deskewing(
         ts_ref_pose =0.0, we deskew the scan to the beginning of the frame
         ts_ref_pose =0.5, we deskew the scan to the mid of the frame
         ts_ref_pose =1.0, we deskew the scan to the end of the frame
+
+        T_l_lm_list: contain the inter-LiDAR calibrations, the transformation from the main LiDAR to the other LiDAR  
+        ts_diff_list: contain the timestamp shift from the other LiDAR to the main LiDAR in ratio
     """  
 
     # ts_ref_pose =  (ts_ref - ts_min) / (ts_max - ts_min)
@@ -875,6 +889,8 @@ def deskewing(
     # ts is from 0 to 1 as the ratio
     ts = ts.squeeze(-1)
 
+    # print(ts)
+
     # Normalize the tensor to the range [0, 1]
     # NOTE: you need to figure out the begin and end of a frame because
     # sometimes there's only partial measurements, some part are blocked by some occlussions
@@ -885,15 +901,43 @@ def deskewing(
     # this is related to: https://github.com/PRBonn/kiss-icp/issues/299
     ts -= ts_ref_pose 
 
-    rotmat_slerp = roma.rotmat_slerp(
-        torch.eye(3).to(points), pose[:3, :3].to(points), ts
-    )
-
-    tran_lerp = ts[:, None] * pose[:3, 3].to(points)
-
     points_deskewd = points
 
-    points_deskewd[:, :3] = (rotmat_slerp @ points[:, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
+    # does not make sense
+    # # for LiDARs that are not the same as the main LiDAR frame
+    if T_l_lm_list is not None and points_lidar_idx is not None:
+        other_lidar_count = len(T_l_lm_list)
+        if other_lidar_count > 0:
+            for lidar_idx in range(other_lidar_count):
+                indices_lidar_idx = torch.nonzero(points_lidar_idx == (lidar_idx+1), as_tuple=True)[0]
+                T_l_lm = torch.tensor(T_l_lm_list[lidar_idx]).to(pose) # transformation from main LiDAR to this LiDAR
+                T_lm_l = torch.inverse(T_l_lm)
+                pose_other_lidar = T_l_lm @ pose @ T_lm_l
+                ts_other_lidar = ts[indices_lidar_idx]
+
+                if ts_diff_list is not None:
+                    ts_other_lidar += ts_diff_list[lidar_idx]
+
+                # print(ts_other_lidar)
+                rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(points), pose_other_lidar[:3, :3].to(points), ts_other_lidar)
+                tran_lerp = ts_other_lidar[:, None] * pose_other_lidar[:3, 3].to(points)
+                
+                points_deskewd[indices_lidar_idx, :3] = transform_torch(points[indices_lidar_idx, :3], T_l_lm) # back to its own coordinate frame first
+                points_deskewd[indices_lidar_idx, :3] = (rotmat_slerp @ points_deskewd[indices_lidar_idx, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
+                points_deskewd[indices_lidar_idx, :3] = transform_torch(points_deskewd[indices_lidar_idx, :3], T_lm_l) # back to main lidar's frame
+
+            # main LiDAR
+            indices_main_lidar_idx = torch.nonzero(points_lidar_idx == 0, as_tuple=True)[0]
+            ts_main_lidar = ts[indices_main_lidar_idx]
+            rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(points), pose[:3, :3].to(points), ts_main_lidar)
+            tran_lerp = ts_main_lidar[:, None] * pose[:3, 3].to(points)
+            points_deskewd[indices_main_lidar_idx, :3] = (rotmat_slerp @ points[indices_main_lidar_idx, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
+
+    else:
+        # standard case, there's only one LiDAR (this is the standard way)
+        rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(points), pose[:3, :3].to(points), ts)
+        tran_lerp = ts[:, None] * pose[:3, 3].to(points)    
+        points_deskewd[:, :3] = (rotmat_slerp @ points[:, :3].unsqueeze(-1)).squeeze(-1) + tran_lerp
 
     return points_deskewd
 
@@ -1184,3 +1228,42 @@ def plot_timing_detail(time_table: np.ndarray, saving_path: str, with_loop=False
 
     plt.savefig(saving_path, dpi=500)
     # plt.show()
+
+
+def save_video(
+    frames: torch.Tensor,
+    output_path: str,
+    fps: int = 10,
+    flip: bool = False,
+) -> None:
+    # images: (N, C, H, W)
+    frames_np = [(frame.permute(1, 2, 0).cpu().detach().numpy() * 255).astype(np.uint8) for frame in frames]  # (N, H, W, C)
+    if flip:
+        frames_flipped = [frame[::-1] for frame in frames_np] # heigth side up-side down (for opengl coordinate)
+        frames_np = frames_flipped
+
+
+    # just these matters
+    writer = imageio.get_writer(output_path, fps=fps)
+    for frame in frames_np: # list of H, W, C images in np
+        writer.append_data(frame)
+    writer.close()
+
+def save_video_np(
+    frames, # list of H, W, C images in np
+    output_path: str,
+    fps: int = 10,
+    flip: bool = False,
+    verbose: bool = True,
+) -> None:
+    if flip:
+        frames_flipped = [frame[::-1] for frame in frames] # x,y axis are both up-side down
+        frames = frames_flipped
+
+    writer = imageio.get_writer(output_path, fps=fps)
+    for frame in frames:
+        writer.append_data(frame)
+    writer.close()
+
+    if verbose:
+        print("Save the video to {} at {} Hz".format(output_path, fps))

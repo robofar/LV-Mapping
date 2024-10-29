@@ -371,6 +371,7 @@ class Packet_vis2main:
     flag_pause = None
     flag_nextbatch = None
     cur_cam = None
+    flag_mesh = None
 
 
 class ParamsGUI:

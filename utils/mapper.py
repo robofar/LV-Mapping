@@ -345,7 +345,7 @@ class Mapper:
         T3 = get_time()
 
         # concat with current observations
-        self.coord_pool = torch.cat((self.coord_pool, coord), 0)
+        # self.coord_pool = torch.cat((self.coord_pool, coord), 0)
         self.weight_pool = torch.cat((self.weight_pool, weight), 0)
         self.sdf_label_pool = torch.cat((self.sdf_label_pool, sdf_label), 0)
         self.time_pool = torch.cat((self.time_pool, time_repeat), 0)
@@ -371,17 +371,18 @@ class Mapper:
         # determine used poses # a dirty quick fix
         self.determine_used_pose()
 
-        if self.ba_done_flag:  # bundle adjustment is not done
-            self.global_coord_pool = transform_batch_torch(
-                self.coord_pool, self.used_poses[self.time_pool]
-            )  # very slow here [if ba is not done, then you don't need to transform the whole data pool]
-            self.ba_done_flag = False
+        # ba not used now
+        # if self.ba_done_flag:  # bundle adjustment is not done
+        #     self.global_coord_pool = transform_batch_torch(
+        #         self.coord_pool, self.used_poses[self.time_pool]
+        #     )  # very slow here [if ba is not done, then you don't need to transform the whole data pool]
+        #     self.ba_done_flag = False
 
-        else:  # used when ba is not enabled
-            global_coord = transform_torch(coord, cur_pose_torch)
-            self.global_coord_pool = torch.cat(
-                (self.global_coord_pool, global_coord), 0
-            )
+        # else:  # used when ba is not enabled
+        global_coord = transform_torch(coord, cur_pose_torch)
+        self.global_coord_pool = torch.cat(
+            (self.global_coord_pool, global_coord), 0
+        )
             # why so slow
 
         T3_1 = get_time()
@@ -389,7 +390,7 @@ class Mapper:
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
             pool_relatve = self.global_coord_pool - frame_origin_torch
             # print(pool_relatve.shape)
-            pool_relative_dist = torch.norm(pool_relatve, dim=1)
+            pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
             dist_mask = pool_relative_dist < self.config.window_radius
 
             filter_mask = dist_mask
@@ -409,10 +410,9 @@ class Mapper:
                 ] = False  # Set the elements corresponding to the discard indices to False
 
             # filter the data pool
-            self.coord_pool = self.coord_pool[filter_mask]
-            self.global_coord_pool = self.global_coord_pool[
-                filter_mask
-            ]  # make global here
+            # self.coord_pool = self.coord_pool[filter_mask]
+            # make global here
+            self.global_coord_pool = self.global_coord_pool[filter_mask]   
             self.sdf_label_pool = self.sdf_label_pool[filter_mask]
             self.weight_pool = self.weight_pool[filter_mask]
             self.time_pool = self.time_pool[filter_mask]
@@ -433,7 +433,7 @@ class Mapper:
             self.pool_sample_count = filter_mask.sum().item()
         else:
             self.cur_sample_count = coord.shape[0]
-            self.pool_sample_count = self.coord_pool.shape[0]
+            self.pool_sample_count = self.global_coord_pool.shape[0]
 
         if not self.silence:
             print("# Total sample in pool: ", self.pool_sample_count)
@@ -675,7 +675,7 @@ class Mapper:
 
 
     # get a batch of training samples and labels for map optimization
-    def get_batch(self, global_coord=False):
+    def get_batch(self, global_coord=True):
 
         if (
             self.config.bs_new_sample > 0
@@ -705,10 +705,13 @@ class Mapper:
                 0, self.pool_sample_count, (self.config.bs,), device=self.device
             )
 
-        if global_coord:
-            coord = self.global_coord_pool[index, :]
-        else:
-            coord = self.coord_pool[index, :]
+        coord = self.global_coord_pool[index, :]
+
+        # if global_coord:
+        #     coord = self.global_coord_pool[index, :]
+        # else:
+        #     coord = self.coord_pool[index, :]
+
         sdf_label = self.sdf_label_pool[index]
         ts = self.time_pool[index]  # frame number as the timestamp
         weight = self.weight_pool[index]
@@ -728,27 +731,6 @@ class Mapper:
 
         return coord, sdf_label, ts, normal_label, sem_label, color_label, weight
 
-    # get a batch of training samples (only those measured end points) and labels for local bundle adjustment
-    def get_ba_samples(self, subsample_count):
-
-        surface_sample_idx = torch.where(self.sdf_label_pool == 0)[0]
-        surface_sample_count = surface_sample_idx.shape[0]
-
-        coord_pool_surface = self.coord_pool[surface_sample_idx]
-        time_pool_surface = self.time_pool[surface_sample_idx]
-        weight_pool_surface = self.weight_pool[surface_sample_idx]
-
-        # uniformly sample the pool
-        index = torch.randint(
-            0, surface_sample_count, (subsample_count,), device=self.device
-        )
-
-        local_coord = coord_pool_surface[index, :]
-        weight = weight_pool_surface[index]
-        ts = time_pool_surface[index]  # frame number as the timestamp
-
-        return local_coord, weight, ts
-
     # transform the data pool after pgo pose correction
     def transform_data_pool(self, pose_diff_torch: torch.tensor):
         # pose_diff_torch [N,4,4]
@@ -758,6 +740,7 @@ class Mapper:
 
     def free_pool(self):
         self.coord_pool = None
+        self.global_coord_pool = None
         self.weight_pool = None
         self.sdf_label_pool = None
         self.time_pool = None
@@ -797,7 +780,7 @@ class Mapper:
             T00 = get_time()
             # we do not use the ray rendering loss here for the incremental mapping
             coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(
-                global_coord=not self.ba_done_flag
+                global_coord=True
             )  # coord here is in global frame if no ba pose update
 
             T01 = get_time()
@@ -1039,33 +1022,8 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         cur_local_map_center = self.used_poses[-1,:3,3]
-        print("Cur local map center: ", cur_local_map_center)
 
-        neural_points_data = {}
-        neural_points_data["position"] = self.neural_points.local_neural_points
-        neural_points_data["orientation"] = self.neural_points.local_point_orientations
-        neural_points_data["color"] = self.neural_points.local_point_colors
-        neural_points_data["geo_feature"] = self.neural_points.local_geo_features
-        neural_points_data["color_feature"] = self.neural_points.local_color_features
-        neural_points_data["resolution"] = self.neural_points.resolution
-        neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask # but now this is actually per neural point
-        neural_points_data["valid_mask"] = self.neural_points.local_valid_gs_mask # but now this is actually per neural point
-        
-        # 
-        # neural_points_data["stability"] = self.neural_points.local_point_certainties
-
-        # global ones
-        sorrounding_mask = self.neural_points.sorrounding_mask
-        sorrounding_mask_a = sorrounding_mask[:-1]
-        sorrounding_neural_points_data = {}
-        sorrounding_neural_points_data["position"] = self.neural_points.neural_points[sorrounding_mask_a]
-        sorrounding_neural_points_data["orientation"] = self.neural_points.point_orientations[sorrounding_mask_a]
-        sorrounding_neural_points_data["color"] = self.neural_points.point_colors[sorrounding_mask_a]
-        sorrounding_neural_points_data["geo_feature"] = self.neural_points.geo_features[sorrounding_mask]
-        sorrounding_neural_points_data["color_feature"] = self.neural_points.color_features[sorrounding_mask]
-        sorrounding_neural_points_data["resolution"] = self.neural_points.resolution
-        sorrounding_neural_points_data["free_mask"] = self.neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
-        sorrounding_neural_points_data["valid_mask"] = self.neural_points.valid_gs_mask[sorrounding_mask_a]
+        neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
         
         # FIXME
         # or for sorrounding neural points, we still feed it through the mlp, rendering might be slower a bit, but these points are not optimizable, I think this idea is better
@@ -1126,7 +1084,7 @@ class Mapper:
 
                 cam_count = len(self.dataset.cam_names)
                 
-                cur_min_visible_neural_point_ratio = 0.005 # 0.001 # don't restrict this
+                cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
                 short_term_train_prob = 1 - (1-self.config.short_term_train_prob)*(long_term_img_pool_size/self.config.long_term_pool_size)
 
@@ -1524,7 +1482,7 @@ class Mapper:
 
                 if sdf_loss_on and self.config.lambda_sdf > 0.0:
                     # with batch size bs (this is done for all the sdf samples in the local map)
-                    coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(global_coord=True)
+                    coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
                     surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
 
@@ -1840,7 +1798,10 @@ class Mapper:
 
         return 
 
-    def check_invalid_neural_points(self, stability_threshold = 1.0, render_min_nn_count: int = 5):
+    def check_invalid_neural_points(self, stability_threshold = 1.0, 
+            render_min_nn_count: int = 5, 
+            max_z_thre = None):
+
         local_neural_points = self.neural_points.local_neural_points
         stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
 
@@ -1856,6 +1817,13 @@ class Mapper:
         static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
 
         valid_stable_mask = static_mask & valid_nnk_mask
+
+        # a little heuristic
+        if max_z_thre is not None:
+            stable_neural_points_local_frame = transform_torch(stable_neural_points, torch.inverse(self.used_poses[-1]))
+
+            large_z_mask = stable_neural_points_local_frame[:,2] > max_z_thre # nein, should be current frame
+            valid_stable_mask = valid_stable_mask | large_z_mask # large z also would be regarded as static here
 
         self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
 
@@ -1922,27 +1890,7 @@ class Mapper:
                 else:
                     self.neural_points.reset_local_map(T_w_l[:3,3], cur_ts=frame_id)
                 
-                neural_points_data = {}
-                neural_points_data["position"] = self.neural_points.local_neural_points
-                neural_points_data["orientation"] = self.neural_points.local_point_orientations
-                neural_points_data["color"] = self.neural_points.local_point_colors
-                neural_points_data["geo_feature"] = self.neural_points.local_geo_features
-                neural_points_data["color_feature"] = self.neural_points.local_color_features
-                neural_points_data["resolution"] = self.neural_points.resolution
-                neural_points_data["free_mask"] = self.neural_points.local_free_gs_mask
-                neural_points_data["valid_mask"] = self.neural_points.local_valid_gs_mask
-
-                sorrounding_mask = self.neural_points.sorrounding_mask
-                sorrounding_mask_a = sorrounding_mask[:-1]
-                sorrounding_neural_points_data = {}
-                sorrounding_neural_points_data["position"] = self.neural_points.neural_points[sorrounding_mask_a]
-                sorrounding_neural_points_data["orientation"] = self.neural_points.point_orientations[sorrounding_mask_a]
-                sorrounding_neural_points_data["color"] = self.neural_points.point_colors[sorrounding_mask_a]
-                sorrounding_neural_points_data["geo_feature"] = self.neural_points.geo_features[sorrounding_mask]
-                sorrounding_neural_points_data["color_feature"] = self.neural_points.color_features[sorrounding_mask]
-                sorrounding_neural_points_data["resolution"] = self.neural_points.resolution
-                sorrounding_neural_points_data["free_mask"] = self.neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
-                sorrounding_neural_points_data["valid_mask"] = self.neural_points.valid_gs_mask[sorrounding_mask_a]
+                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
 
                 sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
                     self.decoders, None, T_w_l[:3,3],
@@ -2259,6 +2207,9 @@ class Mapper:
     # for visualization
     def get_data_pool_o3d(self, down_rate=1, only_cur_data=False):
 
+        if self.global_coord_pool is None:
+            return None
+
         if only_cur_data:
             pool_coord_np = (
                 self.global_coord_pool[-self.cur_sample_count :: 3]
@@ -2311,6 +2262,27 @@ class Mapper:
         data_pool_pc_o3d.colors = o3d.utility.Vector3dVector(colors)
 
         return data_pool_pc_o3d
+
+    # get a batch of training samples (only those measured end points) and labels for local bundle adjustment
+    def get_ba_samples(self, subsample_count):
+
+        surface_sample_idx = torch.where(self.sdf_label_pool == 0)[0]
+        surface_sample_count = surface_sample_idx.shape[0]
+
+        coord_pool_surface = self.coord_pool[surface_sample_idx]
+        time_pool_surface = self.time_pool[surface_sample_idx]
+        weight_pool_surface = self.weight_pool[surface_sample_idx]
+
+        # uniformly sample the pool
+        index = torch.randint(
+            0, surface_sample_count, (subsample_count,), device=self.device
+        )
+
+        local_coord = coord_pool_surface[index, :]
+        weight = weight_pool_surface[index]
+        ts = time_pool_surface[index]  # frame number as the timestamp
+
+        return local_coord, weight, ts
 
 
     # joint optimization of PIN map and the poses in the sliding window

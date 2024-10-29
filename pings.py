@@ -446,7 +446,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         pool_pcd = None
 
         # set the point cloud for visualization
-        dataset.update_o3d_map()
+        dataset.update_o3d_map() # this is after downsampling
         frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
 
         odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
@@ -508,8 +508,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                     else:
                         cur_sdf_slice = cur_sdf_slice_h
                                 
-            # pool_pcd = mapper.get_data_pool_o3d(down_rate=17, only_cur_data=o3d_vis.vis_only_cur_samples) if o3d_vis.render_data_pool else None # down rate should be a prime number
-            
             pool_pcd = mapper.get_data_pool_o3d(down_rate=31, only_cur_data=o3d_vis.vis_only_cur_samples)
 
             o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
@@ -542,7 +540,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
             # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
 
-            packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
+            packet_to_vis.add_neural_points_data(neural_points, only_local_map=True, add_sorrounding_points=config.gs_on)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
@@ -575,6 +573,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         dataset.processed_frame += 1
     
     # VI. Save results
+    mapper.free_pool()
     pose_eval_results = None
     if config.track_on:
         pose_eval_results = dataset.write_results()

@@ -1,0 +1,52 @@
+setting:
+  name: "test_helipr"
+  output_root: "./experiments"
+  use_kiss_icp_dataloader: True
+  pc_path: "./data/HeLiPR/Roundabout01/"
+  deskew: True
+process:
+  min_range_m: 3.0
+  max_range_m: 60.0
+  min_z_m: -10.0
+  vox_down_m: 0.08
+sampler:
+  surface_sample_range_m: 0.25
+  surface_sample_n: 4
+  free_sample_begin_ratio: 0.3
+  free_sample_end_dist_m: 1.2
+  free_front_sample_n: 2 
+neuralpoints:
+  voxel_size_m: 0.4
+  search_alpha: 0.5
+  feature_dim: 8
+loss:
+  sigma_sigmoid_m: 0.08
+  loss_weight_on: True
+  dist_weight_scale: 0.8
+continual:
+  batch_size_new_sample: 2000
+  pool_capacity: 1e7
+  pool_filter_freq: 10
+tracker:
+  source_vox_down_m: 0.6
+  iter_n: 50
+  valid_nn_k: 5
+pgo:
+  map_context: True
+  context_cosdist: 0.25
+  min_loop_travel_ratio: 4.0
+  local_map_latency: 30
+  virtual_side_count: 7
+  local_loop_dist_thre: 10.0
+optimizer: # mapper
+  iters: 15
+  batch_size: 16384
+  adaptive_iters: True
+eval:
+  wandb_vis_on: False # log to wandb or not
+  o3d_vis_on: True # visualize the mapping or not
+  silence_log: False
+  mesh_freq_frame: 50 # reconstruct the mesh every x frames
+  mesh_min_nn: 15
+  sensor_cad_path: ./cad/kitti_car.ply
+  save_map: True

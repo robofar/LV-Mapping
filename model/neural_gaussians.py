@@ -504,25 +504,29 @@ class NeuralPoints(nn.Module):
         self.cur_ts = cur_ts
         self.max_ts = max(self.max_ts, cur_ts)
 
-        if self.config.use_mid_ts:
-            point_ts_used = (
-                (self.point_ts_create + self.point_ts_update) / 2
-            ).int()
-        else:
-            point_ts_used = self.point_ts_create
+        if self.temporal_local_map_on:
+            if self.config.use_mid_ts:
+                point_ts_used = (
+                    (self.point_ts_create + self.point_ts_update) / 2
+                ).int()
+            else:
+                point_ts_used = self.point_ts_create
 
-        if use_travel_dist: # self.travel_dist as torch tensor
-            delta_travel_dist = torch.abs(
-                self.travel_dist[cur_ts] - self.travel_dist[point_ts_used]
-            )
-            time_mask = (delta_travel_dist < self.diff_travel_dist_local) # increase this value now
-        else:  # use delta_t
-            delta_t = torch.abs(cur_ts - point_ts_used)
-            time_mask = (delta_t < diff_ts_local) 
+            if use_travel_dist: # self.travel_dist as torch tensor
+                delta_travel_dist = torch.abs(
+                    self.travel_dist[cur_ts] - self.travel_dist[point_ts_used]
+                )
+                time_mask = (delta_travel_dist < self.diff_travel_dist_local) # increase this value now
+            else:  # use delta_t
+                delta_t = torch.abs(cur_ts - point_ts_used)
+                time_mask = (delta_t < diff_ts_local) 
+            
+            if torch.sum(time_mask) < 100: # not enough neural points in the temporal window, we set all true to avoid error
+                time_mask = torch.ones(self.count(), dtype=torch.bool, device=self.device) # all true
         
-        if torch.sum(time_mask) < 100: # not enough neural points in the temporal window, we set all true to avoid error
+        else:
             time_mask = torch.ones(self.count(), dtype=torch.bool, device=self.device) # all true
-        
+
         # speed up by calulating distance only with the t filtered points
         masked_vec2sensor = self.neural_points[time_mask] - sensor_position
         masked_dist2sensor = torch.sum(masked_vec2sensor**2, dim=-1)  # dist square
@@ -549,15 +553,9 @@ class NeuralPoints(nn.Module):
         self.local_point_orientations = self.point_orientations[local_mask]
         self.local_point_certainties = self.point_certainties[local_mask]
         self.local_point_ts_update = self.point_ts_update[local_mask]
-        self.local_point_colors = self.point_colors[local_mask]
+        if self.point_colors.shape[0] > 0: # might not contain anydata when color is not available
+            self.local_point_colors = self.point_colors[local_mask]
 
-        # Local Gaussian parameters
-        # self.local_xyz = nn.Parameter(self.xyz[local_mask])
-        # self.local_features_dc = nn.Parameter(self.features_dc[local_mask])
-        # self.local_features_rest = nn.Parameter(self.features_rest[local_mask])
-        # self.local_scaling = nn.Parameter(self.scaling[local_mask])
-        # self.local_rotation = nn.Parameter(self.rotation[local_mask])
-        # self.local_opacity = nn.Parameter(self.opacity[local_mask])
 
         self.local_valid_color_mask = self.valid_color_mask[local_mask]
         self.local_valid_gs_mask = self.valid_gs_mask[local_mask]
@@ -1324,7 +1322,9 @@ class NeuralPoints(nn.Module):
             self.point_ts_create = self.point_ts_create[~prune_mask]
             self.point_ts_update = self.point_ts_update[~prune_mask]
             self.point_certainties = self.point_certainties[~prune_mask]
-            self.point_colors = self.point_colors[~prune_mask]
+
+            if self.point_colors.shape[0] == prune_mask.shape[0]:
+                self.point_colors = self.point_colors[~prune_mask]
 
             # Gaussian related
             # self.xyz = self.xyz[~prune_mask]
@@ -1441,7 +1441,9 @@ class NeuralPoints(nn.Module):
             self.point_ts_create = self.point_ts_create[sample_idx]
             self.point_ts_update = self.point_ts_update[sample_idx]
             self.point_certainties = self.point_certainties[sample_idx]
-            self.point_colors = self.point_colors[sample_idx]
+            
+            if self.point_colors.shape[0] > 0:
+                self.point_colors = self.point_colors[sample_idx]
 
             sample_idx_pad = torch.cat((sample_idx, torch.tensor([-1]).to(sample_idx)))
             # with padding in the end
@@ -1585,6 +1587,34 @@ class NeuralPoints(nn.Module):
         # print(query_points_certainty)
 
         return query_points_certainty
+
+    def gather_local_data(self, with_sorroundings: bool = True):
+
+        neural_points_data = {}
+        neural_points_data["position"] = self.local_neural_points
+        neural_points_data["orientation"] = self.local_point_orientations
+        neural_points_data["color"] = self.local_point_colors
+        neural_points_data["geo_feature"] = self.local_geo_features
+        neural_points_data["color_feature"] = self.local_color_features
+        neural_points_data["resolution"] = self.resolution
+        neural_points_data["free_mask"] = self.local_free_gs_mask
+        neural_points_data["valid_mask"] = self.local_valid_gs_mask
+
+        sorrounding_neural_points_data = None
+        if with_sorroundings:
+            sorrounding_neural_points_data = {}
+            sorrounding_mask = self.sorrounding_mask
+            sorrounding_mask_a = sorrounding_mask[:-1]
+            sorrounding_neural_points_data["position"] = self.neural_points[sorrounding_mask_a]
+            sorrounding_neural_points_data["orientation"] = self.point_orientations[sorrounding_mask_a]
+            sorrounding_neural_points_data["color"] = self.point_colors[sorrounding_mask_a]
+            sorrounding_neural_points_data["geo_feature"] = self.geo_features[sorrounding_mask]
+            sorrounding_neural_points_data["color_feature"] = self.color_features[sorrounding_mask]
+            sorrounding_neural_points_data["resolution"] = self.resolution
+            sorrounding_neural_points_data["free_mask"] = self.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
+            sorrounding_neural_points_data["valid_mask"] = self.valid_gs_mask[sorrounding_mask_a]
+
+        return neural_points_data, sorrounding_neural_points_data
 
     # clear the temp data that is not needed
     def clear_temp(self, clean_more: bool = False):

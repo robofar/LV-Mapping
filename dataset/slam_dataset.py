@@ -64,6 +64,8 @@ class SLAMDataset():
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
         # "Tr" is used for KITTI, as the reference pose is not in LiDAR frame
 
+        self.T_l_lm_list = None # inter-LiDAR calibration
+
         self.is_rgbd: bool = False # by default, lidar dataset
 
         self.loader = None
@@ -94,6 +96,9 @@ class SLAMDataset():
             if hasattr(self.loader, "T_c_l_mats"):
                 self.T_c_l_mats = self.loader.T_c_l_mats # as dictionary
                 # print(self.T_c_l_mats)
+            if hasattr(self.loader, "T_l_lm_mats"):
+                if len(self.loader.T_l_lm_mats) > 0:
+                    self.T_l_lm_list = self.loader.T_l_lm_mats # as list
             if hasattr(self.loader, "is_rgbd"):
                 self.is_rgbd = self.loader.is_rgbd
 
@@ -209,14 +214,28 @@ class SLAMDataset():
         self.crop_max_range = self.config.max_range
         self.train_voxel_m = self.config.vox_down_m
         self.source_voxel_m = self.config.source_vox_down_m
-      
+
+        # initialize data for temp frame
+        self.init_temp_data()
+
+        self.ts_ref_ratio_diffs = None
+
+        # for depth erosion: (deprecated)
+        erosion_shape = cv2.MORPH_RECT # MORPH_RECT, MORPH_CROSS
+        erosion_size = 11
+        self.erosion_element = cv2.getStructuringElement(erosion_shape, (2 * erosion_size + 1, 2 * erosion_size + 1),
+                                                (erosion_size, erosion_size))
+
+
+    def init_temp_data(self):
+        
         # current frame's data
         self.cur_point_cloud_torch = None
         self.cur_point_ts_torch = None
         self.cur_sem_labels_torch = None
         self.cur_sem_labels_full = None
         self.cur_point_normals = None
-        self.cur_point_lidar_idx_torch = None
+        self.cur_point_lidar_idx_torch = None # now only used for deskewing multiple-LiDARs
 
         self.cur_point_cloud_mono_depth = None # point cloud results from image mono (metric) depth estimation
         self.cur_point_normals_mono_depth = None
@@ -231,12 +250,6 @@ class SLAMDataset():
 
         # imu data
         self.cur_frame_imus = None
-
-        # for depth erosion:
-        erosion_shape = cv2.MORPH_RECT # MORPH_RECT, MORPH_CROSS
-        erosion_size = 11
-        self.erosion_element = cv2.getStructuringElement(erosion_shape, (2 * erosion_size + 1, 2 * erosion_size + 1),
-                                                (erosion_size, erosion_size))
 
 
     def read_frame_ros(self, msg):
@@ -291,6 +304,9 @@ class SLAMDataset():
 
         # this might still be slow
         tic_0 = get_time()
+
+        if hasattr(self.loader, 'ts_ref_ratio_diffs'): # the ts difference between other lidar and the main lidar (dirty fix)
+            self.ts_ref_ratio_diffs = self.loader.ts_ref_ratio_diffs
 
         if isinstance(frame_data, dict):
             dict_keys = list(frame_data.keys())
@@ -724,22 +740,32 @@ class SLAMDataset():
         """  
         # preprocessing, filtering
         if self.cur_sem_labels_torch is not None:
-            self.cur_point_cloud_torch, self.cur_sem_labels_torch = filter_sem_kitti(
+            filter_idx = filter_sem_kitti(
                 self.cur_point_cloud_torch,
-                self.cur_sem_labels_torch,
                 self.cur_sem_labels_full,
                 True,
                 self.config.filter_moving_object,
             )
         else:
-            self.cur_point_cloud_torch, self.cur_point_ts_torch = crop_frame(
+            filter_idx = crop_frame(
                 self.cur_point_cloud_torch,
-                self.cur_point_ts_torch,
                 self.config.min_z,
                 self.config.max_z,
                 self.config.min_range,
                 self.crop_max_range,
             )
+
+        self.cur_point_cloud_torch = self.cur_point_cloud_torch[filter_idx]
+        
+        if self.cur_point_ts_torch is not None:
+            self.cur_point_ts_torch = self.cur_point_ts_torch[filter_idx]
+        
+        if self.cur_point_lidar_idx_torch is not None:
+            self.cur_point_lidar_idx_torch = self.cur_point_lidar_idx_torch[filter_idx]
+
+        if self.cur_sem_labels_torch is not None:
+            self.cur_sem_labels_torch = self.cur_sem_labels_torch[filter_idx]
+        
         # kitti intrinsic correction
         if self.config.kitti_correction_on:
             self.cur_point_cloud_torch = intrinsic_correct(
@@ -813,13 +839,19 @@ class SLAMDataset():
             self.cur_source_colors = cur_source_torch[:, 3:]
 
         if self.cur_point_ts_torch is not None:
-            cur_ts = self.cur_point_ts_torch.clone()
-            cur_source_ts = cur_ts[idx]
+            cur_source_ts = self.cur_point_ts_torch.clone()
+            cur_source_ts = cur_source_ts[idx]
         else:
             cur_source_ts = None
 
         if self.cur_point_normals is not None:
             self.cur_source_normals = self.cur_point_normals[idx] # invalid part as 0
+
+        if self.cur_point_lidar_idx_torch is not None:
+            cur_source_lidar_idx = self.cur_point_lidar_idx_torch.clone()
+            cur_source_lidar_idx = cur_source_lidar_idx[idx]
+        else:
+            cur_source_lidar_idx = None
 
         # deskewing (motion undistortion) for source point cloud
         if self.config.deskew and not self.lose_track:
@@ -827,7 +859,10 @@ class SLAMDataset():
                 self.cur_source_points,
                 cur_source_ts,
                 torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
-                ts_ref_pose = self.config.deskew_ref_ratio
+                ts_ref_pose = self.config.deskew_ref_ratio,
+                points_lidar_idx = cur_source_lidar_idx,
+                T_l_lm_list=self.T_l_lm_list,
+                ts_diff_list=self.ts_ref_ratio_diffs 
             )  # T_last<-cur
 
         # print("# Source point for registeration : ", cur_source_torch.shape[0])
@@ -899,7 +934,10 @@ class SLAMDataset():
                 self.cur_point_cloud_torch,
                 self.cur_point_ts_torch,
                 torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
-                ts_ref_pose = self.config.deskew_ref_ratio
+                ts_ref_pose = self.config.deskew_ref_ratio,
+                points_lidar_idx = self.cur_point_lidar_idx_torch,
+                T_l_lm_list=self.T_l_lm_list,
+                ts_diff_list=self.ts_ref_ratio_diffs 
             )  # T_last<-cur
 
         if self.lose_track:
@@ -1078,9 +1116,11 @@ class SLAMDataset():
             self.cur_point_cloud_torch,
             self.cur_point_ts_torch,
             torch.tensor(tran_in_frame, device=self.device, dtype=torch.float64),
-            self.config.deskew_ref_ratio
+            self.config.deskew_ref_ratio,
+            points_lidar_idx = self.cur_point_lidar_idx_torch,
+            T_l_lm_list=self.T_l_lm_list,
+            ts_diff_list=self.ts_ref_ratio_diffs 
         ) 
-
 
     def write_merged_point_cloud(self, down_vox_m=None, 
                                 use_gt_pose=False, 
@@ -1119,14 +1159,16 @@ class SLAMDataset():
 
             frame_down_torch = self.cur_point_cloud_torch[idx]
 
-            frame_down_torch, _ = crop_frame(
+            frame_crop_idx = crop_frame(
                 frame_down_torch,
-                None,
                 self.config.min_z,
                 self.config.max_z,
                 self.config.min_range,
                 self.config.max_range,
             )
+
+            frame_down_torch = frame_down_torch[frame_crop_idx]
+
             # get pose
             if use_gt_pose and self.gt_pose_provided:
                 cur_pose_torch = torch.tensor(
@@ -1737,7 +1779,6 @@ def apply_kitti_format_calib(poses_np: np.ndarray, calib_T_cl: np.ndarray):
 # torch version
 def crop_frame(
     points: torch.tensor,
-    ts: torch.tensor = None,
     min_z_th=-3.0,
     max_z_th=100.0,
     min_range=2.75,
@@ -1750,11 +1791,7 @@ def crop_frame(
         & (points[:, 2] > min_z_th)
         & (points[:, 2] < max_z_th)
     )
-    points = points[filtered_idx]
-    if ts is not None:
-        ts = ts[filtered_idx]
-    return points, ts
-
+    return filtered_idx
 
 # torch version
 def intrinsic_correct(points: torch.tensor, correct_deg=0.0):
@@ -1781,7 +1818,6 @@ def intrinsic_correct(points: torch.tensor, correct_deg=0.0):
 # now only work for semantic kitti format dataset # torch version
 def filter_sem_kitti(
     points: torch.tensor,
-    sem_labels_reduced: torch.tensor,
     sem_labels: torch.tensor,
     filter_outlier=True,
     filter_moving=False,
@@ -1799,10 +1835,7 @@ def filter_sem_kitti(
         static_mask = sem_labels < 100  # only for semantic KITTI dataset
         inlier_mask = inlier_mask & static_mask
 
-    points = points[inlier_mask]
-    sem_labels_reduced = sem_labels_reduced[inlier_mask]
-
-    return points, sem_labels_reduced
+    return inlier_mask
 
 
 def write_traj_as_o3d(poses_np, path):

@@ -27,6 +27,7 @@ torchmetrics==1.4.1
 PyOpenGL
 glfw
 PyGLM==2.7.0
+imageio[ffmpeg]
 # for metric3d
 mmcv
 timm

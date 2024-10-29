@@ -8,11 +8,15 @@ import glob
 import os
 import sys
 import time
+import yaml
+
+from typing import Dict, List
 
 import numpy as np
 import open3d as o3d
 import torch
 import torch.multiprocessing as mp
+from tqdm import tqdm
 from rich import print
 
 from dataset.slam_dataset import SLAMDataset, read_kitti_format_poses
@@ -20,10 +24,11 @@ from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
 from utils.mesher import Mesher
-from utils.tools import setup_experiment, split_chunks, load_decoders
+from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps
 from utils.visualizer import MapVisualizer
 
 from gaussian_splatting.scene.cameras import CamImage
+from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 
 from gs_gui import slam_gui
 from gs_gui.gui_utils import VisPacket, ParamsGUI
@@ -37,6 +42,7 @@ from gs_gui.gui_utils import VisPacket, ParamsGUI
 parser = argparse.ArgumentParser()
 parser.add_argument('experiment_path', type=str, help='Path to a certain experiment folder storing the PINGS map')
 parser.add_argument('--center_frame_id', '-f', type=int, default=0, help='PINGS local map center frame id')
+parser.add_argument('--render_video', '-v', action='store_true', default=False, help='Render video with pre-defined trajectory in the PINGS map')
 parser.add_argument('--show_mesh', '-m', action='store_true', default=False, help='Show the PINGS mesh')
 parser.add_argument('--show_global', '-g', action='store_true', default=False, help='Show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
 parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes resolution (in meter) for mesh reconstruction')
@@ -48,6 +54,7 @@ def inspect_pings_map():
     experiment_path = args.experiment_path
 
     yaml_files = glob.glob(f"{experiment_path}/*.yaml")
+    # this might not be a clever way, fix this later (FIXME)
     if len(yaml_files) > 1: # Check if there is exactly one YAML file
         sys.exit("There are multiple YAML files. Please handle accordingly.")
     elif len(yaml_files) == 0:  # If no YAML files are found
@@ -58,8 +65,15 @@ def inspect_pings_map():
 
     model_path = os.path.join(experiment_path, "model", "pin_map.pth")
     pose_path = os.path.join(experiment_path, "slam_poses_kitti.txt")
+    full_config_path = os.path.join(experiment_path, "meta", "config_all.yaml")
     config.model_path = model_path
     config.pose_path = pose_path
+
+    if os.path.exists(full_config_path):
+        full_config_args = yaml.safe_load(open(full_config_path))
+        config.pc_path = full_config_args["pc_path"]
+        config.data_loader_name = full_config_args["data_loader_name"]
+        config.data_loader_seq = full_config_args["data_loader_seq"]
 
     center_frame_id = int(args.center_frame_id)
 
@@ -115,17 +129,22 @@ def inspect_pings_map():
 
     loaded_model = torch.load(model_path)
     neural_points = loaded_model["neural_points"]
+    neural_points.temporal_local_map_on = False
 
     # load decoders
     load_decoders(loaded_model, mlp_dict) 
 
     slam_poses = read_kitti_format_poses(config.pose_path)
     frame_count = len(slam_poses)
-    slam_poses = np.array(slam_poses)
 
     # # dataset
-    # dataset = SLAMDataset(config)
-    # dataset.read_frame_with_loader(0, init_pose = True, use_image=True) 
+    dataset = SLAMDataset(config)
+    # print(dataset.cam_names)
+
+    if args.render_video:
+        video_folder_path = os.path.join(experiment_path, "video")
+        os.makedirs(video_folder_path, 0o755, exist_ok=True)
+        render_to_video(video_folder_path, config, dataset, neural_points, mlp_dict, slam_poses, dataset.cam_names)
 
     # reset neural points
     center_frame_id = min(center_frame_id, frame_count-1)
@@ -187,7 +206,7 @@ def inspect_pings_map():
 
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global))
-        packet_to_vis.add_traj(slam_poses=slam_poses)
+        packet_to_vis.add_traj(slam_poses=np.array(slam_poses))
         if cur_mesh is not None:
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
         
@@ -199,6 +218,135 @@ def inspect_pings_map():
             if not q_vis2main.empty():
                 while q_vis2main.get().flag_pause:
                     continue
+
+
+def render_to_video(video_save_base_path: str, config: Config, dataset: SLAMDataset, 
+                    neural_points: NeuralPoints, decoders: Dict[str, Decoder], 
+                    lidar_poses: Dict[str, np.array], cam_list: List[str],
+                    normal_in_world_frame: bool = True):
+
+    # lidar_poses as list of np array
+
+    background = torch.tensor(config.bg_color, dtype=config.dtype, device=config.device)
+    bg_3d = background.view(3, 1, 1)
+
+    eval_down_rate = 0
+
+    rendered_rgb_cam_dict = {}
+    rendered_depth_cam_dict = {}
+    rendered_normal_cam_dict = {}
+
+    # initialize lists
+    for cur_cam_name in cam_list: 
+        rendered_rgb_cam_dict[cur_cam_name] = []
+        rendered_depth_cam_dict[cur_cam_name] = []
+        rendered_normal_cam_dict[cur_cam_name] = []
+
+    frame_count = len(lidar_poses)
+
+    frame_begin = 0
+    frame_end = frame_count
+    frame_step = 1
+
+    for frame_id in tqdm(range(frame_begin, frame_end, frame_step), desc="Render views along the trajectory"):
+        remove_gpu_cache()
+
+        T_w_l_np = lidar_poses[frame_id]
+        T_w_l = torch.tensor(T_w_l_np, dtype=config.dtype, device=config.device)
+
+        if frame_id % 100 == 0:
+            neural_points.recreate_hash(T_w_l[:3,3], kept_points=True, with_ts=False) # and at the same time reset local map
+        else:
+            neural_points.reset_local_map(T_w_l[:3,3], cur_ts=frame_id)
+
+        neural_points_data, sorrounding_neural_points_data = neural_points.gather_local_data()
+    
+        sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
+                    decoders, None, T_w_l[:3,3],
+                    dist_concat_on=config.dist_concat_on, 
+                    view_concat_on=config.view_concat_on, 
+                    scale_filter_on=True,
+                    z_far=config.sorrounding_map_radius,
+                    learn_color_residual=config.learn_color_residual)
+        
+        dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=config.monodepth_on) 
+
+        for cur_cam_name in cam_list: 
+
+            rendered_rgb_list = []
+            rendered_depth_list = []
+            rendered_normal_list = []
+
+            K_mat = dataset.K_mats[cur_cam_name]
+
+            T_c_l = torch.tensor(dataset.T_c_l_mats[cur_cam_name], dtype=config.dtype, device=config.device) 
+
+            T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+
+            # you need to also load the camera exposure coefficients here
+            cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
+            cur_view_cam.set_pose(T_w_c)
+
+            # current values
+            render_pkg = render(cur_view_cam, None, neural_points_data, 
+                decoders, sorrounding_spawn_results, background, 
+                down_rate=eval_down_rate, 
+                dist_concat_on=config.dist_concat_on, 
+                view_concat_on=config.view_concat_on, 
+                correct_exposure=config.exposure_correction_on, 
+                learn_color_residual=config.learn_color_residual,
+                front_only_on=config.train_front_only)
+            
+            # rendered results
+            rendered_rgb_image, rendered_depth, rendered_normal = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"] # 3, H, W / 1, H, W
+            
+            # rgb 
+            rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
+            rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy() # value 0-255
+            rendered_rgb_cam_dict[cur_cam_name].append(rendered_rgb_np)
+
+            # depth
+            if rendered_depth is not None:
+                color_map_used = "inferno_r"
+                rendered_depth_np = rendered_depth.detach().cpu().numpy() 
+                rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+                rendered_depth_color_np = np.ascontiguousarray(np.transpose(rendered_depth_color_np, (1, 2, 0))) # H, W, 3
+                rendered_depth_cam_dict[cur_cam_name].append(rendered_depth_color_np)
+            
+            if rendered_normal is not None:
+                if normal_in_world_frame: 
+                    rendered_normal = -1.0 * (rendered_normal.permute(1,2,0) @ (cur_view_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+
+                normal_norm = rendered_normal.norm(2, dim=0) 
+                rendered_normal_show = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
+                # rendered_normal_show = 0.5 * (1 - rendered_normal)
+                rendered_normal_np = (rendered_normal_show.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+                rendered_normal_np = np.ascontiguousarray(rendered_normal_np)
+                rendered_normal_cam_dict[cur_cam_name].append(rendered_normal_np)
+
+
+    for cur_cam_name in cam_list: 
+        cur_rendered_rgb_list = rendered_rgb_cam_dict[cur_cam_name]
+        cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
+        cur_rendered_normal_list = rendered_normal_cam_dict[cur_cam_name]
+
+        cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}.mp4".format(cur_cam_name))
+        save_video_np(cur_rendered_rgb_list, cur_rgb_video_save_path)
+
+        if len(cur_rendered_depth_list) > 0:
+            cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}.mp4".format(cur_cam_name))
+            save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
+
+        if len(cur_rendered_normal_list) > 0:    
+            cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}.mp4".format(cur_cam_name))
+            save_video_np(cur_rendered_normal_list, cur_normal_video_save_path)
+
+    # dataset.filter_and_correct()
+
+    # if config.deskew and frame_id > 0:
+    #     dataset.deskew_at_frame(frame_id)
+    
+    # dataset.project_pointcloud_to_cams(use_only_colorized_points=True) 
 
     # mesh_vox_size_m = None
     # if len(sys.argv) > 2:
