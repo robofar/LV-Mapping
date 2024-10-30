@@ -36,6 +36,7 @@ from utils.tools import (
     transform_batch_torch,
     voxel_down_sample_min_value_torch,
     voxel_down_sample_torch,
+    feature_pca_torch,
 )
 
 from gaussian_splatting.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_scaling_rotation, normal2rotation, rotation2normal
@@ -74,6 +75,8 @@ class NeuralPoints(nn.Module):
         self.resolution = config.voxel_size_m
 
         self.buffer_size = config.buffer_size
+
+        self.sorrounding_map_radius = config.sorrounding_map_radius
 
         self.temporal_local_map_on = True
         self.diff_travel_dist_local = (
@@ -392,12 +395,20 @@ class NeuralPoints(nn.Module):
         )
         self.point_certainties = torch.cat((self.point_certainties, new_certainty), 0)
 
-        # gaussian parameters
         if is_reliable:
             new_free_mask = torch.zeros((new_point_count), dtype=bool, device=self.device)
         else:
             new_free_mask = torch.ones((new_point_count), dtype=bool, device=self.device)
         self.free_gs_mask = torch.cat((self.free_gs_mask, new_free_mask), 0)
+        # free_gs_mask: free ones are casted from the mono depth estimation
+
+        # update RGB color
+        if added_colors is not None:
+            self.point_colors = torch.cat((self.point_colors, added_colors), 0)
+        
+        
+        # gaussian parameters
+        ## ----------------
 
         ## Displacement (Position)
         # new_xyz = torch.zeros((new_point_count,3), device=self.device, dtype=self.dtype)
@@ -421,11 +432,6 @@ class NeuralPoints(nn.Module):
         # new_features_rest = sh_features[:,:,1:].transpose(1, 2).contiguous() # N, (max_sh+1)**2-1, 3
         # # print(new_features_rest.shape)
         # self.features_rest = torch.cat((self.features_rest, new_features_rest), 0)
-
-        # update RGB color
-        if added_colors is not None:
-            self.point_colors = torch.cat((self.point_colors, added_colors), 0)
-        ## ----------------
 
         ## Scale
         # the same scaling initialization for all Gaussians
@@ -535,8 +541,8 @@ class NeuralPoints(nn.Module):
         time_mask_idx = torch.nonzero(time_mask).squeeze() # True index
         local_mask_idx = time_mask_idx[dist_mask] # True index
 
-        sorrounding_dist_mask = (masked_dist2sensor < (self.config.sorrounding_map_radius)**2)
-
+        sorrounding_dist_mask = (masked_dist2sensor < (self.sorrounding_map_radius)**2)
+    
         sorrounding_mask_idx = time_mask_idx[~dist_mask & sorrounding_dist_mask] # parts that are not in local map
 
         local_mask = torch.full((time_mask.shape), False, dtype=torch.bool, device=self.device)
@@ -631,6 +637,7 @@ class NeuralPoints(nn.Module):
     #     # self.rotation[local_mask[:-1]] = self.local_rotation.data
     #     # self.opacity[local_mask[:-1]] = self.local_opacity.data
     #     self.valid_gs_mask[local_mask[:-1]] = self.local_valid_gs_mask
+
 
     # not use the free gaussians (neural points)
     def query_feature(
@@ -1063,6 +1070,7 @@ class NeuralPoints(nn.Module):
     #     el = PlyElement.describe(elements, 'vertex')
     #     PlyData([el]).write(save_path)
     #     print(f"save the gaussian map to {save_path}")
+
         
 
     def get_neural_points_o3d(

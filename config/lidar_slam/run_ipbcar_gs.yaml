@@ -1,6 +1,6 @@
 setting:
   name: "test_ipbcar_gs"
-  output_root: "./experiments"
+  output_root: "./pings_experiments"
   deskew: True
   deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
   color_channel: 3
@@ -9,8 +9,7 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.08
-  estimate_normal: False
-  dynamic_sdf_ratio_thre: 1.0
+  dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 2
@@ -18,13 +17,12 @@ sampler:
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.3 # 0.3
-  search_alpha: 0.5
+  voxel_size_m: 0.25 # 0.3
+  search_alpha: 0.8
   query_nn_k: 6
   feature_dim: 32 # 32
-  color_feature_dim: 16 # 16
-  weighted_first: False
-  # map_surface_ratio: 1.0 # x surface_sample_range_m would be added to the map 
+  color_feature_dim: 32 # 16
+  weighted_first: True # not much difference True or False 
 decoder:
   freeze_after_frame: 30
   gs_mlp_level: 1 # 2?, not much improvement
@@ -36,7 +34,7 @@ loss:
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   numerical_grad: False # FIXME
-  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ?
+  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
@@ -52,7 +50,7 @@ gs:
   exposure_correction_on: True
   view_concat_on: True
   dist_concat_on: False # TODO: check
-  gs_iters: 100 # 50
+  gs_iters: 200 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -62,19 +60,19 @@ gs:
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: True
   lambda_depth: 10.0 # 20.0
-  lambda_opacity: 1e-3 # 1e-3 # increase to have more valid gaussians
+  lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   # lambda_isotropic: 1.0
   # lambda_area: 1e-4 # 1e-3
   # lambda_mono_normal: 0.01
   # lambda_normal_depth: 0.05 # check this
   # consist_normal_fixed: True
-  lambda_sdf_cons: 0.2
-  lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss
-  lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 0.2
+  lambda_sdf_cons: 0.1
+  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
+  lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
-  learning_rate: 0.002 # neural point feature lr
+  learning_rate: 0.002 # neural point feature lr # lr 0.002 # TODO: examine this value tomorrow
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply

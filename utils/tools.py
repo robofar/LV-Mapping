@@ -503,6 +503,53 @@ def write_to_json(filename: Path, content: dict):
         json.dump(content, file)
 
 
+def feature_pca_torch(data, principal_dim: int = 3, down_rate: int = 1, normalize: bool = True):
+    """
+        do PCA to a NxD torch tensor to get the data along the K principle dimensions
+        N is the data count, D is the dimension of the data
+    """
+
+    N, D = data.shape
+
+    # Step 1: Center the data (subtract the mean of each dimension)
+    data_centered = data - data.mean(dim=0)
+
+    data_centered_for_compute = data_centered[::down_rate]
+
+    # Step 2: Compute the covariance matrix (D x D)
+    cov_matrix = torch.matmul(data_centered_for_compute.T, data_centered_for_compute) / (N - 1)
+
+    # Step 3: Perform eigen decomposition of the covariance matrix
+    eigenvalues, eigenvectors = torch.linalg.eig(cov_matrix)
+    eigenvalues_r = eigenvalues.real.to(data)
+    eigenvectors_r = eigenvectors.real.to(data)
+    # print(eigenvalues)
+    # print(eigenvectors)
+    # eigenvalues = eigenvalues[:, 0]  # Only the real parts are needed
+
+    # Step 4: Sort eigenvalues and eigenvectors in descending order
+    sorted_indices = torch.argsort(eigenvalues_r, descending=True)
+    principal_components = eigenvectors_r[:, sorted_indices[:principal_dim]]  # First 3 principal components
+
+    # Step 5: Project data onto the top 3 principal components
+    data_pca = torch.matmul(data_centered, principal_components)
+
+    # normalize to show as rgb
+    if normalize: 
+        # min_vals = data_pca.min(dim=0, keepdim=True).values
+        # max_vals = data_pca.max(dim=0, keepdim=True).values
+
+        # # deal with outliers
+        min_vals = torch.quantile(data_pca, 0.02, dim=0, keepdim=True)
+        max_vals = torch.quantile(data_pca, 0.98, dim=0, keepdim=True)
+
+        # Normalize to range [0, 1]
+        data_pca = (data_pca - min_vals) / (max_vals - min_vals)
+
+        data_pca = data_pca.clamp(0, 1)
+
+    return data_pca
+
 def color_to_intensity(colors: torch.tensor):
     intensity = 0.144 * colors[:, 0] + 0.299 * colors[:, 1] + 0.587 * colors[:, 2]
     return intensity.unsqueeze(1)
@@ -1228,26 +1275,6 @@ def plot_timing_detail(time_table: np.ndarray, saving_path: str, with_loop=False
 
     plt.savefig(saving_path, dpi=500)
     # plt.show()
-
-
-def save_video(
-    frames: torch.Tensor,
-    output_path: str,
-    fps: int = 10,
-    flip: bool = False,
-) -> None:
-    # images: (N, C, H, W)
-    frames_np = [(frame.permute(1, 2, 0).cpu().detach().numpy() * 255).astype(np.uint8) for frame in frames]  # (N, H, W, C)
-    if flip:
-        frames_flipped = [frame[::-1] for frame in frames_np] # heigth side up-side down (for opengl coordinate)
-        frames_np = frames_flipped
-
-
-    # just these matters
-    writer = imageio.get_writer(output_path, fps=fps)
-    for frame in frames_np: # list of H, W, C images in np
-        writer.append_data(frame)
-    writer.close()
 
 def save_video_np(
     frames, # list of H, W, C images in np

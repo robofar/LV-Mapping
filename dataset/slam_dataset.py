@@ -64,7 +64,12 @@ class SLAMDataset():
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
         # "Tr" is used for KITTI, as the reference pose is not in LiDAR frame
 
-        self.T_l_lm_list = None # inter-LiDAR calibration
+        self.T_l_lm_list = None # inter-LiDAR extrinsic
+        
+        self.K_mats = None 
+        self.cam_widths = None
+        self.cam_heights = None
+        self.T_c_l_mats = None # camera-LiDAR extrinsic
 
         self.is_rgbd: bool = False # by default, lidar dataset
 
@@ -96,6 +101,9 @@ class SLAMDataset():
             if hasattr(self.loader, "T_c_l_mats"):
                 self.T_c_l_mats = self.loader.T_c_l_mats # as dictionary
                 # print(self.T_c_l_mats)
+            if hasattr(self.loader, "cam_widths"):
+                self.cam_widths = self.loader.cam_widths
+                self.cam_heights = self.loader.cam_heights
             if hasattr(self.loader, "T_l_lm_mats"):
                 if len(self.loader.T_l_lm_mats) > 0:
                     self.T_l_lm_list = self.loader.T_l_lm_mats # as list

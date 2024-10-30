@@ -6,6 +6,8 @@ import numpy as np
 import open3d as o3d
 import torch
 
+from utils.tools import feature_pca_torch
+
 from gaussian_splatting.utils.general_utils import (
     build_scaling_rotation,
     strip_symmetric,
@@ -221,7 +223,8 @@ class VisPacket:
 
     # the sorrounding map is also added here
     def add_neural_points_data(self, neural_points, only_local_map: bool = True, 
-                               add_sorrounding_points: bool = True):
+                               add_sorrounding_points: bool = True,
+                               pca_color_on: bool = False):
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
@@ -231,15 +234,22 @@ class VisPacket:
             self.neural_points_data["valid_local_count"] = neural_points.local_count(valid_gs_only=True)
             self.neural_points_data["map_memory_mb"] = neural_points.cur_memory_mb
             self.neural_points_data["resolution"] = neural_points.resolution
-
+            
             if only_local_map:
                 self.neural_points_data["position"] = neural_points.local_neural_points
                 self.neural_points_data["orientation"] = neural_points.local_point_orientations
                 self.neural_points_data["color"] = neural_points.local_point_colors
-                self.neural_points_data["geo_feature"] = neural_points.local_geo_features
-                self.neural_points_data["color_feature"] = neural_points.local_color_features
+                self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
+                self.neural_points_data["color_feature"] = neural_points.local_color_features.detach()
                 self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
+
+                if pca_color_on:
+                    local_geo_feature_3d = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], down_rate=17)
+                    self.neural_points_data["color_pca_geo"] = local_geo_feature_3d
+
+                    local_color_feature_3d = feature_pca_torch((self.neural_points_data["color_feature"])[:-1], down_rate=17)
+                    self.neural_points_data["color_pca_color"] = local_color_feature_3d
 
                 if add_sorrounding_points:
                     sorrounding_mask = neural_points.sorrounding_mask
@@ -266,6 +276,12 @@ class VisPacket:
                 self.neural_points_data["free_mask"] = neural_points.free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
 
+                if pca_color_on:
+                    geo_feature_3d = feature_pca_torch(neural_points.geo_features[:-1], down_rate=31)
+                    self.neural_points_data["color_pca_geo"] = geo_feature_3d
+
+                    color_feature_3d = feature_pca_torch(neural_points.color_features[:-1], down_rate=31)
+                    self.neural_points_data["color_pca_color"] = color_feature_3d
 
     def add_gaussians(self,  
                     gaussian_xyz=None,

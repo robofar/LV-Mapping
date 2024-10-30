@@ -1861,6 +1861,7 @@ class Mapper:
 
     def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
                         eval_down_rate=0, skip_end_count: int = 0, 
+                        sorrounding_map_radius = None,
                         lpips_eval_on: bool = False):
         
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
@@ -1874,6 +1875,9 @@ class Mapper:
         with torch.no_grad():
             
             self.record_per_cam_exposure()
+
+            if sorrounding_map_radius is not None:
+                self.neural_points.sorrounding_map_radius = sorrounding_map_radius
 
             background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
             bg_3d = background.view(3, 1, 1)
@@ -2140,69 +2144,82 @@ class Mapper:
 
 
     # TODO: deal with local and global map
-    # def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, depth_trunc = 10.0, output_path = None):
-    #     # render depth and color from GS map and do tsdf fusion to build mesh
+    # better to use vdb fusion instead
+    def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, depth_trunc = 10.0, output_path = None):
+        # render depth and color from GS map and do tsdf fusion to build mesh
 
-    #     cam_name = self.dataset.loader.main_cam_name
-    #     K_mat = self.dataset.K_mats[cam_name]
-    #     height = self.dataset.loader.cam_heights[cam_name]
-    #     width = self.dataset.loader.cam_widths[cam_name] 
-    #     T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
+        cam_name = self.dataset.loader.main_cam_name
+        K_mat = self.dataset.K_mats[cam_name]
+        height = self.dataset.loader.cam_heights[cam_name]
+        width = self.dataset.loader.cam_widths[cam_name] 
+        T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
 
-    #     cam_intrinsic_o3d = self.dataset.loader.intrinsic # main cam
+        cam_intrinsic_o3d = self.dataset.loader.intrinsic # main cam
 
-    #     background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
+        background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
 
-    #     trunc_dist = 4 * vox_size
+        trunc_dist = 4 * vox_size
 
-    #     volume = o3d.pipelines.integration.ScalableTSDFVolume(
-    #         voxel_length=vox_size, # unit: m
-    #         sdf_trunc=trunc_dist, # unit: m
-    #         color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+        volume = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length=vox_size, # unit: m
+            sdf_trunc=trunc_dist, # unit: m
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
 
-    #     for frame_id in tqdm(range(0, self.dataset.processed_frame, render_frame_step), desc="TSDF fusion"):
+        for frame_id in tqdm(range(0, self.dataset.processed_frame, render_frame_step), desc="TSDF fusion"):
 
-    #         cur_view_cam = CamImage(frame_id, None, K_mat, self.config.min_range*0.5, self.config.max_range*1.1, 
-    #             cam_name, device=self.device, img_width=width, img_height=height)
+            cur_view_cam = CamImage(frame_id, None, K_mat, self.config.min_range*0.5, self.config.max_range*1.1, 
+                cam_name, device=self.device, img_width=width, img_height=height)
             
-    #         T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose for current frame
-    #         T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose for current frame
+            T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
-    #         # TODO: change to the new setup
-    #         render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
+            # TODO: change to the new setup
 
-    #         # rendered results
-    #         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
+            # current values
+            render_pkg = render(cur_view_cam, None, neural_points_data, 
+                self.decoders, sorrounding_spawn_results, background, 
+                down_rate=eval_down_rate, 
+                dist_concat_on=self.config.dist_concat_on, 
+                view_concat_on=self.config.view_concat_on, 
+                correct_exposure=self.config.exposure_correction_on, 
+                learn_color_residual=self.config.learn_color_residual,
+                front_only_on=self.config.train_front_only)
 
-    #         rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
-    #         # print(torch.max(rendered_rgb_image), torch.min(rendered_rgb_image)) # why there are value larger than 1?
 
-    #         renderd_image_np = (rendered_rgb_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+            render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
 
-    #         renderd_image_np = np.ascontiguousarray(renderd_image_np)
-    #         rgb_image = o3d.geometry.Image(renderd_image_np)
+            # rendered results
+            rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
 
-    #         rendered_depth_np = rendered_depth.squeeze(0).detach().cpu().numpy().astype(np.float32) 
-    #         rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
-    #         depth_image = o3d.geometry.Image(rendered_depth_np)
+            rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
+            # print(torch.max(rendered_rgb_image), torch.min(rendered_rgb_image)) # why there are value larger than 1?
 
-    #         cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
-    #                                                                     depth_image, 
-    #                                                                     depth_scale=1.0, 
-    #                                                                     depth_trunc=depth_trunc, 
-    #                                                                     convert_rgb_to_intensity=False)
+            renderd_image_np = (rendered_rgb_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
 
-    #         T_c_w_np = torch.inverse(T_w_c).detach().cpu().numpy()
+            renderd_image_np = np.ascontiguousarray(renderd_image_np)
+            rgb_image = o3d.geometry.Image(renderd_image_np)
 
-    #         volume.integrate(cur_rgbd, cam_intrinsic_o3d, T_c_w_np)
+            rendered_depth_np = rendered_depth.squeeze(0).detach().cpu().numpy().astype(np.float32) 
+            rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
+            depth_image = o3d.geometry.Image(rendered_depth_np)
 
-    #     tsdf_fusion_mesh = volume.extract_triangle_mesh()
+            cur_rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                        depth_image, 
+                                                                        depth_scale=1.0, 
+                                                                        depth_trunc=depth_trunc, 
+                                                                        convert_rgb_to_intensity=False)
 
-    #     if output_path is not None:
-    #         o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
-    #         print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+            T_c_w_np = torch.inverse(T_w_c).detach().cpu().numpy()
 
-    #     return tsdf_fusion_mesh
+            volume.integrate(cur_rgbd, cam_intrinsic_o3d, T_c_w_np)
+
+        tsdf_fusion_mesh = volume.extract_triangle_mesh()
+
+        if output_path is not None:
+            o3d.io.write_triangle_mesh(str(output_path), tsdf_fusion_mesh)
+            print(f"Save the mesh resulting from TSDF fusion to {output_path}")
+
+        return tsdf_fusion_mesh
 
     # for visualization
     def get_data_pool_o3d(self, down_rate=1, only_cur_data=False):

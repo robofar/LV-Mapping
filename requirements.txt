@@ -28,6 +28,8 @@ PyOpenGL
 glfw
 PyGLM==2.7.0
 imageio[ffmpeg]
-# for metric3d
+# optional for metric3d
 mmcv
 timm
+# optional for tsdf fusion
+vdbfusion 

@@ -148,13 +148,13 @@ class SLAM_GUI:
         self.scan_render = rendering.MaterialRecord()
         self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
         self.scan_render.point_size = 3 * self.window.scaling
-        self.scan_render.base_color = [0.9, 0.9, 0.9, 1.0]
+        self.scan_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # neural points
         self.neural_points_render = rendering.MaterialRecord()
         self.neural_points_render.shader = "defaultLit"
         self.neural_points_render.point_size = 3 * self.window.scaling
-        self.neural_points_render.base_color = [0.9, 0.9, 0.9, 1.0]
+        self.neural_points_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # sdf slice
         self.sdf_render = rendering.MaterialRecord()
@@ -958,7 +958,17 @@ class SLAM_GUI:
                 # done every time, could be a bit time consuming here
                 
                 neural_point_position = gaussian_packet.neural_points_data["position"].detach().cpu().numpy()
-                neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+                
+                dict_keys = list(gaussian_packet.neural_points_data.keys())
+
+                # change, add check box (TODO)
+                if "color_pca_geo" in dict_keys:
+                    neural_point_colors = gaussian_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
+                elif "color_pca_color" in dict_keys:
+                    neural_point_colors = gaussian_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
+                else:
+                    neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+                
                 neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
                 valid_neural_point_position = neural_point_position[neural_point_valid_mask]                

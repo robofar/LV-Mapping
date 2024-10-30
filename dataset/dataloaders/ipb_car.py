@@ -43,7 +43,7 @@ class IPBCarDataset:
 
         self.use_only_colorized_points = False
         
-        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
         self.min_lidar_radius_m = 0.5
 
@@ -81,6 +81,8 @@ class IPBCarDataset:
         self.T_l_lm_mats = [] # inter-lidar transformation, from the main LiDAR (horizontal) to other LiDARs (vertical)
         self.ts_ref_ratio_diffs = [0.0]
 
+        self.cam_widths = {}
+        self.cam_heights = {}
 
         # horizontal lidar
         self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
@@ -93,6 +95,7 @@ class IPBCarDataset:
         self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
 
         # img_size: 2064x1024
+        H, W = 1024, 2064 
 
         self.img_already_undistorted = False
         
@@ -114,6 +117,10 @@ class IPBCarDataset:
 
             cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
             self.img_ts[cam_name] = cur_img_ts
+            
+            self.cam_widths[cam_name] = W
+            self.cam_heights[cam_name] = H
+
 
         # read calib
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
@@ -127,7 +134,6 @@ class IPBCarDataset:
         
         # main cam parameters
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
-        H, W = 1024, 2064 
 
         # NOTE for the rear camera, from about h=920 is the ego car's tail
 
@@ -141,9 +147,6 @@ class IPBCarDataset:
 
         self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
 
-        self.cam_widths = {self.main_cam_name: W}
-        self.cam_heights = {self.main_cam_name: H}
-        
         self.mono_depth_for_high_z: bool = False # complete the low Z part 
 
 
