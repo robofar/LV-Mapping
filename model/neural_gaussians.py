@@ -117,11 +117,15 @@ class NeuralPoints(nn.Module):
             (1, self.geo_feature_dim), dtype=self.dtype, device=self.device
         )
         if self.config.color_on:
+            self.color_on = True
             self.color_features = torch.empty(
                 (1, self.color_feature_dim), dtype=self.dtype, device=self.device
             )
+            self.point_colors = torch.empty((0, 3), dtype=self.dtype, device=self.device) # RGB [0-1]
         else:
+            self.color_on = False
             self.color_features = None
+            self.point_colors = None
 
         # feature pca
         self.geo_feature_pca = self.color_feature_pca = None
@@ -135,7 +139,7 @@ class NeuralPoints(nn.Module):
         )  # last update ts
         self.point_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
 
-        self.point_colors = torch.empty((0, 3), dtype=self.dtype, device=self.device) # RGB [0-1]
+        
 
         # Gaussian parameters
         self.gs_dim_count: int = 3 #  2 or 3, 2D or 3D GS # FIXME
@@ -183,9 +187,7 @@ class NeuralPoints(nn.Module):
             (0), device=self.device, dtype=torch.int
         )
 
-        self.local_point_colors = torch.empty(
-            (0, 3), dtype=self.dtype, device=self.device
-        )
+        self.local_point_colors = None
 
         self.local_mask = None
         self.global2local = None
@@ -562,7 +564,7 @@ class NeuralPoints(nn.Module):
         self.local_point_orientations = self.point_orientations[local_mask]
         self.local_point_certainties = self.point_certainties[local_mask]
         self.local_point_ts_update = self.point_ts_update[local_mask]
-        if self.point_colors.shape[0] > 0: # might not contain anydata when color is not available
+        if self.point_colors is not None:
             self.local_point_colors = self.point_colors[local_mask]
 
 
@@ -1212,7 +1214,7 @@ class NeuralPoints(nn.Module):
                 .astype(np.float64)
             )
 
-        if color_mode == 0 and (self.point_colors.shape[0] == self.neural_points.shape[0]): # raw color
+        if color_mode == 0 and (self.point_colors is not None): # raw color
             if query_global:
                 point_colors_np = (
                     self.point_colors[::random_down_ratio]
@@ -1345,7 +1347,7 @@ class NeuralPoints(nn.Module):
             self.point_ts_update = self.point_ts_update[~prune_mask]
             self.point_certainties = self.point_certainties[~prune_mask]
 
-            if self.point_colors.shape[0] == prune_mask.shape[0]:
+            if self.point_colors is not None:
                 self.point_colors = self.point_colors[~prune_mask]
 
             # Gaussian related
@@ -1365,7 +1367,7 @@ class NeuralPoints(nn.Module):
                 (prune_mask, torch.tensor([False]).to(prune_mask)), dim=0
             )
             self.geo_features = self.geo_features[~prune_mask]
-            if self.config.color_on:
+            if self.config.color_on and self.color_features is not None:
                 self.color_features = self.color_features[~prune_mask]
             # recreate hash and local map then
             return True
@@ -1464,7 +1466,7 @@ class NeuralPoints(nn.Module):
             self.point_ts_update = self.point_ts_update[sample_idx]
             self.point_certainties = self.point_certainties[sample_idx]
             
-            if self.point_colors.shape[0] > 0:
+            if self.point_colors is not None:
                 self.point_colors = self.point_colors[sample_idx]
 
             sample_idx_pad = torch.cat((sample_idx, torch.tensor([-1]).to(sample_idx)))
@@ -1629,9 +1631,12 @@ class NeuralPoints(nn.Module):
             sorrounding_mask_a = sorrounding_mask[:-1]
             sorrounding_neural_points_data["position"] = self.neural_points[sorrounding_mask_a]
             sorrounding_neural_points_data["orientation"] = self.point_orientations[sorrounding_mask_a]
-            sorrounding_neural_points_data["color"] = self.point_colors[sorrounding_mask_a]
             sorrounding_neural_points_data["geo_feature"] = self.geo_features[sorrounding_mask]
-            sorrounding_neural_points_data["color_feature"] = self.color_features[sorrounding_mask]
+            
+            if self.point_colors is not None:
+                sorrounding_neural_points_data["color"] = self.point_colors[sorrounding_mask_a]
+                sorrounding_neural_points_data["color_feature"] = self.color_features[sorrounding_mask]
+            
             sorrounding_neural_points_data["resolution"] = self.resolution
             sorrounding_neural_points_data["free_mask"] = self.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
             sorrounding_neural_points_data["valid_mask"] = self.valid_gs_mask[sorrounding_mask_a]

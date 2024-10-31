@@ -238,10 +238,10 @@ class VisPacket:
             if only_local_map:
                 self.neural_points_data["position"] = neural_points.local_neural_points
                 self.neural_points_data["orientation"] = neural_points.local_point_orientations
-                self.neural_points_data["color"] = neural_points.local_point_colors
                 self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
-                
-                self.neural_points_data["color_feature"] = neural_points.local_color_features.detach()
+                if neural_points.color_on:
+                    self.neural_points_data["color"] = neural_points.local_point_colors
+                    self.neural_points_data["color_feature"] = neural_points.local_color_features.detach()
                 self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
                 self.neural_points_data["ts"] = neural_points.local_point_ts_update
@@ -251,8 +251,9 @@ class VisPacket:
                     local_geo_feature_3d, _ = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], principal_components=neural_points.geo_feature_pca, down_rate=17)
                     self.neural_points_data["color_pca_geo"] = local_geo_feature_3d
 
-                    local_color_feature_3d, _ = feature_pca_torch((self.neural_points_data["color_feature"])[:-1], principal_components=neural_points.color_feature_pca, down_rate=17)
-                    self.neural_points_data["color_pca_color"] = local_color_feature_3d
+                    if neural_points.color_on:
+                        local_color_feature_3d, _ = feature_pca_torch((self.neural_points_data["color_feature"])[:-1], principal_components=neural_points.color_feature_pca, down_rate=17)
+                        self.neural_points_data["color_pca_color"] = local_color_feature_3d
 
                 if add_sorrounding_points:
                     sorrounding_mask = neural_points.sorrounding_mask
@@ -263,9 +264,10 @@ class VisPacket:
                         self.sorrounding_neural_points_data["center"] = neural_points.local_position
                         self.sorrounding_neural_points_data["position"] = neural_points.neural_points[sorrounding_mask_a]
                         self.sorrounding_neural_points_data["orientation"] = neural_points.point_orientations[sorrounding_mask_a]
-                        self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
                         self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
-                        self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
+                        if neural_points.color_on:
+                            self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
+                            self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
                         self.sorrounding_neural_points_data["resolution"] = neural_points.resolution
                         self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
                         self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
@@ -273,9 +275,10 @@ class VisPacket:
             else:
                 self.neural_points_data["position"] = neural_points.neural_points
                 self.neural_points_data["orientation"] = neural_points.point_orientations
-                self.neural_points_data["color"] = neural_points.point_colors
                 self.neural_points_data["geo_feature"] = neural_points.geo_features
-                self.neural_points_data["color_feature"] = neural_points.color_features
+                if neural_points.color_on:
+                    self.neural_points_data["color"] = neural_points.point_colors
+                    self.neural_points_data["color_feature"] = neural_points.color_features
                 self.neural_points_data["free_mask"] = neural_points.free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
                 self.neural_points_data["ts"] = neural_points.point_ts_update
@@ -285,8 +288,9 @@ class VisPacket:
                     geo_feature_3d, _ = feature_pca_torch(neural_points.geo_features[:-1], principal_components=neural_points.geo_feature_pca, down_rate=31)
                     self.neural_points_data["color_pca_geo"] = geo_feature_3d
 
-                    color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=31)
-                    self.neural_points_data["color_pca_color"] = color_feature_3d
+                    if neural_points.color_on:
+                        color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=31)
+                        self.neural_points_data["color_pca_color"] = color_feature_3d
 
     def add_gaussians(self,  
                     gaussian_xyz=None,

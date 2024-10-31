@@ -993,6 +993,8 @@ class SLAM_GUI:
                 
                 dict_keys = list(gaussian_packet.neural_points_data.keys())
 
+                neural_point_colors = None
+
                 if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
                 elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
@@ -1003,11 +1005,12 @@ class SLAM_GUI:
                     color_map = cm.get_cmap("jet")
                     neural_point_colors = color_map(ts_np)[:, :3].astype(np.float64)
                 elif "stability" in dict_keys and self.neuralpoint_stability_chbox.checked:
-                    stability_vis_np = (1.0 - gaussian_packet.neural_points_data["stability"]).detach().cpu().numpy()
+                    stability_vis_np = (1.0 - gaussian_packet.neural_points_data["stability"]/1000.0).detach().cpu().numpy()
                     certainty_np = np.clip(stability_vis_np, 0.0, 1.0)
                     neural_point_colors = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
-                else:
+                elif "color" in dict_keys:
                     neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+                
                 
                 neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
@@ -1017,7 +1020,7 @@ class SLAM_GUI:
                 self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position)
                 self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position)
 
-                if np.shape(neural_point_colors)[0] > 0:
+                if neural_point_colors is not None:
                     valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
                     invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
                     invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis

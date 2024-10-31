@@ -363,7 +363,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
         if config.gs_on:
-            dataset.project_pointcloud_to_cams(use_only_colorized_points=True) #config.learn_color_residual) # True # config.learn_color_residual
+            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
