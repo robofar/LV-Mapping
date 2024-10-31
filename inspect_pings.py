@@ -133,6 +133,7 @@ def inspect_pings_map():
     loaded_model = torch.load(model_path)
     neural_points = loaded_model["neural_points"] # neural_points config are also loaded
     neural_points.temporal_local_map_on = False
+    neural_points.compute_feature_principle_components(down_rate=31)
 
     if args.sorrounding_map_r_m > 0:
         config.sorrounding_map_radius = args.sorrounding_map_r_m
@@ -153,10 +154,18 @@ def inspect_pings_map():
     if args.render_video:
         video_folder_path = os.path.join(experiment_path, "video")
         os.makedirs(video_folder_path, 0o755, exist_ok=True)
+    
+    mesh_folder_path = None
+    if args.recon_3d:
+        mesh_folder_path = os.path.join(experiment_path, "mesh")
+        os.makedirs(mesh_folder_path, 0o755, exist_ok=True)
 
     if args.render_video or args.recon_3d:
         render_with_poses(config, dataset, neural_points, mlp_dict, slam_poses, dataset.cam_names, 
-            recon_3d_on=args.recon_3d, video_save_base_path=video_folder_path)
+            recon_3d_on=args.recon_3d, 
+            video_save_base_path=video_folder_path, 
+            mesh_save_base_path=mesh_folder_path,
+            eval_down_rate=1)
         
     # reset neural points
     center_frame_id = min(center_frame_id, frame_count-1)
@@ -212,6 +221,7 @@ def inspect_pings_map():
             robot_default_on=False,
             neural_point_default_on=False,
             mesh_default_on=True,
+            neural_point_color_default_mode=1, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
@@ -240,12 +250,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                       cam_list: List[str],
                       video_save_base_path: str = None,
                       recon_3d_on: bool = False,
+                      mesh_save_base_path: str = None,
                       eval_down_rate: int = 0, 
                       normal_in_world_frame: bool = True,
-                      tsdf_fusion_voxel_size: float = None):
+                      tsdf_fusion_voxel_size: float = None,
+                      tsdf_fusion_max_range: float = None):
     
     """
-        main function for inspection of the PINGS map
+        Inspection of the PINGS map, conduct rendering with given poses
     """
 
     # lidar_poses as list of np array
@@ -258,12 +270,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         save_video_on = True
 
     # TODO:
-    # if recon_3d_on:
-    #     if tsdf_fusion_voxel_size is None:
-
-    #     vdb_volume = vdbfusion.VDBVolume(voxel_size,
-    #                              sdf_trunc,
-    #                              space_carving
+    if recon_3d_on:
+        if tsdf_fusion_voxel_size is None:
+            tsdf_fusion_voxel_size = config.voxel_size_m*0.6 # use the default value
+        sdf_trunc = tsdf_fusion_voxel_size * 4.0
+        space_carving_on = True # False: fast, cannot deal with dynamics, True: slow, can deal with dynamics, may also remove thin objects
+        vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+                                        sdf_trunc,
+                                        space_carving_on)
 
 
     rendered_rgb_cam_dict = {}
@@ -272,6 +286,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
     intrinsic_o3d_cam_dict = {}
     extrinsic_o3d_cam_dict = {}
+
+    eval_down_scale = 2**(eval_down_rate)
 
     for cur_cam_name in cam_list: 
         # initialize lists for video
@@ -286,12 +302,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         cur_K_mat = dataset.K_mats[cur_cam_name]
         # this is for eval_down_rate = 0, if not 1, then you need to change K_mat accordingly
         cur_intrinsic_o3d.set_intrinsics(
-                                    height=dataset.cam_heights[cur_cam_name],
-                                    width=dataset.cam_widths[cur_cam_name],
-                                    fx=cur_K_mat[0,0],
-                                    fy=cur_K_mat[1,1],
-                                    cx=cur_K_mat[0,2],
-                                    cy=cur_K_mat[1,2])
+                                    height=int(dataset.cam_heights[cur_cam_name]/eval_down_scale),
+                                    width=int(dataset.cam_widths[cur_cam_name]/eval_down_scale),
+                                    fx=cur_K_mat[0,0]/eval_down_scale,
+                                    fy=cur_K_mat[1,1]/eval_down_scale,
+                                    cx=cur_K_mat[0,2]/eval_down_scale,
+                                    cy=cur_K_mat[1,2]/eval_down_scale)
         
         intrinsic_o3d_cam_dict[cur_cam_name] = cur_intrinsic_o3d
         extrinsic_o3d_cam_dict[cur_cam_name] = dataset.T_c_l_mats[cur_cam_name]
@@ -299,8 +315,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     frame_count = len(lidar_poses)
 
     frame_begin = 0
-    # frame_end = frame_count
-    frame_end = 500
+    frame_end = frame_count
+    frame_end = 20
     frame_step = 1
 
     for frame_id in tqdm(range(frame_begin, frame_end, frame_step), desc="Render views along the trajectory"):
@@ -308,16 +324,19 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         T_w_l_np = lidar_poses[frame_id]
         T_w_l = torch.tensor(T_w_l_np, dtype=config.dtype, device=config.device)
+        
+        cur_frame_position_np = T_w_l_np[:3,3]
+        cur_frame_position_torch = T_w_l[:3,3]
 
         if frame_id % 100 == 0:
-            neural_points.recreate_hash(T_w_l[:3,3], kept_points=True, with_ts=False) # and at the same time reset local map
+            neural_points.recreate_hash(cur_frame_position_torch, kept_points=True, with_ts=False) # and at the same time reset local map
         else:
-            neural_points.reset_local_map(T_w_l[:3,3], cur_ts=frame_id)
+            neural_points.reset_local_map(cur_frame_position_torch, cur_ts=frame_id)
 
         neural_points_data, sorrounding_neural_points_data = neural_points.gather_local_data()
     
         sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
-                    decoders, None, T_w_l[:3,3],
+                    decoders, None, cur_frame_position_torch,
                     dist_concat_on=config.dist_concat_on, 
                     view_concat_on=config.view_concat_on, 
                     scale_filter_on=True,
@@ -325,6 +344,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     learn_color_residual=config.learn_color_residual)
         
         dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=config.monodepth_on) 
+
+        cur_frame_pcd_o3d = o3d.geometry.PointCloud()
 
         for cur_cam_name in cam_list: 
 
@@ -384,9 +405,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             if rendered_depth is not None and recon_3d_on:
                 
-                depth_trunc = config.max_range
+                depth_trunc = config.max_range * 0.8 # default value
+                if tsdf_fusion_max_range is not None:
+                    depth_trunc = tsdf_fusion_max_range                    
 
                 rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
+
+                rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
+
                 depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
 
                 cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
@@ -395,12 +421,39 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                                                                         depth_trunc=depth_trunc, 
                                                                         convert_rgb_to_intensity=False)
 
-                cur_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
+                cur_cam_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
                             cur_rgbd_o3d, 
                             intrinsic_o3d_cam_dict[cur_cam_name], 
                             extrinsic_o3d_cam_dict[cur_cam_name])
+
+                cur_frame_pcd_o3d += cur_cam_pcd_o3d # add visualizer # TODO
+
+        if recon_3d_on:
+            cur_frame_pcd_o3d.transform(T_w_l_np) # convert to world frame
+            vdb_volume.integrate(np.array(cur_frame_pcd_o3d.points), cur_frame_position_np)
                 
-                
+
+    if recon_3d_on:
+
+        # Extract triangle mesh (numpy arrays)
+        vert, tri = vdb_volume.extract_triangle_mesh()
+
+        mesh_tsdf_fusion = o3d.geometry.TriangleMesh(
+            o3d.utility.Vector3dVector(vert),
+            o3d.utility.Vector3iVector(tri),
+        )
+
+        mesh_tsdf_fusion.compute_vertex_normals()
+
+        # save the mesh
+        if mesh_save_base_path is not None:
+            mesh_path = os.path.join(mesh_save_base_path, "mesh_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
+            o3d.io.write_triangle_mesh(mesh_path, mesh_tsdf_fusion)
+            print("Save the mesh results from TSDF fusion to {}".format(mesh_path))
+
+        # free memory
+        vdb_volume = None
+        mesh_tsdf_fusion = None
 
     if save_video_on:
         for cur_cam_name in cam_list: 

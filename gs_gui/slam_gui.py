@@ -81,6 +81,7 @@ class SLAM_GUI:
             self.robot_default_on = params_gui.robot_default_on
             self.neural_point_default_on = params_gui.neural_point_default_on
             self.mesh_default_on = params_gui.mesh_default_on
+            self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
         
         if self.config is not None:
             setup_seed(self.config.seed)
@@ -462,34 +463,64 @@ class SLAM_GUI:
 
         self.panel.add_child(chbox_tile_3dobj_2)
 
-        self.panel.add_child(gui.Label("GS Rendering options"))
-        chbox_tile_geometry = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+
+        self.panel.add_child(gui.Label("Neural Point Color Options"))
+        chbox_tile_neuralpoint = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        # default mode 0: original rgb color
+
+        # mode 1
+        self.neuralpoint_geofeature_chbox = gui.Checkbox("Geometric Feature")
+        self.neuralpoint_geofeature_chbox.checked = (self.neural_point_color_default_mode==1)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_geofeature_chbox)
+
+        # mode 2
+        self.neuralpoint_colorfeature_chbox = gui.Checkbox("Photometric Feature")
+        self.neuralpoint_colorfeature_chbox.checked = (self.neural_point_color_default_mode==2)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_colorfeature_chbox)
+
+        # mode 3
+        self.neuralpoint_ts_chbox = gui.Checkbox("Timestep")
+        self.neuralpoint_ts_chbox.checked = (self.neural_point_color_default_mode==3)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_ts_chbox)
+
+        # mode 4
+        self.neuralpoint_stability_chbox = gui.Checkbox("Stability")
+        self.neuralpoint_stability_chbox.checked = (self.neural_point_color_default_mode==4)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_stability_chbox)
+
+        self.panel.add_child(chbox_tile_neuralpoint)
+
+
+        self.panel.add_child(gui.Label("GS Rendering Options"))
+        chbox_tile_gsrender = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         self.depth_chbox = gui.Checkbox("Depth")
         self.depth_chbox.checked = False
-        chbox_tile_geometry.add_child(self.depth_chbox)
+        chbox_tile_gsrender.add_child(self.depth_chbox)
 
         self.normal_chbox = gui.Checkbox("Normal")
         self.normal_chbox.checked = False
-        chbox_tile_geometry.add_child(self.normal_chbox)
+        chbox_tile_gsrender.add_child(self.normal_chbox)
 
         self.d2n_chbox = gui.Checkbox("D2N")
         self.d2n_chbox.checked = False
-        chbox_tile_geometry.add_child(self.d2n_chbox)
+        chbox_tile_gsrender.add_child(self.d2n_chbox)
 
         self.opacity_chbox = gui.Checkbox("Opacity")
         self.opacity_chbox.checked = False
-        chbox_tile_geometry.add_child(self.opacity_chbox)
+        chbox_tile_gsrender.add_child(self.opacity_chbox)
 
         # self.time_shader_chbox = gui.Checkbox("Time Shader")
         # self.time_shader_chbox.checked = False
-        # chbox_tile_geometry.add_child(self.time_shader_chbox)
+        # chbox_tile_gsrender.add_child(self.time_shader_chbox)
 
         self.elliopsoid_chbox = gui.Checkbox("Ellipsoid")
         self.elliopsoid_chbox.checked = False
-        chbox_tile_geometry.add_child(self.elliopsoid_chbox)
+        chbox_tile_gsrender.add_child(self.elliopsoid_chbox)
 
-        self.panel.add_child(chbox_tile_geometry)
+        self.panel.add_child(chbox_tile_gsrender)
 
         slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         slider_label = gui.Label("Gaussian Scale (0-1)")
@@ -961,10 +992,10 @@ class SLAM_GUI:
                 
                 dict_keys = list(gaussian_packet.neural_points_data.keys())
 
-                # change, add check box (TODO)
-                if "color_pca_geo" in dict_keys:
+
+                if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
-                elif "color_pca_color" in dict_keys:
+                elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
                 else:
                     neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()

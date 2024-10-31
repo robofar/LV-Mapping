@@ -123,7 +123,9 @@ class NeuralPoints(nn.Module):
         else:
             self.color_features = None
 
-        
+        # feature pca
+        self.geo_feature_pca = self.color_feature_pca = None
+
         # here, the ts represent the actually processed frame id (not neccessarily the frame id of the dataset)
         self.point_ts_create = torch.empty(
             (0), device=self.device, dtype=torch.int
@@ -637,6 +639,13 @@ class NeuralPoints(nn.Module):
     #     # self.rotation[local_mask[:-1]] = self.local_rotation.data
     #     # self.opacity[local_mask[:-1]] = self.local_opacity.data
     #     self.valid_gs_mask[local_mask[:-1]] = self.local_valid_gs_mask
+
+
+    def compute_feature_principle_components(self, down_rate: int = 1):
+        _, self.geo_feature_pca = feature_pca_torch((self.geo_features)[:-1], down_rate=down_rate, project_data=False)
+
+        if self.color_features is not None:
+            _, self.color_feature_pca = feature_pca_torch((self.color_features)[:-1], down_rate=down_rate, project_data=False)
 
 
     # not use the free gaussians (neural points)

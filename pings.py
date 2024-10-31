@@ -394,6 +394,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if not config.decoder_freezed and (frame_count_for_freeze_check == config.freeze_after_frame):
             freeze_decoders(mlp_dict, config)
             config.decoder_freezed = True
+            neural_points.compute_feature_principle_components(down_rate = 17)
 
         # # conduct local bundle adjustment (with lower frequency)
         # if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
@@ -540,7 +541,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
             # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
 
-            packet_to_vis.add_neural_points_data(neural_points, only_local_map=True, add_sorrounding_points=config.gs_on)
+            packet_to_vis.add_neural_points_data(neural_points, only_local_map=True, add_sorrounding_points=config.gs_on, pca_color_on=config.decoder_freezed)
 
             if frame_point_cloud_for_vis is not None:
                 packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))

@@ -503,10 +503,16 @@ def write_to_json(filename: Path, content: dict):
         json.dump(content, file)
 
 
-def feature_pca_torch(data, principal_dim: int = 3, down_rate: int = 1, normalize: bool = True):
+def feature_pca_torch(data, principal_components = None,
+                     principal_dim: int = 3,
+                     down_rate: int = 1,
+                     project_data: bool = True,
+                     normalize: bool = True):
     """
         do PCA to a NxD torch tensor to get the data along the K principle dimensions
         N is the data count, D is the dimension of the data
+
+        We can also use a pre-computed principal_components for only the projection of input data
     """
 
     N, D = data.shape
@@ -514,41 +520,46 @@ def feature_pca_torch(data, principal_dim: int = 3, down_rate: int = 1, normaliz
     # Step 1: Center the data (subtract the mean of each dimension)
     data_centered = data - data.mean(dim=0)
 
-    data_centered_for_compute = data_centered[::down_rate]
+    if principal_components is None:
+        data_centered_for_compute = data_centered[::down_rate]
 
-    # Step 2: Compute the covariance matrix (D x D)
-    cov_matrix = torch.matmul(data_centered_for_compute.T, data_centered_for_compute) / (N - 1)
+        assert data_centered_for_compute.shape[0] > principal_dim, "not enough data for PCA computation, down_rate might be too large or original data count is too small"
 
-    # Step 3: Perform eigen decomposition of the covariance matrix
-    eigenvalues, eigenvectors = torch.linalg.eig(cov_matrix)
-    eigenvalues_r = eigenvalues.real.to(data)
-    eigenvectors_r = eigenvectors.real.to(data)
-    # print(eigenvalues)
-    # print(eigenvectors)
-    # eigenvalues = eigenvalues[:, 0]  # Only the real parts are needed
+        # Step 2: Compute the covariance matrix (D x D)
+        cov_matrix = torch.matmul(data_centered_for_compute.T, data_centered_for_compute) / (N - 1)
 
-    # Step 4: Sort eigenvalues and eigenvectors in descending order
-    sorted_indices = torch.argsort(eigenvalues_r, descending=True)
-    principal_components = eigenvectors_r[:, sorted_indices[:principal_dim]]  # First 3 principal components
+        # Step 3: Perform eigen decomposition of the covariance matrix
+        eigenvalues, eigenvectors = torch.linalg.eig(cov_matrix)
+        eigenvalues_r = eigenvalues.real.to(data)
+        eigenvectors_r = eigenvectors.real.to(data)
+        # print(eigenvalues)
+        # print(eigenvectors)
+        # eigenvalues = eigenvalues[:, 0]  # Only the real parts are needed
 
-    # Step 5: Project data onto the top 3 principal components
-    data_pca = torch.matmul(data_centered, principal_components)
+        # Step 4: Sort eigenvalues and eigenvectors in descending order
+        sorted_indices = torch.argsort(eigenvalues_r, descending=True)
+        principal_components = eigenvectors_r[:, sorted_indices[:principal_dim]]  # First 3 principal components
 
-    # normalize to show as rgb
-    if normalize: 
-        # min_vals = data_pca.min(dim=0, keepdim=True).values
-        # max_vals = data_pca.max(dim=0, keepdim=True).values
+    data_pca = None
+    if project_data:
+        # Step 5: Project data onto the top 3 principal components
+        data_pca = torch.matmul(data_centered, principal_components[:principal_dim])
 
-        # # deal with outliers
-        min_vals = torch.quantile(data_pca, 0.02, dim=0, keepdim=True)
-        max_vals = torch.quantile(data_pca, 0.98, dim=0, keepdim=True)
+        # normalize to show as rgb
+        if normalize: 
+            # min_vals = data_pca.min(dim=0, keepdim=True).values
+            # max_vals = data_pca.max(dim=0, keepdim=True).values
 
-        # Normalize to range [0, 1]
-        data_pca = (data_pca - min_vals) / (max_vals - min_vals)
+            # # deal with outliers
+            min_vals = torch.quantile(data_pca, 0.02, dim=0, keepdim=True)
+            max_vals = torch.quantile(data_pca, 0.98, dim=0, keepdim=True)
 
-        data_pca = data_pca.clamp(0, 1)
+            # Normalize to range [0, 1]
+            data_pca = (data_pca - min_vals) / (max_vals - min_vals)
 
-    return data_pca
+            data_pca = data_pca.clamp(0, 1)
+
+    return data_pca, principal_components
 
 def color_to_intensity(colors: torch.tensor):
     intensity = 0.144 * colors[:, 0] + 0.299 * colors[:, 1] + 0.587 * colors[:, 2]

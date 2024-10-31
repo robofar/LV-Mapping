@@ -224,7 +224,7 @@ class VisPacket:
     # the sorrounding map is also added here
     def add_neural_points_data(self, neural_points, only_local_map: bool = True, 
                                add_sorrounding_points: bool = True,
-                               pca_color_on: bool = False):
+                               pca_color_on: bool = True):
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
@@ -245,10 +245,10 @@ class VisPacket:
                 self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
 
                 if pca_color_on:
-                    local_geo_feature_3d = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], down_rate=17)
+                    local_geo_feature_3d, _ = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], principal_components=neural_points.geo_feature_pca, down_rate=17)
                     self.neural_points_data["color_pca_geo"] = local_geo_feature_3d
 
-                    local_color_feature_3d = feature_pca_torch((self.neural_points_data["color_feature"])[:-1], down_rate=17)
+                    local_color_feature_3d, _ = feature_pca_torch((self.neural_points_data["color_feature"])[:-1], principal_components=neural_points.color_feature_pca, down_rate=17)
                     self.neural_points_data["color_pca_color"] = local_color_feature_3d
 
                 if add_sorrounding_points:
@@ -277,10 +277,10 @@ class VisPacket:
                 self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
 
                 if pca_color_on:
-                    geo_feature_3d = feature_pca_torch(neural_points.geo_features[:-1], down_rate=31)
+                    geo_feature_3d, _ = feature_pca_torch(neural_points.geo_features[:-1], principal_components=neural_points.geo_feature_pca, down_rate=31)
                     self.neural_points_data["color_pca_geo"] = geo_feature_3d
 
-                    color_feature_3d = feature_pca_torch(neural_points.color_features[:-1], down_rate=31)
+                    color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=31)
                     self.neural_points_data["color_pca_color"] = color_feature_3d
 
     def add_gaussians(self,  
@@ -402,6 +402,7 @@ class ParamsGUI:
         robot_default_on: bool = True,
         neural_point_default_on: bool = False,
         mesh_default_on: bool = False,
+        neural_point_color_default_mode: int = 0, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
     ):
         self.decoders = decoders # dict of MLPs
         
@@ -414,3 +415,4 @@ class ParamsGUI:
         self.robot_default_on = robot_default_on
         self.neural_point_default_on = neural_point_default_on
         self.mesh_default_on = mesh_default_on
+        self.neural_point_color_default_mode = neural_point_color_default_mode
