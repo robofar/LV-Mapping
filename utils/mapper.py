@@ -752,7 +752,7 @@ class Mapper:
 
         iter_count = max(1, iter_count + self.adaptive_iter_offset)
 
-        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
+        # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         sdf_mlp_param = list(self.sdf_mlp.parameters())
         if self.config.semantic_on:
@@ -766,7 +766,8 @@ class Mapper:
 
         opt = setup_optimizer(
             self.config,
-            neural_point_feat,
+            self.neural_points.local_geo_features,
+            self.neural_points.local_color_features,
             sdf_mlp_param,
             sem_mlp_param,
             color_mlp_param,
@@ -994,7 +995,7 @@ class Mapper:
     def joint_gsdf_mapping(self, iter_count: int, sdf_loss_on = True,
          online_eval_on = False, lpips_eval_on = False, render_pcd = False):
         
-        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
+        # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
@@ -1002,7 +1003,8 @@ class Mapper:
 
         opt = setup_optimizer(
             self.config,
-            neural_point_feat,
+            self.neural_points.local_geo_features,
+            self.neural_points.local_color_features,
             mlp_sdf_param=list(self.sdf_mlp.parameters()),
             mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
             mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
@@ -2302,6 +2304,7 @@ class Mapper:
 
     # joint optimization of PIN map and the poses in the sliding window
     # neural points are static in this case, we only fine-tune the neural point features for the map updating
+    # deprecated
     def bundle_adjustment(
         self, iter_count, window_size: int = 50, use_lie_group: bool = False
     ):
@@ -2328,12 +2331,14 @@ class Mapper:
             # fixed part
 
         # neural_point_feat = list(self.neural_points.parameters())
-        neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
+        # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         # also add the poses as param here, for pose refinement (bundle ajustment)
         opt = setup_optimizer(
-            self.config, neural_point_feat, 
-            poses=current_poses_se3_opt, lr_ratio=self.config.lr_ba_map/self.config.lr
+            self.config, 
+            self.neural_points.local_geo_features, 
+            self.neural_points.local_color_features,
+            poses=current_poses_se3_opt
         )
 
         for iter in tqdm(range(iter_count), disable=self.silence):

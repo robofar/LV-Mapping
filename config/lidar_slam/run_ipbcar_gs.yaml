@@ -46,7 +46,6 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  monodepth_on: False
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
@@ -73,7 +72,8 @@ gs:
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
-  learning_rate: 0.002 # neural point feature lr # lr 0.002 # TODO: examine this value tomorrow
+  learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
+  learning_rate_color: 0.01 # neural point color feature lr
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply

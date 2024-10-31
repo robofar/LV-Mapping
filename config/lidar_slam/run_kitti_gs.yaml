@@ -77,7 +77,7 @@ pgo:
 optimizer: # mappers 
   batch_size: 8192 # 16384
   iters: 15
-  learning_rate: 0.001 # neural point feature lr
+  learning_rate_geo: 0.001 # neural point feature lr
 eval:
   o3d_vis_on: True
   mesh_freq_frame: 10 # reconstruct the mesh every x frames

@@ -33,7 +33,7 @@ from gs_gui.gui_utils import (
 from gaussian_splatting.scene.cameras import CamImage
 # from utils.logging_utils import Log
 
-from utils.tools import colorize_depth_maps, setup_seed, get_time, remove_gpu_cache
+from utils.tools import colorize_depth_maps, seed_anything, get_time, remove_gpu_cache
 
 # o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -85,7 +85,7 @@ class SLAM_GUI:
             self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
         
         if self.config is not None:
-            setup_seed(self.config.seed)
+            seed_anything(self.config.seed)
 
         self.init_widget()
 

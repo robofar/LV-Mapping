@@ -198,7 +198,8 @@ class Config:
         self.init_iter_ratio: int = 40 # train init_iter_ratio x iters for the first frame to kick the SLAM off
         self.opt_adam: bool = True  # use adam (default) or sgd as the gradient descent optimizer
         self.bs: int = 16384 # batch size
-        self.lr: float = 0.01 # learning rate for the neural point feature
+        self.lr_geo: float = 0.01 # learning rate for the neural point geometric feature
+        self.lr_color: float = 0.01 # learning rate for the neural point color feature
         self.lr_mlp_base: float = 0.01
         self.lr_exposure: float = 0.001
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
@@ -595,13 +596,19 @@ class Config:
             self.iters = config_args["optimizer"].get("iters", self.iters) # mapping iters per frame
             self.init_iter_ratio = config_args["optimizer"].get("init_iter_ratio", self.init_iter_ratio) # iteration count ratio for the first frame (a kind of warm-up) #iter = init_iter_ratio*iter
             self.bs = config_args["optimizer"].get("batch_size", self.bs)
-            self.lr = float(config_args["optimizer"].get("learning_rate", self.lr))
+            # learning rate for neural points
+            self.lr_geo = float(config_args["optimizer"].get("learning_rate_geo", self.lr_geo))
+            self.lr_color = float(config_args["optimizer"].get("learning_rate_color", self.lr_color))
+            # for mlps
+            self.lr_mlp_base = float(config_args["optimizer"].get("learning_rate_mlp_base", self.lr_mlp_base))
+            # for exposures
+            self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
+
+            self.lr_pose = float(config_args["optimizer"].get("lr_pose_ba", self.lr_pose))
 
             # bundle adjustment
             self.ba_freq_frame = config_args["optimizer"].get("ba_freq_frame", 0) # default off
             self.ba_frame = config_args["optimizer"].get("ba_local_frame", self.ba_frame)
-            self.lr_pose = float(config_args["optimizer"].get("lr_pose_ba", self.lr_pose))
-            self.lr_map_ba = float(config_args["optimizer"].get("lr_map_ba", self.lr))
             self.ba_iters = int(config_args["optimizer"].get("ba_iters", self.ba_iters))
             self.ba_bs = int(config_args["optimizer"].get("ba_bs", self.ba_bs))
 

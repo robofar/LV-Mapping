@@ -1008,7 +1008,7 @@ class NeuralPoints(nn.Module):
     #     ]
 
     #     if with_pin_feature:
-    #         l.append({'params': [self.local_geo_features], 'lr': self.config.lr, "name": "geo_feature"})
+    #         l.append({'params': [self.local_geo_features], 'lr': self.config.lr_geo, "name": "geo_feature"})
 
     #     self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
     #     # self.xyz_scheduler_args = get_expon_lr_func(lr_init=self.position_lr_init*self.spatial_lr_scale,

@@ -435,9 +435,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             # print("Begin TSDF fusion")
             cur_frame_pcd_o3d.transform(T_w_l_np) # convert to world frame
 
-            o3d.visualization.draw_geometries([cur_frame_pcd_o3d])
+            # better to visualize together with the LiDAR point cloud (TODO)
+            o3d.visualization.draw_geometries([cur_frame_pcd_o3d]) 
 
-            # better do the downsampling
+            # better do the downsampling first (TODO), too time consuming here
             vdb_volume.integrate(np.array(cur_frame_pcd_o3d.points), cur_frame_position_np)
             # print("TSDF fusion done")
                 

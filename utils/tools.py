@@ -62,7 +62,7 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     # torch.autograd.set_detect_anomaly(True)
 
     # set the random seed for all
-    setup_seed(config.seed)
+    seed_anything(config.seed)
 
     if not debug_mode:
         access = 0o755
@@ -127,7 +127,7 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     return run_path
 
 
-def setup_seed(seed):
+def seed_anything(seed):
     os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -137,7 +137,8 @@ def setup_seed(seed):
 
 def setup_optimizer(
     config: Config,
-    neural_point_feat,
+    neural_point_geo_feat=None,
+    neural_point_color_feat=None,
     mlp_sdf_param=None,
     mlp_sem_param=None,
     mlp_color_param=None,
@@ -151,23 +152,24 @@ def setup_optimizer(
     lr_ratio=1.0,
 ) -> Optimizer:
     
-    lr_neural_point = config.lr * lr_ratio
-    lr_pose = config.lr_pose
-    
+    """
+        main optimizer setup function for all the stuff that are optimizable
+    """
+
     # weight_decay is for L2 regularization
     weight_decay = config.weight_decay
     weight_decay_mlp = 0.0
     opt_setting = []
 
     # 0.01
-    lr_sdf = config.lr_mlp_base
-    lr_color = config.lr_mlp_base
-    lr_sem = config.lr_mlp_base
+    lr_mlp_sdf = config.lr_mlp_base
+    lr_mlp_color = config.lr_mlp_base
+    lr_mlp_sem = config.lr_mlp_base
 
     if mlp_sdf_param is not None:
         mlp_sdf_param_opt_dict = {
             "params": mlp_sdf_param,
-            "lr": lr_sdf,
+            "lr": lr_mlp_sdf,
             "weight_decay": weight_decay_mlp,
             "name": "sdf_mlp_param",
         }
@@ -175,7 +177,7 @@ def setup_optimizer(
     if config.color_on and mlp_color_param is not None:
         mlp_color_param_opt_dict = {
             "params": mlp_color_param,
-            "lr": lr_color,
+            "lr": lr_mlp_color,
             "weight_decay": weight_decay_mlp,
             "name": "color_mlp_param",
         }
@@ -183,30 +185,24 @@ def setup_optimizer(
     if config.semantic_on and mlp_sem_param is not None:
         mlp_sem_param_opt_dict = {
             "params": mlp_sem_param,
-            "lr": lr_sem,
+            "lr": lr_mlp_sem,
             "weight_decay": weight_decay_mlp,
             "name": "sem_mlp_param",
         }
         opt_setting.append(mlp_sem_param_opt_dict)
     
     # TODO: add to config
-    lr_gs_xyz = 1e-3
-    lr_gs_scale = 1e-3
-    lr_gs_rot = 1e-3
-    lr_gs_alpha = 1e-3
-    lr_gs_color = 1e-2 # better to be larger, like 1e-2 # FIXME
-
-    # lr_gs_xyz = 1e-4
-    # lr_gs_scale = 1e-4
-    # lr_gs_rot = 1e-4
-    # lr_gs_alpha = 1e-4
-    # lr_gs_color = 1e-4
+    lr_mlp_gs_xyz = 1e-3
+    lr_mlp_gs_scale = 1e-3
+    lr_mlp_gs_rot = 1e-3
+    lr_mlp_gs_alpha = 1e-3
+    lr_mlp_gs_color = 1e-2 # better to be larger, like 1e-2 # FIXME
 
     if config.gs_on:
         if mlp_gs_xyz_param is not None:
             mlp_gs_xyz_param_opt_dict = {
                 "params": mlp_gs_xyz_param,
-                "lr": lr_gs_xyz,
+                "lr": lr_mlp_gs_xyz,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_xyz_mlp_param",
             }
@@ -214,7 +210,7 @@ def setup_optimizer(
         if mlp_gs_scale_param is not None:
             mlp_gs_scale_param_opt_dict = {
                 "params": mlp_gs_scale_param,
-                "lr": lr_gs_scale,
+                "lr": lr_mlp_gs_scale,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_scale_mlp_param",
             }
@@ -222,7 +218,7 @@ def setup_optimizer(
         if mlp_gs_rot_param is not None:
             mlp_gs_rot_param_opt_dict = {
                 "params": mlp_gs_rot_param,
-                "lr": lr_gs_rot,
+                "lr": lr_mlp_gs_rot,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_rot_mlp_param",
             }
@@ -230,7 +226,7 @@ def setup_optimizer(
         if mlp_gs_alpha_param is not None:
             mlp_gs_alpha_param_opt_dict = {
                 "params": mlp_gs_alpha_param,
-                "lr": lr_gs_alpha,
+                "lr": lr_mlp_gs_alpha,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_xyz_alpha_param",
             }
@@ -238,46 +234,55 @@ def setup_optimizer(
         if mlp_gs_color_param is not None:
             mlp_gs_color_param_opt_dict = {
                 "params": mlp_gs_color_param,
-                "lr": lr_gs_color,
+                "lr": lr_mlp_gs_color,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_color_mlp_param",
             }
             opt_setting.append(mlp_gs_color_param_opt_dict)
         
     if poses is not None:
-        poses_opt_dict = {"params": poses, "lr": lr_pose, "weight_decay": weight_decay}
+        poses_opt_dict = {"params": poses, "lr": config.lr_pose, "weight_decay": weight_decay}
         opt_setting.append(poses_opt_dict)
 
-    lr_exposure = config.lr_exposure # 0.001
     if cams is not None:
         for cam in cams:
             opt_setting.append(
                 {
                     "params": [cam.exposure_a],
-                    "lr": lr_exposure,
+                    "lr": config.lr_exposure,
                     "name": "cam_{}_exposure_a".format(cam.uid),
                 }
             )
             opt_setting.append(
                 {
                     "params": [cam.exposure_b],
-                    "lr": lr_exposure,
+                    "lr": config.lr_exposure,
                     "name": "cam_{}_exposure_b".format(cam.uid),
                 }
             )
 
-    
     # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
     # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
 
     weight_decay_feature = 0.0
-    feat_opt_dict = {
-        "params": neural_point_feat,
-        "lr": lr_neural_point,
-        "weight_decay": weight_decay_feature,
-        "name": "neural_point_features",
-    }
-    opt_setting.append(feat_opt_dict)
+
+    if neural_point_geo_feat is not None:
+        geo_feat_opt_dict = {
+            "params": neural_point_geo_feat,
+            "lr": config.lr_geo,
+            "weight_decay": weight_decay_feature,
+            "name": "neural_point_geo_features",
+        }
+        opt_setting.append(geo_feat_opt_dict)
+
+    if neural_point_color_feat is not None:
+        color_feat_opt_dict = {
+            "params": neural_point_color_feat,
+            "lr": config.lr_color,
+            "weight_decay": weight_decay_feature,
+            "name": "neural_point_color_features",
+        }
+        opt_setting.append(color_feat_opt_dict)
 
     if config.opt_adam:
         opt = optim.Adam(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps)
