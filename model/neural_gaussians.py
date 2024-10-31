@@ -248,8 +248,8 @@ class NeuralPoints(nn.Module):
     def has_neural_points(self):
         return (self.count() > 0)
 
-    def print_memory(self):
-        if not self.silence:
+    def record_memory(self, verbose: bool = True, record_footprint: bool = False):
+        if verbose:
             print("# Global neural point: %d (%d free, %d valid)" % (self.count(), self.free_count(), self.count(valid_gs_only=True)))
             print("# Local  neural point: %d (%d free, %d valid)" % (self.local_count(), self.free_local_count(), self.local_count(valid_gs_only=True)))
         neural_point_count = self.count()
@@ -258,9 +258,10 @@ class NeuralPoints(nn.Module):
         if self.color_features is not None:
             point_dim += (self.color_feature_dim + 3)  # also include the color feature
         self.cur_memory_mb = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
-        if not self.silence:
-            print("Memory consumption: %f (MB)" % self.cur_memory_mb)
-        self.memory_footprint.append(self.cur_memory_mb)
+        if verbose:
+            print("Current map memory consumption: %f (MB)" % self.cur_memory_mb)
+        if record_footprint:
+            self.memory_footprint.append(self.cur_memory_mb)
 
     def update(
         self,
@@ -1498,7 +1499,7 @@ class NeuralPoints(nn.Module):
             self.reset_local_map(sensor_position, sensor_orientation, cur_ts)
 
         if not kept_points:  # merged
-            self.print_memory()  # show the updated memory after merging
+            self.record_memory(verbose=(not self.silence))  # show the updated memory after merging
 
     def set_search_neighborhood(
         self, num_nei_cells: int = 1, search_alpha: float = 1.0

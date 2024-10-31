@@ -5,6 +5,7 @@ from datetime import datetime
 
 import cv2
 import glfw
+import matplotlib.cm as cm
 import numpy as np
 import copy
 import open3d as o3d
@@ -992,11 +993,19 @@ class SLAM_GUI:
                 
                 dict_keys = list(gaussian_packet.neural_points_data.keys())
 
-
                 if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
                 elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
+                elif "ts" in dict_keys and self.neuralpoint_ts_chbox.checked:
+                    max_ts = torch.max(gaussian_packet.neural_points_data["ts"])* 1.0
+                    ts_np = (gaussian_packet.neural_points_data["ts"]/max_ts).detach().cpu().numpy()
+                    color_map = cm.get_cmap("jet")
+                    neural_point_colors = color_map(ts_np)[:, :3].astype(np.float64)
+                elif "stability" in dict_keys and self.neuralpoint_stability_chbox.checked:
+                    stability_vis_np = (1.0 - gaussian_packet.neural_points_data["stability"]).detach().cpu().numpy()
+                    certainty_np = np.clip(stability_vis_np, 0.0, 1.0)
+                    neural_point_colors = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
                 else:
                     neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
                 

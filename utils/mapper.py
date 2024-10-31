@@ -335,12 +335,10 @@ class Mapper:
 
         # TODO
         # update again with the mono_depth predicted point cloud, set another mask for these neural points
-
-
         # local map is also updated here
 
-        if not self.silence:
-            self.neural_points.print_memory()
+        # record the current map memory
+        self.neural_points.record_memory(verbose=(not self.silence), record_footprint=True)
 
         T3 = get_time()
 

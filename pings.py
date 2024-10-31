@@ -363,7 +363,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
         if config.gs_on:
-            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
+            dataset.project_pointcloud_to_cams(use_only_colorized_points=True) #config.learn_color_residual) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations
@@ -598,7 +598,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map
     
-    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = 0, vis_normals=True, vis_free_gaussians=True)
+    color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output, vis_free_gaussians=True)
     if config.save_map:
         neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud

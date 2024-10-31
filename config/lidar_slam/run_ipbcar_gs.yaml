@@ -20,7 +20,7 @@ neuralpoints:
   voxel_size_m: 0.25 # 0.3
   search_alpha: 0.8
   query_nn_k: 6
-  feature_dim: 64 # 32
+  feature_dim: 32 # 32 # not worth further improving this
   color_feature_dim: 32 # 16
   weighted_first: True # not much difference True or False 
 decoder:
@@ -49,8 +49,8 @@ gs:
   monodepth_on: False
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
-  dist_concat_on: False # TODO: check, not much improvement for test views
-  n_gaussian: 16 # TODO: check if larger is
+  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
+  n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO

@@ -146,7 +146,7 @@ class NeuralPoints(nn.Module):
     def local_count(self):
         return self.local_neural_points.shape[0]
 
-    def print_memory(self):
+    def record_memory(self):
         if not self.silence:
             print("# Global neural point: %d" % (self.count()))
             print("# Local  neural point: %d" % (self.local_count()))
@@ -811,7 +811,7 @@ class NeuralPoints(nn.Module):
             self.reset_local_map(sensor_position, sensor_orientation, cur_ts)
 
         if not kept_points:  # merged
-            self.print_memory()  # show the updated memory after merging
+            self.record_memory()  # show the updated memory after merging
 
     def set_search_neighborhood(
         self, num_nei_cells: int = 1, search_alpha: float = 1.0
