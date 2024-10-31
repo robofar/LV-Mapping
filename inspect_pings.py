@@ -343,7 +343,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     z_far=config.sorrounding_map_radius,
                     learn_color_residual=config.learn_color_residual)
         
+        # may not load images
+        # print("Begin data loading")
         dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=config.monodepth_on) 
+        # print("Data loading done")
 
         cur_frame_pcd_o3d = o3d.geometry.PointCloud()
 
@@ -429,8 +432,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 cur_frame_pcd_o3d += cur_cam_pcd_o3d # add visualizer # TODO
 
         if recon_3d_on:
+            # print("Begin TSDF fusion")
             cur_frame_pcd_o3d.transform(T_w_l_np) # convert to world frame
+
+            o3d.visualization.draw_geometries([cur_frame_pcd_o3d])
+
+            # better do the downsampling
             vdb_volume.integrate(np.array(cur_frame_pcd_o3d.points), cur_frame_position_np)
+            # print("TSDF fusion done")
                 
 
     if recon_3d_on:

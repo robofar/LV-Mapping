@@ -543,7 +543,7 @@ def feature_pca_torch(data, principal_components = None,
     data_pca = None
     if project_data:
         # Step 5: Project data onto the top 3 principal components
-        data_pca = torch.matmul(data_centered, principal_components[:principal_dim])
+        data_pca = torch.matmul(data_centered, principal_components) # N, D @ D, P
 
         # normalize to show as rgb
         if normalize: 

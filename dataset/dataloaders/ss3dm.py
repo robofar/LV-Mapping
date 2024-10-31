@@ -49,8 +49,11 @@ class SS3DMDataset:
 
         self.min_lidar_radius_m = 0.5
 
-        self.lidar_h_topic_name = "horizontal" 
-        self.lidar_v_topic_name = "vertical" 
+        self.lidar_top_topic_name = "TOP" 
+        self.lidar_front_topic_name = "FRONT" 
+        self.lidar_left_topic_name = "LEFT" 
+        self.lidar_rear_topic_name = "REAR" 
+        self.lidar_right_topic_name = "RIGHT" 
         
         self.cam_left_topic_name = "left"  
         self.cam_right_topic_name = "right" 
@@ -61,7 +64,9 @@ class SS3DMDataset:
         # h lidar 's timstamp is usually 0.05s later than camera's ts
         # figure out why 0.3-0.35 is a good value for the deskew ref ratio
 
-        cam_list_all = [self.cam_front_topic_name, self.cam_left_topic_name, self.cam_rear_topic_name, self.cam_right_topic_name]
+        lidar_list_all = ["FRONT", "LEFT", "REAR"]
+        cam_list_all = ["FRONT", "FRONT_LEFT", "BACK_LEFT", "BACK", "BACK_RIGHT", "FRONT_RIGHT"]
+
 
         if cam_name in cam_list_all: 
             self.main_cam_only = True
