@@ -1757,7 +1757,7 @@ def write_tum_format_poses(filename: str, poses_np: np.ndarray, timestamps=None,
     tum_out = np.empty((frame_count,8))
     for i in range(frame_count):
         tx, ty, tz = poses_np[i, :3, -1].flatten()
-        qw, qx, qy, qz = Quaternion(matrix=poses_np[i], atol=0.01).elements
+        qw, qx, qy, qz = Quaternion(matrix=poses_np[i], atol=1e-3).elements
         if timestamps is None:
             ts = i * frame_s
         else:

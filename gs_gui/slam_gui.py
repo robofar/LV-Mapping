@@ -235,13 +235,13 @@ class SLAM_GUI:
 
         # range circles
         self.range_circle = o3d.geometry.LineSet()
-        circle_points_1 = generate_circle(radius=30.0, num_points=100)
+        circle_points_1 = generate_circle(radius=self.config.max_range/2, num_points=100)
         lines1 = [[i, (i + 1) % len(circle_points_1)] for i in range(len(circle_points_1))]
         range_circle1 = o3d.geometry.LineSet(
             points=o3d.utility.Vector3dVector(circle_points_1),
             lines=o3d.utility.Vector2iVector(lines1),
         )
-        circle_points_2 = generate_circle(radius=60.0, num_points=100)
+        circle_points_2 = generate_circle(radius=self.config.max_range, num_points=100)
         lines2 = [[i, (i + 1) % len(circle_points_2)] for i in range(len(circle_points_2))]
         range_circle2 = o3d.geometry.LineSet(
             points=o3d.utility.Vector3dVector(circle_points_2),
@@ -252,8 +252,9 @@ class SLAM_GUI:
 
         bounds = self.widget3d.scene.bounding_box
         self.widget3d.setup_camera(60.0, bounds, bounds.get_center())
+        
         em = self.window.theme.font_size
-        margin = 0.5 * em
+        margin = 0.8 * em
         
         self.panel = gui.Vert(0.5 * em, gui.Margins(margin))
 
@@ -563,7 +564,9 @@ class SLAM_GUI:
 
         ## Input/Eval Image Tab
         tabs2 = gui.TabControl()
+        
         tab_input = gui.Vert(0, tab_margins)
+
         self.in_rgb_widget = gui.ImageWidget()
         self.in_depth_widget = gui.ImageWidget()
         self.in_normal_widget = gui.ImageWidget()
@@ -572,9 +575,8 @@ class SLAM_GUI:
         self.rendered_depth_widget = gui.ImageWidget()
         self.rendered_depth_error_widget = gui.ImageWidget()
 
-        tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
-        
-        view_info_tile = gui.Horiz(1.2 * em, gui.Margins(margin))
+        view_info_tile = gui.Horiz(1.5 * em, gui.Margins(margin))
+        # view_info_tile.add_stretch()
 
         self.cur_view_info = gui.Label("Camera: ")
         view_info_tile.add_child(self.cur_view_info)
@@ -587,9 +589,15 @@ class SLAM_GUI:
 
         self.cur_view_depthl1_info = gui.Label("Depth L1 (m): ")
         view_info_tile.add_child(self.cur_view_depthl1_info)
-
+    
         tab_input.add_child(view_info_tile)
-        
+
+        tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
+
+        # view_info_tile2 = gui.Horiz(1.5 * em, gui.Margins(margin)) # empty one
+
+        # tab_input.add_child(view_info_tile2)
+
         tab_input.add_child(self.in_rgb_widget)
 
         tab_input.add_child(self.rendered_rgb_widget)

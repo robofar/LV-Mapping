@@ -225,6 +225,8 @@ class Config:
 
         self.exposure_correction_on: bool = False
 
+        self.gs_invalid_check_on: bool = True
+
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
         self.bg_color = [1.0, 1.0, 1.0] # white 
         
@@ -294,7 +296,7 @@ class Config:
         self.gs_vis_on: bool = True # gs visualizer
 
         # tracking (odometry estimation)
-        self.track_on: bool = True
+        self.track_on: bool = False
         # default without color
         self.photometric_loss_on: bool = False # add the color (or intensity) [photometric loss] to the tracking loss
         self.photometric_loss_weight: float = 0.01 # weight for the photometric loss in tracking
@@ -622,6 +624,8 @@ class Config:
 
             self.exposure_correction_on = config_args["gs"].get("exposure_correction_on", self.exposure_correction_on)
             
+            self.gs_invalid_check_on = config_args["gs"].get("invalid_check_on", self.gs_invalid_check_on) 
+
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
             self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 5.0)
 

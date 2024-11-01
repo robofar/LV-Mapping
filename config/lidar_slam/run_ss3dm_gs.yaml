@@ -6,11 +6,10 @@ setting:
   color_map_on: True
 process:
   min_range_m: 4.0
-  max_range_m: 80.0
+  max_range_m: 60.0
   vox_down_m: 0.08
-  # dynamic_sdf_ratio_thre: 0.8
 sampler:
-  surface_sample_range_m: 0.25
+  surface_sample_range_m: 0.3
   surface_sample_n: 4
   free_sample_begin_ratio: 0.3
   free_sample_end_dist_m: 1.0
@@ -37,14 +36,15 @@ loss:
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
-tracker:
-  source_vox_down_m: 0.6
-  iter_n: 50
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
-  virtual_side_count: 6
+# tracker:
+#   source_vox_down_m: 0.6
+#   iter_n: 50
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
+#   virtual_side_count: 6
 gs:
+  invalid_check_on: False
   exposure_correction_on: False # verified to be better than False
   view_concat_on: False
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
@@ -77,5 +77,5 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   # sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mesh_min_nn: 10
+  mesh_min_nn: 15
   visualizer_split_width_ratio: 0.6

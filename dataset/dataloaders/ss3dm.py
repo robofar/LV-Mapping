@@ -37,8 +37,8 @@ from utils.tools import get_time
 
 # SS3DM Dataset: Benchmarking Street-View Surface Reconstruction with a Synthetic 3D Mesh Dataset (NeurIPS 2024) 
 # https://ss3dm.top/
+# https://arxiv.org/pdf/2410.21739
 
-# TODO
 class SS3DMDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
         
@@ -50,18 +50,9 @@ class SS3DMDataset:
 
         self.min_lidar_radius_m = 1.0
 
-        # self.lidar_top_topic_name = "TOP" 
-        # self.lidar_front_topic_name = "FRONT" 
-        # self.lidar_left_topic_name = "LEFT" 
-        # self.lidar_rear_topic_name = "REAR" 
-        # self.lidar_right_topic_name = "RIGHT" 
-        
-        # self.cam_left_topic_name = "left"  
-        # self.cam_right_topic_name = "right" 
-        # self.cam_front_topic_name = "front" 
-        # self.cam_rear_topic_name = "rear"
-
         self.lidar_list_all = ["TOP", "FRONT", "LEFT", "REAR", "RIGHT"]
+        # NOTE that the LiDAR point cloud simulated from this dataset has a noise of 0.1m std
+
         self.cam_list_all = ["FRONT", "FRONT_LEFT", "BACK_LEFT", "BACK", "BACK_RIGHT", "FRONT_RIGHT"]
 
         self.main_lidar_name = "TOP"
@@ -120,11 +111,11 @@ class SS3DMDataset:
 
         ego_car_data = (scenario_data["ego_car"])["data"]
         self.T_w_v = ego_car_data["v2w"] # N,4,4
+        self.gt_poses = np.matmul(self.T_w_v, np.linalg.inv(self.T_l_v)) # T_w_l
 
         lidar_name_full = "lidar_{}".format(self.main_lidar_name)
         lidar_meta_data = scenario_data[lidar_name_full]
         self.T_v_wl = (lidar_meta_data["data"])["l2v"] # N,4,4 # l here is another world frame (lidar world frame, which still has some difference from w)
-
 
         for cam_name in self.cam_list:
             cur_cam_dir = os.path.join(data_dir, "images", "camera_{}/".format(cam_name))
@@ -190,10 +181,15 @@ class SS3DMDataset:
 
             cur_lidar_xyz_homo = np.hstack((cur_lidar_xyz, np.ones((np.shape(cur_lidar_xyz)[0], 1))))
 
+            # if lidar_name == self.main_lidar_name:
+            #     print((lidar_data['rays_o'])[0])
+
             # cur_lidar_T_w_l = (self.lidar_poses[lidar_name])[idx] # 4,4 # F**K, this T_v_l has nothing to do with the lidar frame, I felt really confused
             # cur_lidar_T_l_w = np.linalg.inv(cur_lidar_T_w_l) # 4,4
 
             cur_T_l_wl = self.T_l_v @ self.T_v_wl[idx] # this is back to the unified lidar frame
+
+            # print(cur_T_l_wl[:3,3])
 
             # convert to vehicle frame
             cur_lidar_xyz_l_frame = (cur_lidar_xyz_homo @ cur_T_l_wl.T) # v frame actually as front camera # N, 4

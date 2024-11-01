@@ -418,7 +418,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
             
             # TODO: check its time consuming, can be done once per x frames 
-            if frame_id > 5 and frame_id % 2 == 0:
+            if frame_id > 5 and frame_id % 2 == 0 and config.gs_invalid_check_on:
                 with torch.no_grad():  # eval step
                     mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
 
