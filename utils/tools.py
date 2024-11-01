@@ -1011,7 +1011,7 @@ def tranmat_close_to_identity(mats: np.ndarray, rot_thre: float, tran_thre: floa
 
     rot_close_to_identity = np.all(rot_diff < rot_thre)
 
-    tran_diff = mats[:3, 3]
+    tran_diff = np.abs(mats[:3, 3])
 
     tran_close_to_identity = np.all(tran_diff < tran_thre)
 

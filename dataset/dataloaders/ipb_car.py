@@ -43,7 +43,7 @@ class IPBCarDataset:
 
         self.use_only_colorized_points = False
         
-        self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
 
         self.min_lidar_radius_m = 0.5
 

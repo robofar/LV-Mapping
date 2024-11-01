@@ -574,7 +574,7 @@ class SLAM_GUI:
 
         tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
         
-        view_info_tile = gui.Horiz(1.0 * em, gui.Margins(margin))
+        view_info_tile = gui.Horiz(1.2 * em, gui.Margins(margin))
 
         self.cur_view_info = gui.Label("Camera: ")
         view_info_tile.add_child(self.cur_view_info)

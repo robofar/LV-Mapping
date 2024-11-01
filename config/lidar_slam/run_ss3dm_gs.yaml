@@ -1,24 +1,23 @@
 setting:
-  name: "test_ipbcar_gs"
+  name: "test_ss3dm_gs"
   output_root: "./pings_experiments"
-  deskew: True
-  deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
+  deskew: False
   color_channel: 3
   color_map_on: True
 process:
-  min_range_m: 1.5
-  max_range_m: 60.0
+  min_range_m: 4.0
+  max_range_m: 80.0
   vox_down_m: 0.08
-  dynamic_sdf_ratio_thre: 0.8
+  # dynamic_sdf_ratio_thre: 0.8
 sampler:
-  surface_sample_range_m: 0.3
-  surface_sample_n: 2
-  free_sample_begin_ratio: 0.2
+  surface_sample_range_m: 0.25
+  surface_sample_n: 4
+  free_sample_begin_ratio: 0.3
   free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.3 # 0.25
-  search_alpha: 0.5 # 0.8
+  voxel_size_m: 0.3 # 0.3
+  search_alpha: 0.5
   query_nn_k: 6
   feature_dim: 32 # 32 # not worth further improving this
   color_feature_dim: 32 # 16
@@ -37,7 +36,7 @@ loss:
   weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
+  pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
 tracker:
   source_vox_down_m: 0.6
   iter_n: 50
@@ -46,11 +45,11 @@ pgo:
   pgo_freq_frame: 30
   virtual_side_count: 6
 gs:
-  exposure_correction_on: True # verified to be better than False
-  view_concat_on: True
+  exposure_correction_on: False # verified to be better than False
+  view_concat_on: False
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
-  gs_iters: 100 # 50 # 100
+  gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -60,7 +59,7 @@ gs:
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: True
   lambda_depth: 10.0 # 20.0
-  lambda_opacity: 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   # lambda_isotropic: 1.0
   # lambda_area: 1e-4 # 1e-3
   # lambda_mono_normal: 0.01
@@ -76,7 +75,7 @@ optimizer: # mapper
   learning_rate_color: 0.002 # neural point color feature lr
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
-  sensor_cad_path: ./cad/ipb_car_cheap.ply
-  mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 15
+  # sensor_cad_path: ./cad/ipb_car_cheap.ply
+  mesh_freq_frame: 20 # reconstruct the mesh every x frames
+  mesh_min_nn: 10
   visualizer_split_width_ratio: 0.6

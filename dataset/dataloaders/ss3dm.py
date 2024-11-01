@@ -27,6 +27,7 @@ import os
 import open3d as o3d
 import cv2
 import numpy as np
+import pickle
 
 import yaml
 
@@ -47,28 +48,25 @@ class SS3DMDataset:
         
         self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
-        self.min_lidar_radius_m = 0.5
+        self.min_lidar_radius_m = 1.0
 
-        self.lidar_top_topic_name = "TOP" 
-        self.lidar_front_topic_name = "FRONT" 
-        self.lidar_left_topic_name = "LEFT" 
-        self.lidar_rear_topic_name = "REAR" 
-        self.lidar_right_topic_name = "RIGHT" 
+        # self.lidar_top_topic_name = "TOP" 
+        # self.lidar_front_topic_name = "FRONT" 
+        # self.lidar_left_topic_name = "LEFT" 
+        # self.lidar_rear_topic_name = "REAR" 
+        # self.lidar_right_topic_name = "RIGHT" 
         
-        self.cam_left_topic_name = "left"  
-        self.cam_right_topic_name = "right" 
-        self.cam_front_topic_name = "front" 
-        self.cam_rear_topic_name = "rear"
+        # self.cam_left_topic_name = "left"  
+        # self.cam_right_topic_name = "right" 
+        # self.cam_front_topic_name = "front" 
+        # self.cam_rear_topic_name = "rear"
 
-        # cameras are almost triggered at the same time
-        # h lidar 's timstamp is usually 0.05s later than camera's ts
-        # figure out why 0.3-0.35 is a good value for the deskew ref ratio
+        self.lidar_list_all = ["TOP", "FRONT", "LEFT", "REAR", "RIGHT"]
+        self.cam_list_all = ["FRONT", "FRONT_LEFT", "BACK_LEFT", "BACK", "BACK_RIGHT", "FRONT_RIGHT"]
 
-        lidar_list_all = ["FRONT", "LEFT", "REAR"]
-        cam_list_all = ["FRONT", "FRONT_LEFT", "BACK_LEFT", "BACK", "BACK_RIGHT", "FRONT_RIGHT"]
+        self.main_lidar_name = "TOP"
 
-
-        if cam_name in cam_list_all: 
+        if cam_name in self.cam_list_all: 
             self.main_cam_only = True
             self.main_cam_name = cam_name
             self.cam_list = [self.main_cam_name]
@@ -76,147 +74,137 @@ class SS3DMDataset:
         else: 
             # use all the cameras
             self.main_cam_only = False
-            self.main_cam_name = self.cam_front_topic_name
-            self.cam_list = cam_list_all
+            self.main_cam_name = self.cam_list_all[0]
+            self.cam_list = self.cam_list_all
             print("Use all the cameras")
 
+        self.lidar_list = self.lidar_list_all
+
+        scenario_file_path = os.path.join(data_dir, "scenario.pt")
+        # print(scenario_file_path)
+
+        with open(scenario_file_path, 'rb') as file:
+            scenario_data_all = pickle.load(file) # ok done
+        # print(list(scenario_data_all.keys()))
+
+        scenario_data = scenario_data_all["observers"]
+
         self.img_files = {}
-        self.img_ts = {}
+        self.lidar_files = {}
         self.K_mats = {}
-        self.dist_coeffs = {}
         self.T_c_l_mats = {}
-        self.T_l_lm_mats = [] # inter-lidar transformation, from the main LiDAR (horizontal) to other LiDARs (vertical)
-        self.ts_ref_ratio_diffs = [0.0]
 
         self.cam_widths = {}
         self.cam_heights = {}
 
-        # horizontal lidar
-        self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
-        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply")) # we use bin here, can not be directly visualized but would be much smaller
-        self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
-
-        # vertical lidar
-        self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
-        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
-        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
-
         # img_size: 2064x1024
-        H, W = 1024, 2064 
+        H, W = 1080, 1920 
+        fx = fy = 672.19923668
+        cx, cy = 960, 540
+        K_mat = np.eye(3)
+        K_mat[0,0] = fx
+        K_mat[0,2] = cx
+        K_mat[1,1] = fy 
+        K_mat[1,2] = cy
 
-        self.img_already_undistorted = False
-        
+        # c2w needs to be in OpenCV coordinate system, so this matrix is required Opencv/gl conversion
+        self.T_f_v = np.array([[0, 0, 1, 0],
+                                [1, 0, 0, 0],
+                                [0, -1, 0, 0],
+                                [0, 0, 0, 1]])
+
+        self.T_l_v = np.array([[0, 0, -1, 0],
+                                [1, 0, 0, 0],
+                                [0, -1, 0, 0],
+                                [0, 0, 0, 1]])
+
+        ego_car_data = (scenario_data["ego_car"])["data"]
+        self.T_w_v = ego_car_data["v2w"] # N,4,4
+
+        lidar_name_full = "lidar_{}".format(self.main_lidar_name)
+        lidar_meta_data = scenario_data[lidar_name_full]
+        self.T_v_wl = (lidar_meta_data["data"])["l2v"] # N,4,4 # l here is another world frame (lidar world frame, which still has some difference from w)
+
+
         for cam_name in self.cam_list:
-            cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
-            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
-            
-            # create folder if not yet there
-            cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
-            os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
-
-            # skip the first frame here (not needed actually)
-            # we just use from the first frame
-            # better to add the association function
-            # cur_img_files = cur_img_files[1:]
-            # cur_img_ts = cur_img_ts[1:]
-
+            cur_cam_dir = os.path.join(data_dir, "images", "camera_{}/".format(cam_name))
+            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.jpg"))
+        
             self.img_files[cam_name] = cur_img_files
 
-            cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
-            self.img_ts[cam_name] = cur_img_ts
-            
             self.cam_widths[cam_name] = W
             self.cam_heights[cam_name] = H
+            self.K_mats[cam_name] = K_mat
 
+            cam_name_full = "camera_{}".format(cam_name)
+            cam_meta_data = scenario_data[cam_name_full]
 
-        # read calib
-        self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
+            cur_cam_T_v_c = ((cam_meta_data["data"])["c2v"])[0]
 
-        # read reference poses (by Louis)
-        poses_file = os.path.join(data_dir, "poses.txt")
-        if os.path.exists(poses_file):
-            self.gt_poses = self.read_kitti_format_poses(poses_file)
-            # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
-            # print("gt poses for {} frames".format(np.shape(self.gt_poses)[0]))
+            self.T_c_l_mats[cam_name] = np.linalg.inv(self.T_l_v @ cur_cam_T_v_c)  # still wrong
+
+            # print(self.T_c_l_mats[cam_name])
+
+        for lidar_name in self.lidar_list:
+            cur_lidar_dir = os.path.join(data_dir, "lidars", "lidar_{}/".format(lidar_name))
+            cur_lidar_files = sorted(glob.glob(cur_lidar_dir + "*.npz"))
         
-        # main cam parameters
-        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+            self.lidar_files[lidar_name] = cur_lidar_files
 
-        # NOTE for the rear camera, from about h=920 is the ego car's tail
+            # all the lidar l2v are the same, lidar point cloud already under a world frame
 
-        self.intrinsic.set_intrinsics(
-                                    height=H,
-                                    width=W,
-                                    fx=self.K_mats[self.main_cam_name][0,0],
-                                    fy=self.K_mats[self.main_cam_name][1,1],
-                                    cx=self.K_mats[self.main_cam_name][0,2],
-                                    cy=self.K_mats[self.main_cam_name][1,2])
+        # self.gt_poses = self.lidar_poses[self.main_lidar_name]
 
-        self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
-
-        self.mono_depth_for_high_z: bool = False # complete the low Z part 
-
-
-    def __getitem__(self, idx):
+        # read from the scenario_file_path
         
-        # tic_read_pc = get_time()
+        # # main cam parameters
+        # self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
 
-        h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
-        # print("H Lidar ts: {}".format(h_lidar_ref_ts))
+        # # NOTE for the rear camera, from about h=920 is the ego car's tail
 
-        # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
-        # read bin is very fast
-        points, point_ts = self.read_point_cloud_ply(self.lidar_horizontal_files[idx]) # lidar_h_points
+        # self.intrinsic.set_intrinsics(
+        #                             height=H,
+        #                             width=W,
+        #                             fx=self.K_mats[self.main_cam_name][0,0],
+        #                             fy=self.K_mats[self.main_cam_name][1,1],
+        #                             cx=self.K_mats[self.main_cam_name][0,2],
+        #                             cy=self.K_mats[self.main_cam_name][1,2])
 
-        # toc_read_pc = get_time()
-        # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
+        # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
 
-        valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
-        points = points[valid_mask]
-        point_ts = point_ts[valid_mask] # unit: s
+        self.mono_depth_for_high_z: bool = True # complete the low Z part 
 
-        # print(point_ts)
-        
-        point_lidar_idx = np.zeros_like(point_ts) # all zero
 
-        lidar_h_point_count = np.shape(points)[0]
-        # from 0 to lidar_h_point_count-1: lidar_h
-        # from lidar_h_point_count to end: lidar_v
+    def __getitem__(self, idx): 
 
-        # TODO: it's not correct to firstly combine the two point clouds are then apply undistortion
-        # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
-        # For multiple-LiDAR cases, you still have something to deal with
-        if not self.use_only_lidar_h:
+        points = np.empty((0,4))
+
+        for lidar_name in self.lidar_list:
             
-            v_lidar_ref_ts = self.lidar_vertical_ts[idx]
-            # print("V Lidar ts: {}".format(v_lidar_ref_ts))
+            cur_lidar_file = self.lidar_files[lidar_name][idx]
 
-            lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
-            # print(np.shape(lidar_v_points)[0])
+            lidar_data = np.load(cur_lidar_file)
 
-            lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
+            # here already under world frame
+            cur_lidar_xyz = lidar_data['rays_o'] + lidar_data['rays_d'] * lidar_data['ranges'].reshape((-1, 1)) # xyz # already in world frame?
 
-            lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
-            lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
+            cur_lidar_xyz_homo = np.hstack((cur_lidar_xyz, np.ones((np.shape(cur_lidar_xyz)[0], 1))))
 
-            valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < self.min_lidar_radius_m, axis=1) 
-            lidar_v_points = lidar_v_points[valid_mask]
-            lidar_v_points_ts = lidar_v_points_ts[valid_mask]
+            # cur_lidar_T_w_l = (self.lidar_poses[lidar_name])[idx] # 4,4 # F**K, this T_v_l has nothing to do with the lidar frame, I felt really confused
+            # cur_lidar_T_l_w = np.linalg.inv(cur_lidar_T_w_l) # 4,4
 
-            # this is actually not a very big number, consider it later FIXME
-            # lidar_v_points_ts += (v_lidar_ref_ts - h_lidar_ref_ts) # convert to the same reference time of the horizontal lidar
+            cur_T_l_wl = self.T_l_v @ self.T_v_wl[idx] # this is back to the unified lidar frame
 
-            added_ref_ts_ratio = (h_lidar_ref_ts - v_lidar_ref_ts) / 0.1
-            self.ts_ref_ratio_diffs[0] = added_ref_ts_ratio
-            # print(added_ref_ts_ratio)
+            # convert to vehicle frame
+            cur_lidar_xyz_l_frame = (cur_lidar_xyz_homo @ cur_T_l_wl.T) # v frame actually as front camera # N, 4
 
-            lidar_v_point_lidar_idx = np.ones_like(lidar_v_points_ts)
+            points = np.concatenate((points, cur_lidar_xyz_l_frame), axis=0) # N, 4
 
-            points = np.concatenate((points, lidar_v_points), axis=0) # K, 4
-            point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
-            point_lidar_idx = np.concatenate((point_lidar_idx, lidar_v_point_lidar_idx), axis=0)
+            # valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
+            # points = points[valid_mask]
 
         if self.load_img:
+            
             img_dict = {}
             depth_img_dict = {}
 
@@ -231,19 +219,9 @@ class SS3DMDataset:
 
                 cur_img_file = self.img_files[cam_name][idx]
 
-                img_file_split = cur_img_file.split("/")
-                img_file_split[-2] = "data_undistorted" # data --> data_undistorted
-                cur_img_file_distorted = "/".join(img_file_split)
-
-                if os.path.exists(cur_img_file_distorted):
-                    undistort_on = False # if already exists the undistorted file, then use it
-                    cur_img_file = cur_img_file_distorted
-                else:
-                    undistort_on = True # otherwise, do the distortion and save the file
-
                 # print(cur_img_file)
 
-                img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
+                img_cam = self.read_img(cur_img_file) 
                 
                 # toc_1 = get_time()
                 
@@ -257,32 +235,141 @@ class SS3DMDataset:
                 # depth_img_dict[cam_name] = depth_map # H, W, 1
                 
                 img_dict[cam_name] = img_cam # H, W, 3
-                
-                # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
-                # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
-
-            # FIXME
-            # if self.use_only_colorized_points:
-            #     with_rgb_mask = (points_rgb[:, 3] == 0)
-            #     points = points[with_rgb_mask]
-            #     points_rgb = points_rgb[with_rgb_mask]
-            #     point_ts = point_ts[with_rgb_mask]
-            #     point_lidar_idx = point_lidar_idx[with_rgb_mask]
 
             # we skip the intensity here for now (and also the color mask)
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
-            # print(point_ts) # correct
-
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict}
-            # frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict, "depth": depth_img_dict}
+            frame_data = {"points": points, "img": img_dict}
+            
         else:
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx}
+            frame_data = {"points": points}
 
         return frame_data
 
+        # # tic_read_pc = get_time()
+
+        # h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
+        # # print("H Lidar ts: {}".format(h_lidar_ref_ts))
+
+        # # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
+        # # read bin is very fast
+        # points, point_ts = self.read_point_cloud_ply(self.lidar_horizontal_files[idx]) # lidar_h_points
+
+        # # toc_read_pc = get_time()
+        # # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
+
+        # valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
+        # points = points[valid_mask]
+        # point_ts = point_ts[valid_mask] # unit: s
+
+        # # print(point_ts)
+        
+        # point_lidar_idx = np.zeros_like(point_ts) # all zero
+
+        # lidar_h_point_count = np.shape(points)[0]
+        # # from 0 to lidar_h_point_count-1: lidar_h
+        # # from lidar_h_point_count to end: lidar_v
+
+        # # TODO: it's not correct to firstly combine the two point clouds are then apply undistortion
+        # # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
+        # # For multiple-LiDAR cases, you still have something to deal with
+        # if not self.use_only_lidar_h:
+            
+        #     v_lidar_ref_ts = self.lidar_vertical_ts[idx]
+        #     # print("V Lidar ts: {}".format(v_lidar_ref_ts))
+
+        #     lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
+        #     # print(np.shape(lidar_v_points)[0])
+
+        #     lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
+
+        #     lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
+        #     lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
+
+        #     valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < self.min_lidar_radius_m, axis=1) 
+        #     lidar_v_points = lidar_v_points[valid_mask]
+        #     lidar_v_points_ts = lidar_v_points_ts[valid_mask]
+
+        #     # this is actually not a very big number, consider it later FIXME
+        #     # lidar_v_points_ts += (v_lidar_ref_ts - h_lidar_ref_ts) # convert to the same reference time of the horizontal lidar
+
+        #     added_ref_ts_ratio = (h_lidar_ref_ts - v_lidar_ref_ts) / 0.1
+        #     self.ts_ref_ratio_diffs[0] = added_ref_ts_ratio
+        #     # print(added_ref_ts_ratio)
+
+        #     lidar_v_point_lidar_idx = np.ones_like(lidar_v_points_ts)
+
+        #     points = np.concatenate((points, lidar_v_points), axis=0) # K, 4
+        #     point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
+        #     point_lidar_idx = np.concatenate((point_lidar_idx, lidar_v_point_lidar_idx), axis=0)
+
+        # if self.load_img:
+        #     img_dict = {}
+        #     depth_img_dict = {}
+
+        #     points_rgb = np.ones_like(points) # N,4, last channel for the mask
+
+        #     for cam_name in self.cam_list:
+                
+        #         # tic_0 = get_time()
+        #         # slow, but would be hard to speed up
+
+        #         # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
+
+        #         cur_img_file = self.img_files[cam_name][idx]
+
+        #         img_file_split = cur_img_file.split("/")
+        #         img_file_split[-2] = "data_undistorted" # data --> data_undistorted
+        #         cur_img_file_distorted = "/".join(img_file_split)
+
+        #         if os.path.exists(cur_img_file_distorted):
+        #             undistort_on = False # if already exists the undistorted file, then use it
+        #             cur_img_file = cur_img_file_distorted
+        #         else:
+        #             undistort_on = True # otherwise, do the distortion and save the file
+
+        #         # print(cur_img_file)
+
+        #         img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
+                
+        #         # toc_1 = get_time()
+                
+        #         # TODO: a bit slow, try to speed it up
+        #         # we do not to do this here anymore
+        #         # FIXME: not used now
+        #         # points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
+
+        #         # toc_1 = get_time()
+
+        #         # depth_img_dict[cam_name] = depth_map # H, W, 1
+                
+        #         img_dict[cam_name] = img_cam # H, W, 3
+                
+        #         # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
+        #         # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
+
+        #     # FIXME
+        #     # if self.use_only_colorized_points:
+        #     #     with_rgb_mask = (points_rgb[:, 3] == 0)
+        #     #     points = points[with_rgb_mask]
+        #     #     points_rgb = points_rgb[with_rgb_mask]
+        #     #     point_ts = point_ts[with_rgb_mask]
+        #     #     point_lidar_idx = point_lidar_idx[with_rgb_mask]
+
+        #     # we skip the intensity here for now (and also the color mask)
+        #     points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+        #     # print(point_ts) # correct
+
+        #     frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict}
+        #     # frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict, "depth": depth_img_dict}
+        # else:
+        #     frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx}
+
+        # return frame_data
+
     def __len__(self):
-        return len(self.lidar_horizontal_files)
+        return len(self.lidar_files[self.lidar_list[0]])
     
     # ouster-128 lidar (point-wise timestamp)
     # this does not work well
@@ -489,3 +576,4 @@ class SS3DMDataset:
                 poses.append(pose)
         
         return np.array(poses)
+
