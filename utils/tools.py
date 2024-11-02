@@ -44,8 +44,8 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
 
-    warnings.filterwarnings("ignore", category=FutureWarning) 
     o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
+    warnings.filterwarnings("ignore", category=FutureWarning) 
 
     run_name = config.name + "_" + ts  # modified to a name that is easier to index
 
@@ -89,7 +89,7 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
             # set up wandb
             setup_wandb()
             wandb.init(
-                project="PIN_SLAM", config=vars(config), dir=run_path
+                project="PINGS", config=vars(config), dir=run_path
             )  # your own worksapce
             wandb.run.name = run_name
 

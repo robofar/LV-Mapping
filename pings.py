@@ -575,9 +575,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     
     # VI. Save results
     mapper.free_pool()
-    pose_eval_results = None
-    if config.track_on:
-        pose_eval_results = dataset.write_results()
+    pose_eval_results = dataset.write_results()
     if config.pgo_on and pgm.pgo_count>0:
         print("# Loop corrected: ", pgm.pgo_count)
         pgm.write_g2o(os.path.join(run_path, "final_pose_graph.g2o"))

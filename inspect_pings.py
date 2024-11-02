@@ -25,7 +25,7 @@ from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
 from utils.mesher import Mesher
-from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps, feature_pca_torch
+from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps
 from utils.visualizer import MapVisualizer
 
 from gaussian_splatting.scene.cameras import CamImage
