@@ -24,7 +24,7 @@ from dataset.slam_dataset import SLAMDataset, read_kitti_format_poses
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
-from utils.mesher import Mesher
+from utils.mesher import Mesher, filter_isolated_vertices
 from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps
 from utils.visualizer import MapVisualizer
 
@@ -50,6 +50,7 @@ parser.add_argument('--show_global', '-g', action='store_true', default=False, h
 parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes resolution (in meter) for mesh reconstruction')
 parser.add_argument('--mesh_min_nn_k', type=int, default=-1, help='SDF querying min neighbor neural point count for mesh reconstruction')
 parser.add_argument('--sorrounding_map_r_m', type=float, default=-1, help='Radius of the sorrounding map in meter for far-away stuff rendering')
+parser.add_argument('--tsdf_fusion_max_range_m', type=float, default=-1, help='Maximum range for doing the TSDF fusion')
 args, unknown = parser.parse_known_args()
 
 def inspect_pings_map():
@@ -68,6 +69,10 @@ def inspect_pings_map():
 
     model_path = os.path.join(experiment_path, "model", "pin_map.pth")
     pose_path = os.path.join(experiment_path, "slam_poses_kitti.txt")
+    if not os.path.exists(pose_path):
+        pose_path = os.path.join(experiment_path, "gt_poses_kitti.txt")
+    # TODO
+
     full_config_path = os.path.join(experiment_path, "meta", "config_all.yaml")
     config.model_path = model_path
     config.pose_path = pose_path
@@ -143,12 +148,13 @@ def inspect_pings_map():
     # load decoders
     load_decoders(loaded_model, mlp_dict) 
 
-    slam_poses = read_kitti_format_poses(config.pose_path)
-    frame_count = len(slam_poses)
-
     # # dataset
     dataset = SLAMDataset(config)
     # print(dataset.cam_names)
+
+
+    poses_for_render = read_kitti_format_poses(config.pose_path)
+    frame_count = len(poses_for_render)
     
     video_folder_path = None
     if args.render_video:
@@ -161,15 +167,15 @@ def inspect_pings_map():
         os.makedirs(mesh_folder_path, 0o755, exist_ok=True)
 
     if args.render_video or args.recon_3d:
-        render_with_poses(config, dataset, neural_points, mlp_dict, slam_poses, dataset.cam_names, 
+        render_with_poses(config, dataset, neural_points, mlp_dict, poses_for_render, dataset.cam_names, 
             recon_3d_on=args.recon_3d, 
             video_save_base_path=video_folder_path, 
             mesh_save_base_path=mesh_folder_path,
-            eval_down_rate=1)
+            eval_down_rate=config.gs_vis_down_rate)
         
     # reset neural points
     center_frame_id = min(center_frame_id, frame_count-1)
-    ref_pose = torch.tensor(slam_poses[center_frame_id], device=config.device, dtype=config.dtype)
+    ref_pose = torch.tensor(poses_for_render[center_frame_id], device=config.device, dtype=config.dtype)
     ref_position = ref_pose[:3,3]
     # ref_position = neural_points.neural_points[0]
     
@@ -230,7 +236,7 @@ def inspect_pings_map():
 
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
-        packet_to_vis.add_traj(slam_poses=np.array(slam_poses))
+        packet_to_vis.add_traj(slam_poses=np.array(poses_for_render))
         if cur_mesh is not None:
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
         
@@ -244,7 +250,7 @@ def inspect_pings_map():
                     continue
 
 
-def render_with_poses(config: Config, dataset: SLAMDataset, 
+def render_with_poses(config: Config, dataset: SLAMDataset,
                       neural_points: NeuralPoints, decoders: Dict[str, Decoder], 
                       lidar_poses: Dict[str, np.array], 
                       cam_list: List[str],
@@ -254,7 +260,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                       eval_down_rate: int = 0, 
                       normal_in_world_frame: bool = True,
                       tsdf_fusion_voxel_size: float = None,
-                      tsdf_fusion_max_range: float = None):
+                      tsdf_fusion_max_range: float = None,
+                      tsdf_fusion_space_carving_on: bool = False):
     
     """
         Inspection of the PINGS map, conduct rendering with given poses
@@ -273,8 +280,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     if recon_3d_on:
         if tsdf_fusion_voxel_size is None:
             tsdf_fusion_voxel_size = config.voxel_size_m*0.6 # use the default value
-        sdf_trunc = tsdf_fusion_voxel_size * 4.0
-        space_carving_on = True # False: fast, cannot deal with dynamics, True: slow, can deal with dynamics, may also remove thin objects
+        sdf_trunc = tsdf_fusion_voxel_size * 3.0
+        space_carving_on = tsdf_fusion_space_carving_on # False: fast, cannot deal with dynamics, True: slow, can deal with dynamics, may also remove thin objects
         vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
                                         sdf_trunc,
                                         space_carving_on)
@@ -314,10 +321,11 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
     frame_count = len(lidar_poses)
 
-    frame_begin = 0
-    frame_end = frame_count
-    frame_end = 20
-    frame_step = 1
+    # add to input args
+    frame_begin = 2400
+    frame_end = 3200
+    # frame_end = 20
+    frame_step = 2
 
     for frame_id in tqdm(range(frame_begin, frame_end, frame_step), desc="Render views along the trajectory"):
         remove_gpu_cache()
@@ -341,7 +349,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     view_concat_on=config.view_concat_on, 
                     scale_filter_on=True,
                     z_far=config.sorrounding_map_radius,
-                    learn_color_residual=config.learn_color_residual)
+                    learn_color_residual=config.learn_color_residual,
+                    gs_type=config.gs_type)
         
         # may not load images
         # print("Begin data loading")
@@ -374,7 +383,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 view_concat_on=config.view_concat_on, 
                 correct_exposure=config.exposure_correction_on, 
                 learn_color_residual=config.learn_color_residual,
-                front_only_on=config.train_front_only)
+                front_only_on=config.train_front_only,
+                gs_type=config.gs_type)
             
             # rendered results
             rendered_rgb_image, rendered_depth, rendered_normal = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"] # 3, H, W / 1, H, W
@@ -408,9 +418,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             if rendered_depth is not None and recon_3d_on:
                 
-                depth_trunc = config.max_range * 0.8 # default value
-                if tsdf_fusion_max_range is not None:
-                    depth_trunc = tsdf_fusion_max_range                    
+                if args.tsdf_fusion_max_range_m > 0:
+                    depth_trunc = args.tsdf_fusion_max_range_m     
+                else:
+                    depth_trunc = config.max_range * 0.8 # default value
 
                 rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
 
@@ -432,15 +443,18 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 cur_frame_pcd_o3d += cur_cam_pcd_o3d # add visualizer # TODO
 
         if recon_3d_on:
-            # print("Begin TSDF fusion")
+            print("Begin TSDF fusion")
             cur_frame_pcd_o3d.transform(T_w_l_np) # convert to world frame
 
+            # downsample a bit
+            cur_frame_pcd_o3d = cur_frame_pcd_o3d.voxel_down_sample(config.vox_down_m)
+
             # better to visualize together with the LiDAR point cloud (TODO)
-            o3d.visualization.draw_geometries([cur_frame_pcd_o3d]) 
+            # o3d.visualization.draw_geometries([cur_frame_pcd_o3d]) 
 
             # better do the downsampling first (TODO), too time consuming here
             vdb_volume.integrate(np.array(cur_frame_pcd_o3d.points), cur_frame_position_np)
-            # print("TSDF fusion done")
+            print("TSDF fusion done")
                 
 
     if recon_3d_on:
@@ -452,6 +466,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             o3d.utility.Vector3dVector(vert),
             o3d.utility.Vector3iVector(tri),
         )
+
+        mesh_tsdf_fusion = filter_isolated_vertices(mesh_tsdf_fusion, config.min_cluster_vertices)
 
         mesh_tsdf_fusion.compute_vertex_normals()
 

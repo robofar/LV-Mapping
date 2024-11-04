@@ -214,7 +214,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # save merged point cloud map from gt pose as a reference map
     if config.save_merged_pc and dataset.gt_pose_provided:
         dataset.write_merged_point_cloud(use_gt_pose=True, out_file_name='merged_gt_pc', 
-            frame_step=5, merged_downsample=True)
+            frame_step=1, merged_downsample=True, tsdf_fusion_on=True)
     
     gs_time_table = []
 
@@ -611,8 +611,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     neural_points.clear_temp() # clear temp data for output
     if config.save_map:
         save_implicit_map(run_path, neural_points, mlp_dict)
-    if config.save_merged_pc:
-        dataset.write_merged_point_cloud() # replay: save merged point cloud map
+    # if config.save_merged_pc:
+    #     dataset.write_merged_point_cloud() # replay: save merged point cloud map
     
     if config.o3d_vis_on:
         while True:

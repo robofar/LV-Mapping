@@ -24,6 +24,8 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from PIL import Image
 
+import vdbfusion # for debugging, comparison with the baseline
+
 from dataset.dataloaders import dataset_factory
 from eval.eval_traj_utils import absolute_error, plot_trajectories, relative_error
 from utils.config import Config
@@ -1134,7 +1136,8 @@ class SLAMDataset():
                                 use_gt_pose=False, 
                                 out_file_name="merged_point_cloud",
                                 frame_step = 1,
-                                merged_downsample = False):
+                                merged_downsample = True,
+                                tsdf_fusion_on=False):
 
         print("Begin to replay the dataset ...")
 
@@ -1144,6 +1147,14 @@ class SLAMDataset():
         map_points_np = np.empty((0, 3))
         map_intensity_np = np.empty(0)
         map_color_np = np.empty((0, 3))
+
+        if tsdf_fusion_on:
+            tsdf_fusion_voxel_size = self.config.voxel_size_m*0.6
+            sdf_trunc = tsdf_fusion_voxel_size * 3.0
+            space_carving_on = True
+            vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+                                            sdf_trunc,
+                                            space_carving_on)
 
         for frame_id in tqdm(
             range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
@@ -1203,7 +1214,7 @@ class SLAMDataset():
                 frame_down_torch[:, :3], cur_pose_torch
             )
 
-            frame_points_np = frame_down_torch[:, :3].detach().cpu().numpy()
+            frame_points_np = frame_down_torch[:, :3].detach().cpu().numpy().astype(np.float64) # under map frame
             map_points_np = np.concatenate((map_points_np, frame_points_np), axis=0)
             if self.config.color_channel == 1:
                 frame_intensity_np = frame_down_torch[:, 3].detach().cpu().numpy()
@@ -1213,6 +1224,12 @@ class SLAMDataset():
             elif self.config.color_channel == 3:
                 frame_color_np = frame_down_torch[:, 3:].detach().cpu().numpy()
                 map_color_np = np.concatenate((map_color_np, frame_color_np), axis=0)
+
+            cur_position_np = (cur_pose_torch.detach().cpu().numpy())[:3, 3]
+
+            if tsdf_fusion_on:
+                vdb_volume.integrate(frame_points_np, cur_position_np)
+
 
         print("Replay done")
 
@@ -1239,6 +1256,27 @@ class SLAMDataset():
             save_path = os.path.join(self.run_path, "map", out_file_name+".ply")
             o3d.t.io.write_point_cloud(save_path, map_out_o3d)
             print(f"save the merged raw point cloud map to {save_path}")
+
+        map_out_o3d = None
+        
+        if tsdf_fusion_on:
+
+            # Extract triangle mesh (numpy arrays)
+            vert, tri = vdb_volume.extract_triangle_mesh()
+
+            mesh_tsdf_fusion = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(vert),
+                o3d.utility.Vector3iVector(tri),
+            )
+
+            mesh_tsdf_fusion.compute_vertex_normals()
+
+            if self.run_path is not None:
+                mesh_save_path = os.path.join(self.run_path, "mesh", "mesh_original_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
+                o3d.io.write_triangle_mesh(mesh_save_path, mesh_tsdf_fusion)
+                print(f"save the tsdf fusion mesh from the original point cloud to {mesh_save_path}")
+        
+            vdb_volume = None
 
     # TODO
     def o3d_tsdf_fusion(self, frame_step = 1, output_path = None, vox_size = 0.02, trunc_dist = 0.06):
@@ -1281,6 +1319,7 @@ class SLAMDataset():
             print(f"Save the mesh resulting from TSDF fusion to {output_path}")
 
         return tsdf_fusion_mesh
+
 
     def write_results_log(self):
         log_folder = "log"
@@ -1359,6 +1398,9 @@ class SLAMDataset():
         # pose estimation evaluation report
         if self.gt_pose_provided:
             gt_poses = self.gt_poses[:self.processed_frame+1]
+            gt_poses_out = apply_kitti_format_calib(gt_poses, self.calib["Tr"])
+            write_kitti_format_poses(os.path.join(self.run_path, "gt_poses"), gt_poses_out)
+            write_tum_format_poses(os.path.join(self.run_path, "gt_poses"), gt_poses_out, self.poses_ts, 0.1*self.config.step_frame)
             write_traj_as_o3d(gt_poses, os.path.join(self.run_path, "gt_poses.ply"))
 
             if self.config.track_on:
@@ -1753,7 +1795,8 @@ def write_kitti_format_poses(filename: str, poses_np: np.ndarray, direct_use_fil
     
     np.savetxt(fname=fname, X=poses_out_kitti)
 
-def write_tum_format_poses(filename: str, poses_np: np.ndarray, timestamps=None, frame_s = 0.1, 
+def write_tum_format_poses(filename: str, poses_np: np.ndarray,
+                           timestamps=None, frame_s = 0.1, 
                            with_header = False, direct_use_filename = False):
     from pyquaternion import Quaternion
 
@@ -1761,6 +1804,12 @@ def write_tum_format_poses(filename: str, poses_np: np.ndarray, timestamps=None,
     tum_out = np.empty((frame_count,8))
     for i in range(frame_count):
         tx, ty, tz = poses_np[i, :3, -1].flatten()
+
+        determinant_check = np.linalg.det(poses_np[i, :3, :3])
+        if determinant_check < 0.99:
+            print("rotation matrix not valid, skip the pose output")
+            return
+
         qw, qx, qy, qz = Quaternion(matrix=poses_np[i], atol=1e-3).elements
         if timestamps is None:
             ts = i * frame_s

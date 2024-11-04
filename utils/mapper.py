@@ -38,7 +38,7 @@ from utils.tools import (
 )
 
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
-from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss
+from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss, tukey_loss
 from gaussian_splatting.utils.graphics_utils import focal2fov
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
@@ -1040,8 +1040,8 @@ class Mapper:
                         view_concat_on=self.config.view_concat_on, 
                         scale_filter_on=True,
                         z_far=self.config.sorrounding_map_radius,
-                        learn_color_residual=self.config.learn_color_residual)
-        
+                        learn_color_residual=self.config.learn_color_residual,
+                        gs_type=self.config.gs_type)        
 
         # also have a valid mask for the neural points
 
@@ -1143,7 +1143,8 @@ class Mapper:
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
-                    front_only_on=self.config.train_front_only) # render gaussians  # FIXME: front only
+                    front_only_on=self.config.train_front_only,
+                    gs_type=self.config.gs_type) # render gaussians  # FIXME: front only
 
                 if render_pkg is None:
                     continue
@@ -1228,14 +1229,16 @@ class Mapper:
                 if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
                     pixel_h_used = int(910/1024*gt_depth_image.shape[1])
                 elif cam_name == "front":
-                    pixel_h_used = int(1000/1024*gt_depth_image.shape[1])
+                    pixel_h_used = int(990/1024*gt_depth_image.shape[1])
                 else:  
                     pixel_h_used = -1
 
                 rendered_rgb_image_for_loss = rendered_rgb_image[:,:pixel_h_used,:]
                 gt_rgb_image_for_loss = gt_rgb_image[:,:pixel_h_used,:]
 
+            
                 loss_rgb_l1 = l1_loss(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
+                # loss_rgb_robust = tukey_loss(rendered_rgb_image_for_loss, gt_rgb_image_for_loss) # when you set c=0, it would be just as the original l1 loss
                 if self.config.lambda_ssim > 0.0:
                     # ssim_value = ssim(rendered_rgb_image_for_loss, gt_rgb_image_for_loss)
                     ssim_value = fused_ssim(rendered_rgb_image_for_loss.unsqueeze(0), gt_rgb_image_for_loss.unsqueeze(0)) # have to be 4 dim
@@ -1256,6 +1259,7 @@ class Mapper:
                     rendered_depth_valid = rendered_depth[valid_depth_mask]
                     if self.config.inverse_depth_loss:
                         depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rendered_depth_valid) # use inverse depth (then we will care more about the close range part)
+                        # depth_loss = tukey_loss(1.0/gt_depth_image, 1.0/rendered_depth_valid) 
                         # if not self.silence:
                         #     print(" Inverse depth rendering loss:", depth_loss.item())
                     else:
@@ -1276,13 +1280,13 @@ class Mapper:
                 #     dist_distortion = dist_distortion[:, valid_depth_mask]    
 
                 if rendered_normal is not None:
-                    rendered_normal_norm = rendered_normal.norm(2, dim=0) 
+                    rendered_normal_norm = rendered_normal.norm(2, dim=0).detach()
 
                 # ----------------
                 # Normal-Depth consistency regularization loss
                 normal_depth_consist_loss = 0.0
                 if rendered_normal is not None and depth_normal is not None and self.config.lambda_normal_depth_consist > 0.0:
-                    depth_normal_norm = depth_normal.norm(2, dim=0) 
+                    depth_normal_norm = depth_normal.norm(2, dim=0).detach()
                     normal_valid_mask = (rendered_normal_norm > 0) & (depth_normal_norm > 0)
                     if self.config.gs_consist_normal_fixed:
                         dot_product = (rendered_normal.detach() * depth_normal).sum(dim=0) # we detach here to use the normal to supervise depth
@@ -1292,7 +1296,7 @@ class Mapper:
                         dot_product = (rendered_normal * depth_normal).sum(dim=0)
 
                     # dot_product = (rendered_normal.detach() * depth_normal).sum(dim=0) # H, W 
-                    normal_error = 1.0 - dot_product # dot product  
+                    normal_error = (depth_normal_norm * rendered_normal_norm) - dot_product # dot product  # kind of weighted with alpha
                     normal_error_valid = torch.masked_select(normal_error, normal_valid_mask)
                     normal_depth_consist_loss = normal_error_valid.mean() # still does not work well, disable it
                     if not self.silence:
@@ -1337,7 +1341,7 @@ class Mapper:
                 # Opacity regularization loss (prefer large value, prefer positive value)
                 # let the opacity to be ideally larger
                 opacity_loss = 0.0
-                constraint_min_alpha = 0.1
+                constraint_min_alpha = 0.01
                 if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight)
                     masked_alpha_mask = (alpha_all<constraint_min_alpha) # now only let those gaussians has negative opacity to increase their opacity # TODO: something weird
                     if torch.sum(masked_alpha_mask) > 0: 
@@ -1428,12 +1432,12 @@ class Mapper:
                         # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                         # maybe relax this a bit
-                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
-                        # # TODO: why there are fewer and fewer valid points TODO
+                        valid_grad_mask = (grad_norm < 2.0) & (grad_norm > 0.5) & (valid_nnk_mask)
+                        # # TODO: why there are fewer and fewer valid points TODO TODO
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()
-                        # if not self.silence:
-                        #     print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                        if not self.silence:
+                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
                         # also consider the certainty
                         # static_mask = (sampled_guassians_sdf < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m)
@@ -1459,8 +1463,8 @@ class Mapper:
                         gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))                           
                         sdf_normal_consistency_loss = gaussian_normal_error.mean()
 
-                        # if not self.silence:
-                        #     print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
+                        if not self.silence:
+                            print(" SDF cons loss:", sdf_consistency_loss.item(), " SDF normal cons loss:", sdf_normal_consistency_loss.item())
 
                         sdf_consistency_loss *= self.config.lambda_sdf_cons
                         sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
@@ -1485,6 +1489,7 @@ class Mapper:
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
                     surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+                    close_to_surface_mask = torch.abs(sdf_label) < self.config.free_sample_end_dist_m
 
                     poses = self.used_poses[ts]
                     origins = poses[:, :3, 3]
@@ -1508,24 +1513,27 @@ class Mapper:
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
                     # calculate the sdf bce loss
-                    sdf_loss = sdf_bce_loss(sdf_pred,sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
+                    sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
 
                     if self.config.weight_e > 0:
+                        coord_for_eikonal = coord[close_to_surface_mask]
+                        sdf_pred_for_eikonal = sdf_pred[close_to_surface_mask]
                         if self.require_gradient:
-                            g = get_gradient(coord, sdf_pred)  # to unit m
+                            g = get_gradient(coord_for_eikonal, sdf_pred_for_eikonal)  # to unit m
                         elif self.config.numerical_grad:
                             g = self.get_numerical_gradient(
-                                coord[:: self.config.gradient_decimation],
-                                sdf_pred[:: self.config.gradient_decimation],
+                                coord_for_eikonal[:: self.config.gradient_decimation],
+                                sdf_pred_for_eikonal[:: self.config.gradient_decimation],
                                 self.config.voxel_size_m * self.config.num_grad_step_ratio)
                         eikonal_loss = ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
                         
                     if self.config.color_on and self.config.weight_i > 0:
                         color_loss = color_diff_loss(surface_color_pred, color_label[surface_mask])
                         
-                    # if not self.silence:
-                    #     print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
+                    if not self.silence:
+                        print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
 
+                    sdf_loss *= self.config.lambda_sdf
                     eikonal_loss *= self.config.weight_e
                     color_loss *= self.config.weight_i 
 
@@ -1538,7 +1546,7 @@ class Mapper:
                     + mono_normal_loss + sky_loss + distort_loss \
                     + isotropic_loss + area_loss + opacity_loss \
                     + sdf_consistency_loss + sdf_normal_consistency_loss \
-                    + self.config.lambda_sdf * (sdf_loss + eikonal_loss + color_loss)
+                    + sdf_loss + eikonal_loss + color_loss
 
                 # print("Total loss:", total_loss.item())
                 
@@ -1653,7 +1661,8 @@ class Mapper:
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on, 
-                    front_only_on=self.config.train_front_only) # render gaussians 
+                    front_only_on=self.config.train_front_only,
+                    gs_type=self.config.gs_type) # render gaussians 
 
                 # T3 = get_time()
 
@@ -1902,7 +1911,8 @@ class Mapper:
                     view_concat_on=self.config.view_concat_on, 
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
-                    learn_color_residual=self.config.learn_color_residual)
+                    learn_color_residual=self.config.learn_color_residual,
+                    gs_type=self.config.gs_type)
 
                 # load the cam datas to cur_cam_img
                 self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
@@ -1955,7 +1965,8 @@ class Mapper:
                             view_concat_on=self.config.view_concat_on, 
                             correct_exposure=self.config.exposure_correction_on, 
                             learn_color_residual=self.config.learn_color_residual,
-                            front_only_on=self.config.train_front_only)
+                            front_only_on=self.config.train_front_only,
+                            gs_type=self.config.gs_type)
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -1973,6 +1984,8 @@ class Mapper:
 
                         if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
                             pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
+                        elif cam_name == "front":
+                            pixel_h_used = int(990/1024*gt_rgb_img.shape[1])
                         else:  
                             pixel_h_used = -1
 
@@ -2183,10 +2196,11 @@ class Mapper:
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=self.config.exposure_correction_on, 
                 learn_color_residual=self.config.learn_color_residual,
-                front_only_on=self.config.train_front_only)
+                front_only_on=self.config.train_front_only,
+                gs_type=self.config.gs_type)
 
 
-            render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
+            # render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
 
             # rendered results
             rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W

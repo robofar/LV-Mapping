@@ -18,21 +18,10 @@ import torch
 # we support multiple GS variants: 3d_gs, 2d_gs, gaussian_surfel
 gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
 
-gs_type = "gaussian_surfel"
-# gs_type = "2d_gs"
+# gs_type = "gaussian_surfel"
+# # gs_type = "2d_gs"
 # gs_type = "3d_gs"
 
-# 2DGS
-if gs_type == "2d_gs":
-    from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-# Gaussian Surfel
-elif gs_type == "gaussian_surfel":
-    from diff_gaussian_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-# 3DGS
-elif gs_type == "3d_gs":
-    from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-else:
-    print("select from a kind of gs variants")
 
 from gaussian_splatting.utils.sh_utils import eval_sh
 from gaussian_splatting.utils.point_utils import depth_to_normal, depth2normal
@@ -61,7 +50,8 @@ def render(viewpoint_camera: CamImage,
            view_concat_on: bool = False, 
            correct_exposure: bool = True,
            learn_color_residual: bool = True,
-           front_only_on: bool = True):
+           front_only_on: bool = True,
+           gs_type: str = "gaussian_surfel"):
 
     """
     Render the scene. 
@@ -70,6 +60,19 @@ def render(viewpoint_camera: CamImage,
     scaling_modifier: You can use the Scaling Modifier to control the size of the displayed Gaussians, or show the initial point cloud. (suggested value, 0.001 to 1.0)
     """
     
+    # TODO: better to not put these here, import only once
+    # 2DGS
+    if gs_type == "2d_gs":
+        from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+    # Gaussian Surfel
+    elif gs_type == "gaussian_surfel":
+        from diff_gaussian_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+    # 3DGS
+    elif gs_type == "3d_gs":
+        from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+    else:
+        print("select from a kind of gs variants")
+
     # if neural_points.count() == 0: # not yet started
     #     return None
 
@@ -212,7 +215,7 @@ def render(viewpoint_camera: CamImage,
         spawn_results = spawn_gaussians(neural_points_data,
             decoders, visible_neural_point_mask, viewpoint_camera.camera_center, 
             dist_concat_on, view_concat_on, 
-            z_far=z_far, learn_color_residual=learn_color_residual)
+            z_far=z_far, learn_color_residual=learn_color_residual, gs_type=gs_type)
 
         if spawn_results is None: # in the case when there's no visible neural points in current FOV
             gaussian_xyz = torch.empty((0, 3), dtype=dtype, device=device)
@@ -284,7 +287,7 @@ def render(viewpoint_camera: CamImage,
             means2D = means2D,
             colors_precomp = colors,
             opacities = opacity,
-            scales = scales,
+            scales = scales, # here this scale is 2d
             rotations = rotations
         ) 
 
@@ -383,7 +386,7 @@ def render(viewpoint_camera: CamImage,
         
         # rendered_normal = rendered_normal / rendered_alpha # don't do this, we can just use the unnormalized version
 
-        rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
+        # rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
 
         # print(rendered_normal_norm) # why is this not 1?, how is it calculated
 
@@ -391,21 +394,20 @@ def render(viewpoint_camera: CamImage,
 
         # d2n = None
 
-        alpha_thre = 0.1
+        alpha_thre = 0.01 # TODO: add as the parameter
 
         # mask_vis = (rendered_alpha.detach() > 1e-3) # original one
         mask_vis = (rendered_alpha.detach() > alpha_thre)
 
         # mask_vis_3 = mask_vis.repeat(3, 1, 1)
         # rendered_image[~mask_vis_3] = bg_color # TODO
-          
-        rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
-
         # tic_d2n = get_time()
 
         d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface # in camera frame
         
         d2n = d2n * rendered_alpha.detach()
+
+        rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
 
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
         # toc_d2n = get_time()
@@ -463,7 +465,8 @@ def spawn_gaussians(neural_points_data: Dict,
                     z_far: float = 100.0,
                     dist_adaptive_scale: bool = False,
                     learn_color_residual: bool = True,
-                    view_direction_xy_only: bool = True): 
+                    view_direction_xy_only: bool = True,
+                    gs_type: str = "gaussian_surfel"): 
 
     neural_point_position = neural_points_data["position"]
     neural_point_orientation = neural_points_data["orientation"] # as quat

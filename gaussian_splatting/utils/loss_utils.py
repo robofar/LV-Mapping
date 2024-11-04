@@ -17,12 +17,38 @@ from math import exp
 def l1_loss(network_output, gt, weight=1):
     return torch.abs((network_output - gt) * weight).mean()
 
+# tukey robust kernel
+def tukey_loss(network_output, gt, c=4.685):
+    residuals = network_output - gt 
+    abs_residuals = torch.abs(residuals)
+    if c > 0:
+        loss = torch.zeros_like(residuals).to(residuals)
+        mask = abs_residuals <= c
+        loss[mask] = (c ** 2 / 6) * (1 - (1 - (residuals[mask] / c) ** 2) ** 3)
+        loss[~mask] = (c ** 2) / 6
+    else: 
+        loss = abs_residuals # this is just l1 loss
+    return loss.mean()
+
+# GM robust kernel (TODO)
+def gm_loss(network_output, gt, c=0.1):
+    residuals = network_output - gt 
+    abs_residuals = torch.abs(residuals)
+    if c > 0:
+        loss = torch.zeros_like(residuals).to(residuals)
+        mask = abs_residuals <= c
+        loss[mask] = (c ** 2 / 6) * (1 - (1 - (residuals[mask] / c) ** 2) ** 3)
+        loss[~mask] = (c ** 2) / 6
+    else: 
+        loss = abs_residuals # this is just l1 loss
+    return loss.mean()
+
+def l2_loss(network_output, gt, weight=1):
+    return (((network_output - gt) ** 2) * weight).mean()
+
 def cos_loss(output, gt, thrsh=0, weight=1):
     cos = torch.sum(output * gt * weight, 0)
     return (1 - cos[cos < np.cos(thrsh)]).mean()
-
-def l2_loss(network_output, gt):
-    return ((network_output - gt) ** 2).mean()
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])

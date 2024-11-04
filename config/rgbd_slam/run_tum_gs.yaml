@@ -22,6 +22,7 @@ neuralpoints:
   feature_dim: 32
   color_feature_dim: 16
 gs:
+  gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True
   dist_concat_on: False
   gs_iters: 20
@@ -36,9 +37,9 @@ gs:
   # lambda_isotropic: 100.0
   lambda_area: 1e-4 # 1e-3
   lambda_opacity: 1e-3
-  lambda_sdf_cons: 0.5
-  lambda_sdf_normal_cons: 0.5 # rendered normal seems to be better without this loss # 0.1
-  lambda_sdf: 0.1
+  # lambda_sdf_cons: 0.5
+  # lambda_sdf_normal_cons: 0.5 # rendered normal seems to be better without this loss # 0.1
+  lambda_sdf: 0.5
 decoder:
   mlp_level: 1
   mlp_hidden_dim: 64
@@ -48,7 +49,7 @@ loss:
   loss_weight_on: False # False
   dist_weight_scale: 0.6
   ekional_loss_on: True
-  weight_e: 5.0
+  weight_e: 0.5
 continual: # the data sample pool
   batch_size_new_sample: 3000 # don't split current and history
   pool_capacity: 2e7

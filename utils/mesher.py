@@ -430,18 +430,6 @@ class Mesher:
 
         return mesh
 
-    def filter_isolated_vertices(self, mesh, filter_cluster_min_tri=300):
-        # print("Cluster connected triangles")
-        triangle_clusters, cluster_n_triangles, _ = mesh.cluster_connected_triangles()
-        triangle_clusters = np.asarray(triangle_clusters)
-        cluster_n_triangles = np.asarray(cluster_n_triangles)
-        # print("Remove the small clusters")
-        triangles_to_remove = (
-            cluster_n_triangles[triangle_clusters] < filter_cluster_min_tri
-        )
-        mesh.remove_triangles_by_mask(triangles_to_remove)
-
-        return mesh
 
     def generate_bbx_sdf_hor_slice(
         self, bbx, slice_z, voxel_size, query_locally=False, min_sdf=-1.0, max_sdf=1.0
@@ -616,7 +604,7 @@ class Mesher:
             mesh.compute_vertex_normals()
 
         if filter_isolated_mesh:
-            mesh = self.filter_isolated_vertices(mesh, self.config.min_cluster_vertices)
+            mesh = filter_isolated_vertices(mesh, self.config.min_cluster_vertices)
 
         # global transform (to world coordinate system) before output
         if not np.array_equal(self.global_transform, np.eye(4)):
@@ -651,3 +639,16 @@ class Mesher:
             print(f"Save the mesh resulting from TSDF fusion to {output_path}")
 
         return tsdf_fusion_mesh
+
+def filter_isolated_vertices(mesh, filter_cluster_min_tri=300):
+    # print("Cluster connected triangles")
+    triangle_clusters, cluster_n_triangles, _ = mesh.cluster_connected_triangles()
+    triangle_clusters = np.asarray(triangle_clusters)
+    cluster_n_triangles = np.asarray(cluster_n_triangles)
+    # print("Remove the small clusters")
+    triangles_to_remove = (
+        cluster_n_triangles[triangle_clusters] < filter_cluster_min_tri
+    )
+    mesh.remove_triangles_by_mask(triangles_to_remove)
+
+    return mesh

@@ -1060,7 +1060,8 @@ class SLAM_GUI:
                     view_concat_on=self.config.view_concat_on, 
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
-                    learn_color_residual=self.config.learn_color_residual)
+                    learn_color_residual=self.config.learn_color_residual,
+                    gs_type=self.config.gs_type)
             
             frustum_size = self.config.max_range*0.008
 
@@ -1289,7 +1290,8 @@ class SLAM_GUI:
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
-                    front_only_on=(not self.backface_chbox.checked))
+                    front_only_on=(not self.backface_chbox.checked),
+                    gs_type=self.config.gs_type)
 
             if render_results is not None:
                 
@@ -1620,7 +1622,8 @@ class SLAM_GUI:
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=False,
                 learn_color_residual=self.config.learn_color_residual,
-                front_only_on=(not self.backface_chbox.checked))
+                front_only_on=(not self.backface_chbox.checked),
+                gs_type=self.config.gs_type)
             
             render_toc = get_time()
 

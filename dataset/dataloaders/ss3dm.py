@@ -81,6 +81,7 @@ class SS3DMDataset:
         scenario_data = scenario_data_all["observers"]
 
         self.img_files = {}
+        self.depth_img_files = {}
         self.lidar_files = {}
         self.K_mats = {}
         self.T_c_l_mats = {}
@@ -98,11 +99,7 @@ class SS3DMDataset:
         K_mat[1,1] = fy 
         K_mat[1,2] = cy
 
-        # c2w needs to be in OpenCV coordinate system, so this matrix is required Opencv/gl conversion
-        self.T_f_v = np.array([[0, 0, 1, 0],
-                                [1, 0, 0, 0],
-                                [0, -1, 0, 0],
-                                [0, 0, 0, 1]])
+        self.depth_scale = 100.0 # 1 correspondong to 1cm
 
         self.T_l_v = np.array([[0, 0, -1, 0],
                                 [1, 0, 0, 0],
@@ -122,6 +119,11 @@ class SS3DMDataset:
             cur_img_files = sorted(glob.glob(cur_cam_dir + "*.jpg"))
         
             self.img_files[cam_name] = cur_img_files
+
+            cur_depth_cam_dir = os.path.join(data_dir, "depth_gts", "camera_{}/".format(cam_name))
+            cur_depth_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+
+            self.depth_img_files[cam_name] = cur_depth_img_files
 
             self.cam_widths[cam_name] = W
             self.cam_heights[cam_name] = H
@@ -217,6 +219,9 @@ class SS3DMDataset:
 
                 img_cam = self.read_img(cur_img_file) 
                 
+
+                # TODO: add depth image loading
+
                 # toc_1 = get_time()
                 
                 # TODO: a bit slow, try to speed it up
