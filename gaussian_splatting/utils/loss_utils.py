@@ -159,10 +159,14 @@ def normal_reg_loss(normals, masks):
     loss = torch.mean(1 - cosine_similarity, dim=-1)
     return (loss * masks).mean()
 
-def opacity_entropy_loss(opacities):
-    op_loss = torch.exp(-((opacities - 0.5) ** 2) / 0.05).mean()
-    return op_loss
+# def opacity_entropy_loss(opacities):
+#     op_loss = torch.exp(-((opacities - 0.5) ** 2) / 0.05).mean()
+#     return op_loss
 
+def opacity_entropy_loss(opacities):
+    opacities = torch.clamp(opacities, min=1e-6, max=1-1e-6)
+    entropy = -opacities * torch.log(opacities) - (1 - opacities) * torch.log(1 - opacities)
+    return entropy.mean()
 
 def sky_bce_loss(sky_mask, alpha):
     # reference: https://github.com/fudan-zvg/PVG/

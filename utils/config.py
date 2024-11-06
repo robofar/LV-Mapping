@@ -266,7 +266,8 @@ class Config:
         self.lambda_depth: float = 0.0 # weight for depth rendering
         self.lambda_isotropic: float = 0.0 # weight for scale isotropic loss # 10.0
         self.lambda_area: float = 0.0 # weight for area (volume) regularization # 0.001
-        self.lambda_opacity: float = 1e-3 # prefer larger opacity value, the smaller this value, the more likely to have masked gaussians -> fewer gaussian number for rendering
+        self.lambda_opacity: float = 0.0 # prefer larger opacity value, the smaller this value, the more likely to have masked gaussians -> fewer gaussian number for rendering
+        self.lambda_opacity_ent: float = 0.0 # for the entropy loss, opacity --> 0 or 1
         self.lambda_normal_depth_consist: float = 0.0 # normal consistency regularization weight # 0.05
         self.lambda_normal_smooth: float = 0.0
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
@@ -282,6 +283,8 @@ class Config:
         self.gs_consist_normal_fixed: bool = False # fixed normal to guide depth
 
         self.learn_color_residual: bool = False
+
+        self.min_alpha: float = 0.01
 
         # these are deprecated
         # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
@@ -670,6 +673,7 @@ class Config:
             self.lambda_isotropic = float(config_args["gs"].get("lambda_isotropic", self.lambda_isotropic))
             self.lambda_area = float(config_args["gs"].get("lambda_area", self.lambda_area))
             self.lambda_opacity = float(config_args["gs"].get("lambda_opacity", self.lambda_opacity))
+            self.lambda_opacity_ent = float(config_args["gs"].get("lambda_opacity_ent", self.lambda_opacity_ent))
             self.lambda_sky = float(config_args["gs"].get("lambda_sky", self.lambda_sky))
             self.lambda_sdf_cons = float(config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons))
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
@@ -677,6 +681,8 @@ class Config:
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
+
+            self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha)
 
             # deprecated
             # self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))

@@ -37,8 +37,10 @@ from utils.tools import (
     remove_gpu_cache,
 )
 
+from eval.eval_mesh_utils import eval_pair
+
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
-from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss, tukey_loss
+from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss, tukey_loss, opacity_entropy_loss
 from gaussian_splatting.utils.graphics_utils import focal2fov
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
@@ -152,17 +154,8 @@ class Mapper:
         # evaluation
         self.rendered_pcd_o3d = None # rerendered point cloud
 
-        self.train_psnr_list = []
-        self.train_ssim_list = []
-        self.train_lpips_list = []
-        self.train_depthl1_list = []
-        self.train_depth_rmse_list = []
-
-        self.test_psnr_list = []
-        self.test_ssim_list = []
-        self.test_lpips_list = []
-        self.test_depthl1_list = []
-        self.test_depth_rmse_list = []
+        # init the lists for gs evaluation
+        self.init_gs_eval()
 
         self.lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(self.device) 
 
@@ -1144,7 +1137,9 @@ class Mapper:
                     correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=self.config.train_front_only,
-                    gs_type=self.config.gs_type) # render gaussians  # FIXME: front only
+                    d2n_on=(self.config.lambda_normal_depth_consist > 0.0),
+                    gs_type=self.config.gs_type,
+                    min_alpha=self.config.min_alpha) # render gaussians  # FIXME: front only
 
                 if render_pkg is None:
                     continue
@@ -1341,14 +1336,23 @@ class Mapper:
                 # Opacity regularization loss (prefer large value, prefer positive value)
                 # let the opacity to be ideally larger
                 opacity_loss = 0.0
-                constraint_min_alpha = 0.01
-                if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight)
+                opacity_ent_loss = 0.0
+                constraint_min_alpha = self.config.min_alpha
+                if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight) 
                     masked_alpha_mask = (alpha_all<constraint_min_alpha) # now only let those gaussians has negative opacity to increase their opacity # TODO: something weird
                     if torch.sum(masked_alpha_mask) > 0: 
                         opacity_loss = 0.0 - (alpha_all[masked_alpha_mask]).mean() # alpha value between [0, 2]
-                        # if not self.silence:
-                        #     print(" Opacity loss:", opacity_loss.item())
+                        if not self.silence:
+                            print(" Opacity loss:", opacity_loss.item())
                         opacity_loss *= self.config.lambda_opacity
+                
+                # opacity entropy loss
+                if self.config.lambda_opacity_ent > 0 and alpha_all is not None:
+                    opacity_ent_loss = opacity_entropy_loss(torch.abs(alpha_all)) 
+                    if not self.silence:
+                        print(" Opacity entropy loss:", opacity_ent_loss.item())
+
+                    opacity_ent_loss *= self.config.lambda_opacity_ent # TODO: change to lambda_opacity_ent
 
 
                 # # actually we only need to use the points in the field of view (but this might already been handeled in CUDA)
@@ -1395,17 +1399,24 @@ class Mapper:
                         scaling = gaussian_scale[sampled_indices]
 
                     if self.config.lambda_isotropic > 0:
-                        scaling = scaling[:,:2] # do not use the last one for Gaussian surfels
+                        if self.config.gs_type == "3d_gs":
+                            scaling = scaling[:,:3]
+                        else:
+                            scaling = scaling[:,:2] # do not use the last one for Gaussian surfels
                         isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1)).mean()
                         if not self.silence:
                             print(" Gaussian isotropic loss:", isotropic_loss.item())
                         isotropic_loss *= self.config.lambda_isotropic
                     
                     # ----------------
-                    # Surfel area regularization loss
+                    # Surfel area regularization loss (test this)
                     if self.config.lambda_area > 0:
-                        area_loss = (scaling[:,0] * scaling[:,1]).mean() # but this is already mean value
-                        area_loss /= (self.config.voxel_size_m**2) # normalize by the voxel area
+                        if self.config.gs_type == "3d_gs":
+                            area_loss = (scaling[:,0] * scaling[:,1] * scaling[:,2]).mean() # then it's volume loss
+                            area_loss /= (self.config.voxel_size_m**3)
+                        else:
+                            area_loss = (scaling[:,0] * scaling[:,1]).mean() # but this is already mean value
+                            area_loss /= (self.config.voxel_size_m**2) # normalize by the voxel area
                         if not self.silence:
                             print(" Gaussian area loss:", area_loss.item())
                         area_loss *= self.config.lambda_area
@@ -1544,7 +1555,7 @@ class Mapper:
                 total_loss = rgb_loss + depth_loss \
                     + normal_depth_consist_loss + normal_smoothness_loss \
                     + mono_normal_loss + sky_loss + distort_loss \
-                    + isotropic_loss + area_loss + opacity_loss \
+                    + isotropic_loss + area_loss + opacity_loss + opacity_ent_loss \
                     + sdf_consistency_loss + sdf_normal_consistency_loss \
                     + sdf_loss + eikonal_loss + color_loss
 
@@ -1662,7 +1673,8 @@ class Mapper:
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on, 
                     front_only_on=self.config.train_front_only,
-                    gs_type=self.config.gs_type) # render gaussians 
+                    gs_type=self.config.gs_type,
+                    min_alpha=self.config.min_alpha) # render gaussians 
 
                 # T3 = get_time()
 
@@ -1848,12 +1860,16 @@ class Mapper:
         self.train_lpips_list = []
         self.train_depthl1_list = []
         self.train_depth_rmse_list = []
+        self.train_cd_list = []
+        self.train_f1_list = []
 
         self.test_psnr_list = []
         self.test_ssim_list = []
         self.test_lpips_list = []
         self.test_depthl1_list = []
         self.test_depth_rmse_list = []
+        self.test_cd_list = []
+        self.test_f1_list = []
 
     def record_per_cam_exposure(self):
 
@@ -1871,7 +1887,8 @@ class Mapper:
     def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
                         eval_down_rate=0, skip_end_count: int = 0, 
                         sorrounding_map_radius = None,
-                        lpips_eval_on: bool = False):
+                        lpips_eval_on: bool = False,
+                        pc_cd_eval_on: bool = False):
         
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
@@ -1880,6 +1897,9 @@ class Mapper:
         # TODO: the memory bank may still have some problem
 
         assert self.config.use_dataloader, "Only data loader version is supported currently"
+
+        eval_cam_name = self.dataset.cam_names # use all the cams
+        # eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
 
         with torch.no_grad():
             
@@ -1890,6 +1910,8 @@ class Mapper:
 
             background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
             bg_3d = background.view(3, 1, 1)
+
+            eval_down_scale = 2**(eval_down_rate)
 
             # skip_end_count means that we will skip the last n frames because the incremental mapping haven't done much mapping in such areas
             for frame_id in tqdm(range(0, self.dataset.processed_frame - skip_end_count, 1), desc="GS evaluation"):
@@ -1926,22 +1948,45 @@ class Mapper:
                 
                 self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
 
-                eval_cam_name = self.dataset.cam_names # use all the cams
-                # eval_cam_name = [self.dataset.loader.main_cam_name] # front cam
-        
+                if pc_cd_eval_on:
+                    cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
+
+                    cur_frame_measured_xyz_np = (
+                        self.dataset.cur_point_cloud_torch[:,:3].detach().cpu().numpy().astype(np.float64)
+                    )
+
+                    cur_frame_measured_color_np = (
+                        self.dataset.cur_point_cloud_torch[:,3:].detach().cpu().numpy().astype(np.float64)
+                    )
+                    cur_frame_measured_pcd_o3d.points = o3d.utility.Vector3dVector(cur_frame_measured_xyz_np)
+                    cur_frame_measured_pcd_o3d.colors = o3d.utility.Vector3dVector(cur_frame_measured_color_np)
+
+                    cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
+
                 for cam_name in self.dataset.cam_names:
 
                     K_mat = self.dataset.K_mats[cam_name]
-                    T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
-                    # height = self.dataset.loader.cam_heights[cam_name]
-                    # width = self.dataset.loader.cam_widths[cam_name] 
+                    T_c_l_np = self.dataset.T_c_l_mats[cam_name]
+                    T_c_l = torch.tensor(T_c_l_np, device=self.device) 
+                    height = self.dataset.cam_heights[cam_name]
+                    width = self.dataset.cam_widths[cam_name] 
+
+                    cur_intrinsic_o3d = o3d.camera.PinholeCameraIntrinsic()
+
+                    cur_intrinsic_o3d.set_intrinsics(
+                                    height=int(height/eval_down_scale),
+                                    width=int(width/eval_down_scale),
+                                    fx=K_mat[0,0]/eval_down_scale,
+                                    fy=K_mat[1,1]/eval_down_scale,
+                                    cx=K_mat[0,2]/eval_down_scale,
+                                    cy=K_mat[1,2]/eval_down_scale)
+
 
                     T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
                     # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.set_pose(T_w_c)
-                    
                     
                     cur_uid = cur_view_cam.uid
                     cur_cam_id = cur_view_cam.cam_id # cam_name
@@ -1966,7 +2011,8 @@ class Mapper:
                             correct_exposure=self.config.exposure_correction_on, 
                             learn_color_residual=self.config.learn_color_residual,
                             front_only_on=self.config.train_front_only,
-                            gs_type=self.config.gs_type)
+                            gs_type=self.config.gs_type,
+                            min_alpha=self.config.min_alpha)
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -2023,6 +2069,30 @@ class Mapper:
                                 print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
 
 
+                            if pc_cd_eval_on: 
+
+                                rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).detach().contiguous().cpu().numpy().astype(np.uint8) 
+                                rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
+
+                                rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
+                                rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
+
+                                depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
+
+                                cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
+                                                                                        depth_img_o3d, 
+                                                                                        depth_scale=1.0, 
+                                                                                        depth_trunc=eval_depth_max, 
+                                                                                        convert_rgb_to_intensity=False)
+
+                                cur_cam_rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
+                                                                    cur_rgbd_o3d, 
+                                                                    cur_intrinsic_o3d, 
+                                                                    T_c_l_np)
+
+                                cur_frame_rendered_pcd_o3d += cur_cam_rendered_pcd_o3d # already under lidar frame
+
+
                         if cur_view_cam.uid in self.train_cam_uid:
                             # as train views
                             if not self.silence:
@@ -2045,6 +2115,26 @@ class Mapper:
                                 self.test_depthl1_list.append(cur_depth_l1)
                                 self.test_depth_rmse_list.append(cur_depth_rmse)
 
+                # compute cd with regards to original lidar pc
+                if pc_cd_eval_on: 
+                    cd_metrics = eval_pair(cur_frame_rendered_pcd_o3d, cur_frame_measured_pcd_o3d, 
+                        down_sample_res=0.05, threshold=0.1, 
+                        truncation_acc=1.0, truncation_com=1.0) # FIXME
+                    
+                    cur_cd = cd_metrics['Chamfer_L1 (m)']
+                    cur_f1 = cd_metrics['F-score (%)']
+
+                    if not self.silence:
+                        print("Current frame Chamfer Distance L1 (m) ↓ :", f"{cur_cd:.3f}")
+                        print("Current frame F1-score (%) ↑ :", f"{cur_f1:.3f}")
+
+                    if cur_view_cam.uid in self.train_cam_uid:
+                        self.train_cd_list.append(cur_cd)
+                        self.train_f1_list.append(cur_f1)
+                    else:
+                        self.test_cd_list.append(cur_cd)
+                        self.test_f1_list.append(cur_f1)
+
                 if q_main2vis is not None:
                     # add the eval frame to vis
                     
@@ -2053,6 +2143,9 @@ class Mapper:
                         img_down_rate=self.config.gs_vis_down_rate)
                     
                     packet_to_vis.add_neural_points_data(self.neural_points)
+
+                    if pc_cd_eval_on: 
+                        packet_to_vis.add_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
 
                     odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
                     packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
@@ -2067,9 +2160,11 @@ class Mapper:
 
     def gs_eval_out(self):
         
-        train_pnsr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = 0.0
+        train_pnsr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
 
         train_frame_count = len(self.train_psnr_list) 
+
+        # TODO: it's even better to print the results for each camera, it's possible
         if train_frame_count > 0:
             train_pnsr_np = np.mean(np.array(self.train_psnr_list))
             train_ssim_np = np.mean(np.array(self.train_ssim_list))
@@ -2088,7 +2183,13 @@ class Mapper:
             print("Average train view Depth L1 (m) ↓ :", f"{train_depthl1_np:.3f}")
             print("Average train view Depth RMSE (m) ↓ :", f"{train_depth_rmse_np:.3f}")
 
-        test_pnsr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = 0.0
+        if len(self.train_cd_list) > 0:
+            train_cd_np = np.mean(np.array(self.train_cd_list))
+            train_f1_np = np.mean(np.array(self.train_f1_list))
+            print("Average train frame CD (m) ↓ :", f"{train_cd_np:.3f}")
+            print("Average train frame F1 (%) ↓ :", f"{train_f1_np:.3f}")
+
+        test_pnsr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
 
         test_frame_count = len(self.test_psnr_list) 
         if test_frame_count > 0:
@@ -2109,6 +2210,11 @@ class Mapper:
             print("Average test view Depth L1 (m) ↓ :", f"{test_depthl1_np:.3f}")
             print("Average test view Depth RMSE (m) ↓ :", f"{test_depth_rmse_np:.3f}")
         
+        if len(self.test_cd_list) > 0:
+            test_cd_np = np.mean(np.array(self.test_cd_list))
+            test_f1_np = np.mean(np.array(self.test_f1_list))
+            print("Average test frame CD (m) ↓ :", f"{test_cd_np:.3f}")
+            print("Average test frame F1 (%) ↓ :", f"{test_f1_np:.3f}")
 
         gs_csv_columns = [
                 "Frame-Type",
@@ -2117,6 +2223,8 @@ class Mapper:
                 "LPIPS↓",
                 "Depth-L1(m)↓",
                 "Depth-RMSE(m)↓",
+                "Recon-CD(m)↓",
+                "Recon-F1(%)↑",
                 "Frame-count",
         ]
         gs_eval = [
@@ -2127,7 +2235,9 @@ class Mapper:
                 gs_csv_columns[3]: train_lpips_np,
                 gs_csv_columns[4]: train_depthl1_np,
                 gs_csv_columns[5]: train_depth_rmse_np,
-                gs_csv_columns[6]: train_frame_count,
+                gs_csv_columns[6]: train_cd_np,
+                gs_csv_columns[7]: train_f1_np,
+                gs_csv_columns[8]: train_frame_count,
             },
             {
                 gs_csv_columns[0]: "test",
@@ -2136,7 +2246,9 @@ class Mapper:
                 gs_csv_columns[3]: test_lpips_np,
                 gs_csv_columns[4]: test_depthl1_np,
                 gs_csv_columns[5]: test_depth_rmse_np,
-                gs_csv_columns[6]: test_frame_count,
+                gs_csv_columns[6]: test_cd_np,
+                gs_csv_columns[7]: test_f1_np,
+                gs_csv_columns[8]: test_frame_count,
             }
         ]
         gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval.csv")
@@ -2197,7 +2309,8 @@ class Mapper:
                 correct_exposure=self.config.exposure_correction_on, 
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=self.config.train_front_only,
-                gs_type=self.config.gs_type)
+                gs_type=self.config.gs_type,
+                min_alpha=self.config.min_alpha)
 
 
             # render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 

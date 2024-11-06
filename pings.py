@@ -588,7 +588,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
         # don't do visualization
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10) 
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=True) # FIXME
         # visualize the results
         # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()
@@ -603,7 +603,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
         print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
-        output_mc_res_m = config.mc_res_m*0.6
+        output_mc_res_m = config.mc_res_m*0.5
         chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 100) # reconstruct in chunks
         mc_cm_str = str(round(output_mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")

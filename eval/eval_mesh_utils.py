@@ -49,7 +49,7 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
         pcd_pred = pcd_sample_pred.voxel_down_sample(down_sample_res)
         pcd_trgt = pcd_trgt.voxel_down_sample(down_sample_res)
         pred_pt_count_after = len(pcd_pred.points)
-        print("Predicted mesh unifrom sample: ", pred_pt_count_before, " --> ", pred_pt_count_after, " (", down_sample_res, "m)")
+        print("Predicted mesh voxel downsample sample: ", pred_pt_count_before, " --> ", pred_pt_count_after, " (", down_sample_res, "m)")
     
     verts_pred = np.asarray(pcd_pred.points)
     verts_trgt = np.asarray(pcd_trgt.points)
@@ -88,6 +88,56 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
                'Outlier_truncation_acc (m)': truncation_acc, # evlaution setup
                'Outlier_truncation_com (m)': truncation_com  # evlaution setup
                }
+    return metrics
+
+def eval_pair(pcd_pred, pcd_trgt, 
+              down_sample_res=0.02, 
+              threshold=0.05, 
+              truncation_acc=0.50, 
+              truncation_com=0.50, 
+              ):
+    
+    pcd_pred = pcd_pred.voxel_down_sample(down_sample_res)
+    pcd_trgt = pcd_trgt.voxel_down_sample(down_sample_res)
+
+    verts_pred = np.asarray(pcd_pred.points)
+    verts_trgt = np.asarray(pcd_trgt.points)
+
+    _, dist_p = nn_correspondance(verts_trgt, verts_pred, truncation_acc, True) # find nn in ground truth samples for each predict sample -> precision related
+    _, dist_r = nn_correspondance(verts_pred, verts_trgt, truncation_com, False) # find nn in predict samples for each ground truth sample -> recall related
+    
+    dist_p = np.array(dist_p)
+    dist_r = np.array(dist_r)
+
+    dist_p_s = np.square(dist_p)
+    dist_r_s = np.square(dist_r)
+
+    dist_p_mean = np.mean(dist_p)
+    dist_r_mean = np.mean(dist_r) 
+
+    dist_p_s_mean = np.mean(dist_p_s)
+    dist_r_s_mean = np.mean(dist_r_s) 
+
+    chamfer_l1 = 0.5 * (dist_p_mean + dist_r_mean)
+    chamfer_l2 = np.sqrt(0.5 * (dist_p_s_mean + dist_r_s_mean))
+
+    precision = np.mean((dist_p < threshold).astype('float')) * 100.0 # %
+    recall = np.mean((dist_r < threshold).astype('float')) * 100.0 # %
+    fscore = 2 * precision * recall / (precision + recall) # %
+
+    metrics = {'MAE_accuracy (m)': dist_p_mean,
+               'MAE_completeness (m)': dist_r_mean,
+               'Chamfer_L1 (m)': chamfer_l1,
+               'Chamfer_L2 (m)': chamfer_l2, 
+               'Precision [Accuracy] (%)': precision, 
+               'Recall [Completeness] (%)': recall,
+               'F-score (%)': fscore, 
+               'Spacing (m)': down_sample_res,  # evlaution setup
+               'Inlier_threshold (m)': threshold,  # evlaution setup
+               'Outlier_truncation_acc (m)': truncation_acc, # evlaution setup
+               'Outlier_truncation_com (m)': truncation_com  # evlaution setup
+               }
+
     return metrics
 
 

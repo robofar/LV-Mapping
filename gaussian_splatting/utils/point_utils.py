@@ -10,7 +10,7 @@ from gaussian_splatting.utils.graphics_utils import fov2focal
 
 
 # used by 2D GS
-def depths_to_points(camera, depth):
+def depths_to_points(camera, depth, in_cam_frame: bool = False, img_scale: int = 1):
     """
         camera: view camera
         depth: depthmap 
@@ -18,16 +18,36 @@ def depths_to_points(camera, depth):
     # device = view.device
 
     # print(camera.world_view_transform)
-    assert camera.world_view_transform is not None, "camera.world_view_transform is None"
+    
 
-    c2w = torch.linalg.inv(camera.world_view_transform.T)
+    if in_cam_frame:
+        c2w = torch.eye(4).to(camera.full_proj_transform)
+    else:
+        assert camera.world_view_transform is not None, "camera.world_view_transform is None"
+        c2w = torch.linalg.inv(camera.world_view_transform.T)
+
     W, H = depth.shape[2], depth.shape[1]
-    ndc2pix = torch.tensor([
-        [W / 2, 0, 0, (W) / 2],
-        [0, H / 2, 0, (H) / 2],
-        [0, 0, 0, 1]]).float().cuda().T
-    projection_matrix = c2w.T @ camera.full_proj_transform
-    intrins = (projection_matrix @ ndc2pix)[:3,:3].T
+
+    # ndc2pix = torch.tensor([
+    #     [W / 2, 0, 0, (W) / 2],
+    #     [0, H / 2, 0, (H) / 2],
+    #     [0, 0, 0, 1]]).float().cuda().T
+    # projection_matrix = c2w.T @ camera.full_proj_transform
+    
+    # projection_matrix = camera.projection_matrix
+    # intrins = (projection_matrix @ ndc2pix)[:3,:3].T
+
+    # print("Intrinsics:")
+    # print(intrins)
+
+    # print("K_mat:")
+    # print(camera.K_mat_torch)
+
+    intrins = camera.K_mat_torch
+    intrins[0,0] /= img_scale
+    intrins[1,1] /= img_scale
+    intrins[0,2] /= img_scale
+    intrins[1,2] /= img_scale
     
     grid_x, grid_y = torch.meshgrid(torch.arange(W, device='cuda').float(), torch.arange(H, device='cuda').float(), indexing='xy')
     points = torch.stack([grid_x, grid_y, torch.ones_like(grid_x)], dim=-1).reshape(-1, 3)
@@ -38,20 +58,21 @@ def depths_to_points(camera, depth):
     return points
 
 # used by 2D GS
-def depth_to_normal(camera, depth):
+def depth_to_normal(camera, depth, in_cam_frame: bool = False, img_scale: int = 1):
     """
         camera: view camera
         depth: rendered depthmap 
         the output normal is in the world frame  3, H, W 
     """
     # print(depth.shape)
-    points = depths_to_points(camera, depth).reshape(*depth.shape[1:], 3) # already in world frame
+    points = depths_to_points(camera, depth, in_cam_frame, img_scale).reshape(*depth.shape[1:], 3) # already in world frame
     output = torch.zeros_like(points)
     dx = torch.cat([points[2:, 1:-1] - points[:-2, 1:-1]], dim=0)
     dy = torch.cat([points[1:-1, 2:] - points[1:-1, :-2]], dim=1)
     # this is only done once, not like depth2normal functions
-    normal_map = torch.nn.functional.normalize(torch.linalg.cross(dx, dy, dim=-1), dim=-1)
-    output[1:-1, 1:-1, :] = normal_map
+    # better to have a mask
+    normal_map = torch.nn.functional.normalize(torch.linalg.cross(dx, dy, dim=-1), dim=-1) # norm = 1
+    output[1:-1, 1:-1, :] = normal_map # boundary still zero, no padding, better to mask there
     # as the gradient of depth 
     # pointing towards the surface
 
@@ -60,7 +81,7 @@ def depth_to_normal(camera, depth):
     return output
 
 # used by Gaussian Surfels
-def depth2normal(depth, mask, camera):
+def depth2normal(depth, mask, camera, img_scale: int = 1):
     """
         depth: rendered depthmap 
         mask: visible mask
@@ -77,21 +98,20 @@ def depth2normal(depth, mask, camera):
     h = h.to(torch.float32).to(device)
     w = w.to(torch.float32).to(device)
     p = torch.cat([w, h], axis=-1)
-    
-    p[..., 0:1] -= camera.prcppoint[0] * camera.image_width
-    p[..., 1:2] -= camera.prcppoint[1] * camera.image_height
-    p *= camD
-    # K00 = fov2focal(camera.FoVy, camera.image_height)
-    # K11 = fov2focal(camera.FoVx, camera.image_width)
 
-    K00 = camera.fx
-    K11 = camera.fy 
+    # cx, cy
+    p[..., 0:1] -= camera.prcppoint[0] * camera.image_width / img_scale
+    p[..., 1:2] -= camera.prcppoint[1] * camera.image_height / img_scale
+    p *= camD
+
+    K00 = camera.fx / img_scale
+    K11 = camera.fy / img_scale
 
     K = torch.tensor([K00, 0, 0, K11]).reshape([2,2])
     Kinv = torch.inverse(K).to(torch.float32).to(device)
     # print(p.shape, Kinv.shape)
     p = p @ Kinv.t() # unprojected to 3D, still in camera frame
-    camPos = torch.cat([p, camD], -1)
+    camPos = torch.cat([p, camD], -1) # position under camera frame
 
     # padded = mod.contour_padding(camPos.contiguous(), mask.contiguous(), torch.zeros_like(camPos), filter_size // 2)
     # camPos = camPos + padded
@@ -111,7 +131,7 @@ def depth2normal(depth, mask, camera):
     # the finally result would be the average of these four
     
     n = n_ul + n_ur + n_br + n_bl
-    n = n[0]
+    n = n[0] # what does this mean?
     
     # n *= -torch.sum(camVDir * camN, -1, True).sign() # no cull back
 

@@ -53,6 +53,8 @@ class CamImage:
         self.cx = K_mat[0,2]
         self.cy = K_mat[1,2]
 
+        self.K_mat_torch = torch.tensor(K_mat, dtype=self.dtype, device=self.device)
+
         self.FoVx = focal2fov(self.fx, self.image_width)
         self.FoVy = focal2fov(self.fy, self.image_height)
 
@@ -63,11 +65,12 @@ class CamImage:
         self.znear = z_min # 0.1
 
         # GL
+        # OpenGL projection matrix
         self.projection_matrix = (getProjectionMatrix(znear=self.znear, zfar=self.zfar,
              fovX=self.FoVx, fovY=self.FoVy,
               W=self.image_width, H=self.image_height, prcp=self.prcppoint).T).to(dtype=self.dtype, device=self.device) # T_gi        
         
-        self.world_view_transform = None
+        self.world_view_transform = None # as (T_cw.T)
         self.camera_center = None
         self.full_proj_transform = None 
         

@@ -9,7 +9,7 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.1
-  dynamic_sdf_ratio_thre: 0.8
+  dynamic_sdf_ratio_thre: 0.5
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 2
@@ -21,7 +21,7 @@ neuralpoints:
   search_alpha: 0.5 # 0.8
   query_nn_k: 6
   feature_dim: 16 # 32 # not worth further improving this
-  color_feature_dim: 16 # 16
+  color_feature_dim: 8 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30
@@ -53,23 +53,24 @@ gs:
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
-  img_pool_size: 60 # TODO
+  img_pool_size: 40 # TODO
   long_term_img_pool_size: 120
   short_term_train_prob: 0.5
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: True
-  lambda_depth: 1.0 # 10.0
-  lambda_opacity: 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_depth: 1.0 # 20.0 # decrease this , it's not useful ... depth rendering
+  lambda_opacity: 1e-2 # 2e-3 # increase to have more valid gaussians
   # lambda_isotropic: 1.0
   # lambda_area: 1e-4 # 1e-3
   # lambda_mono_normal: 0.01
-  # lambda_normal_depth: 0.05 # check this
+  lambda_normal_depth: 0.05 # check this # the d2n function still have some problem, or maybe the depth function has such problem
   # consist_normal_fixed: True
   lambda_sdf_cons: 0.1
   lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
+  min_alpha: 0.01
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192

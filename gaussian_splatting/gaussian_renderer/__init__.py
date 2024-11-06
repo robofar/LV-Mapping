@@ -51,7 +51,9 @@ def render(viewpoint_camera: CamImage,
            correct_exposure: bool = True,
            learn_color_residual: bool = True,
            front_only_on: bool = True,
-           gs_type: str = "gaussian_surfel"):
+           d2n_on: bool = False,
+           gs_type: str = "gaussian_surfel",
+           min_alpha: float = 0.001):
 
     """
     Render the scene. 
@@ -345,7 +347,7 @@ def render(viewpoint_camera: CamImage,
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
 
-        mask_vis = (rendered_alpha.detach() > 1e-3)
+        mask_vis = (rendered_alpha.detach() > min_alpha)
         d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
 
         # does not look good here
@@ -394,19 +396,18 @@ def render(viewpoint_camera: CamImage,
 
         # d2n = None
 
-        alpha_thre = 0.01 # TODO: add as the parameter
-
         # mask_vis = (rendered_alpha.detach() > 1e-3) # original one
-        mask_vis = (rendered_alpha.detach() > alpha_thre)
+        mask_vis = (rendered_alpha.detach() > min_alpha)
 
-        # mask_vis_3 = mask_vis.repeat(3, 1, 1)
-        # rendered_image[~mask_vis_3] = bg_color # TODO
-        # tic_d2n = get_time()
+        # d2n = depth_to_normal(viewpoint_camera, rendered_depth, in_cam_frame=True) # in cam frame
 
-        d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera) # pointing inward the surface # in camera frame
+        # this depth2normal function has some problem
+
+        d2n = None
+        if d2n_on:
+            d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
+            d2n = d2n * rendered_alpha.detach()
         
-        d2n = d2n * rendered_alpha.detach()
-
         rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
 
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
@@ -435,6 +436,8 @@ def render(viewpoint_camera: CamImage,
             scales = scales,
             rotations = rotations)
         
+        # TODO: add d2n
+
         results.update({
             "rend_normal": None, 
             "surf_depth": rendered_depth,

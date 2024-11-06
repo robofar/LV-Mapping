@@ -1278,6 +1278,17 @@ class SLAM_GUI:
 
         down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
+        # render_mesh_on = True
+        # if render_mesh_on:
+
+        #     depth_image_mesh = self.widget3d.scene.render_to_depth_image(width=640, height=480) # FUCK
+        #     depth_image_mesh_np = np.asarray(depth_image_mesh)
+
+        #     print(depth_image_mesh_np.shape())
+
+        #     # depth_image_mesh_np = (colorize_depth_maps(depth_image_mesh_np, 0.0, self.config.min_range, cmap="inferno_r")[0]*255.0).astype(np.uint8)
+
+
         if online_eval_on:
 
             with torch.no_grad():
@@ -1291,7 +1302,9 @@ class SLAM_GUI:
                     correct_exposure=self.config.exposure_correction_on,
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=(not self.backface_chbox.checked),
-                    gs_type=self.config.gs_type)
+                    d2n_on=False,
+                    gs_type=self.config.gs_type,
+                    min_alpha=self.config.min_alpha)
 
             if render_results is not None:
                 
@@ -1437,16 +1450,16 @@ class SLAM_GUI:
         W = image_gui.shape[2]
         cx = W // 2
         cy = H // 2
-        T = torch.from_numpy(w2c)
+        T = torch.from_numpy(w2c) # T_cw
 
-        K_mat = torch.eye(3)
+        K_mat = np.eye(3)
         K_mat[0,0] = fx
         K_mat[1,1] = fy
         K_mat[0,2] = cx
         K_mat[1,2] = cy
 
         current_cam = CamImage(-1, None, K_mat, self.config.min_range*0.2, self.config.local_map_radius*1.1,
-            img_width=W, img_height=H, cam_pose=torch.linalg.inv(T))
+            img_width=W, img_height=H, cam_pose=torch.linalg.inv(T)) # T_wc
     
         # print(current_cam.camera_center)
                                                         
@@ -1623,7 +1636,9 @@ class SLAM_GUI:
                 correct_exposure=False,
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=(not self.backface_chbox.checked),
-                gs_type=self.config.gs_type)
+                d2n_on=self.d2n_chbox.checked,
+                gs_type=self.config.gs_type,
+                min_alpha=self.config.min_alpha)
             
             render_toc = get_time()
 
