@@ -9,6 +9,8 @@ import os
 import sys
 import time
 import yaml
+import csv
+import cv2
 
 from typing import Dict, List
 
@@ -28,6 +30,8 @@ from utils.config import Config
 from utils.mesher import Mesher, filter_isolated_vertices
 from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps
 from utils.visualizer import MapVisualizer
+
+from eval.eval_mesh_utils import eval_pair
 
 from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
@@ -339,6 +343,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
     eval_down_scale = 2**(eval_down_rate)
 
+    psnr_list = []
+    ssim_list = []
+    lpips_list = []
+    depthl1_list = []
+    depth_rmse_list = []
+    cd_list = []
+    f1_list = []
+
     for cur_cam_name in cam_list: 
         # initialize lists for video
         rendered_rgb_cam_dict[cur_cam_name] = []
@@ -529,16 +541,20 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
                 gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
 
-                cur_pnsr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
                 cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
 
                 if lpips_eval_on:
                     cur_lpips = lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
                 else:
                     cur_lpips = -1.0 # not available
+
+                psnr_list.append(cur_psnr)
+                ssim_list.append(cur_ssim)
+                lpips_list.append(cur_lpips)
                 
                 print("Camera id: {}".format(cur_view_cam.uid))
-                print("Current view PSNR  ↑ :", f"{cur_pnsr:.3f}")
+                print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                 print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                 print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
             
@@ -555,6 +571,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
                     print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
 
+                    depthl1_list.append(cur_depth_l1)
+                    depth_rmse_list.append(cur_depth_rmse)
+
                 # TODO
 
         if recon_3d_on:
@@ -564,8 +583,19 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             # downsample a bit
             cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(config.vox_down_m)
 
-            # better to visualize together with the LiDAR point cloud (TODO)
-            # o3d.visualization.draw_geometries([cur_frame_rendered_pcd_o3d]) 
+            if pc_cd_eval_on: 
+                cd_metrics = eval_pair(cur_frame_rendered_pcd_o3d, cur_frame_measured_pcd_o3d, 
+                    down_sample_res=0.05, threshold=0.1, 
+                    truncation_acc=1.0, truncation_com=1.0) # FIXME
+                
+                cur_cd = cd_metrics['Chamfer_L1 (m)']
+                cur_f1 = cd_metrics['F-score (%)']
+
+                print("Current eval frame Chamfer Distance L1 (m) ↓ :", f"{cur_cd:.3f}")
+                print("Current eval frame F1-score (%) ↑ :", f"{cur_f1:.3f}")
+
+                cd_list.append(cur_cd)
+                f1_list.append(cur_f1)
 
             if recon_3d_tsdf_on:
                 # better do the downsampling first (TODO), too time consuming here
@@ -597,6 +627,74 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 if not q_vis2main.empty():
                     while q_vis2main.get().flag_pause:
                         continue
+
+    if eval_on:
+        
+        cam_count = len(dataset.cam_names) # better to also compute for each cam
+
+        eval_frame_count = len(psnr_list) 
+        psnr_np = ssim_np = lpips_np = depthl1_np = depth_rmse_np = cd_np = f1_np = 0.0
+
+        print(f"Calculated on {eval_frame_count} eval views")
+        psnr_np = np.mean(np.array(psnr_list))
+        ssim_np = np.mean(np.array(ssim_list))
+        lpips_np = np.mean(np.array(lpips_list))
+
+        print("Average eval view PSNR  ↑ :", f"{psnr_np:.3f}")
+        print("Average eval view SSIM  ↑ :", f"{ssim_np:.3f}")
+        print("Average eval view LPIPS ↓ :", f"{lpips_np:.3f}")
+
+        if len(depthl1_list) > 0:
+            depthl1_np = np.mean(np.array(depthl1_list))
+            depth_rmse_np = np.mean(np.array(depth_rmse_list))
+
+            print("Average eval view Depth L1 (m) ↓ :", f"{depthl1_np:.3f}")
+            print("Average eval view Depth RMSE (m) ↓ :", f"{depth_rmse_np:.3f}")
+
+        if len(cd_list) > 0:
+            cd_np = np.mean(np.array(cd_list))
+            f1_np = np.mean(np.array(f1_list))
+            print("Average eval frame CD (m) ↓ :", f"{cd_np:.3f}")
+            print("Average eval frame F1 (%) ↓ :", f"{f1_np:.3f}")
+
+        gs_csv_columns = [
+                "Frame-Type",
+                "PSNR↑",
+                "SSIM↑",
+                "LPIPS↓",
+                "Depth-L1(m)↓",
+                "Depth-RMSE(m)↓",
+                "Recon-CD(m)↓",
+                "Recon-F1(%)↑",
+                "Frame-count",
+        ]
+
+        gs_eval = [
+            {
+                gs_csv_columns[0]: "eval",
+                gs_csv_columns[1]: psnr_np,
+                gs_csv_columns[2]: ssim_np,
+                gs_csv_columns[3]: lpips_np,
+                gs_csv_columns[4]: depthl1_np,
+                gs_csv_columns[5]: depth_rmse_np,
+                gs_csv_columns[6]: cd_np,
+                gs_csv_columns[7]: f1_np,
+                gs_csv_columns[8]: eval_frame_count,
+            }
+        ]
+
+        gs_output_csv_path = os.path.join(args.experiment_path, "gs_eval.csv")
+
+        try:
+            with open(gs_output_csv_path, "a") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
+                # writer.writeheader()
+                for data in gs_eval:
+                    writer.writerow(data)
+        except IOError:
+            print("I/O error")
+
+        print("Write the evaluation to: ", gs_output_csv_path)
 
 
     if recon_3d_tsdf_on:

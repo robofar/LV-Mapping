@@ -1443,24 +1443,21 @@ class Mapper:
                         # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                         # maybe relax this a bit
-                        valid_grad_mask = (grad_norm < 2.0) & (grad_norm > 0.5) & (valid_nnk_mask)
+                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
                         # # TODO: why there are fewer and fewer valid points TODO TODO
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()
                         if not self.silence:
                             print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
-                        # also consider the certainty
-                        # static_mask = (sampled_guassians_sdf < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m)
-                        # invalid_gaussian_mask = (~valid_grad_mask) | (~static_mask) # dynamic or unstable
-                        # invalid_gaussian_alpha = sampled_guassians_alpha[invalid_gaussian_mask]
-                        # invalid_gaussiam_opacity_loss = invalid_gaussian_alpha.mean()
-
-                        # do not add this for now, think about other ways
-                        # print(" Invalid gaussian count {:d}".format(torch.sum(invalid_gaussian_mask).item()))
-                        # print(" Invalid gaussian opacity loss {:.3f}".format(invalid_gaussiam_opacity_loss.item()))
-
-                        # opacity_loss += (invalid_gaussiam_opacity_loss * 0.5 * self.config.lambda_opacity)
+                        # sampled_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask].mean()) + (sampled_guassians_alpha[~valid_grad_mask].mean())
+                        
+                        # if not self.silence:
+                        #     print(" Sampled opacity loss:", sampled_opacity_loss.item())
+                        
+                        # sampled_opacity_loss *= (10.0 * self.config.lambda_opacity)
+                        # opacity_loss += sampled_opacity_loss
+                        
                         # TODO: does this really work?
                         # we let these part to be more transparent, but there's seems to have some problem with the poles
 
@@ -1778,7 +1775,7 @@ class Mapper:
                 # self.rendered_pcd_o3d.transform(T_cr) # convert to the coordinate system of current lidar frame
 
                 # cur psnr
-                cur_pnsr = psnr(renderd_image, rgb_img).mean().item()
+                cur_psnr = psnr(renderd_image, rgb_img).mean().item()
                 cur_ssim = fused_ssim(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0), train=False).item()
 
                 if lpips_eval_on:
@@ -1791,7 +1788,7 @@ class Mapper:
                         print("Eval (train view)") 
                     else: # we only eval the test views
                         print("Eval (test view)") 
-                    print("Current PSNR ↑ :", cur_pnsr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
+                    print("Current PSNR ↑ :", cur_psnr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
                 cur_depth_l1 = cur_depth_rmse = 0.0
                 if cur_viewpoint_cam.depth_on and rendered_depth is not None:
@@ -2038,7 +2035,7 @@ class Mapper:
                         rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
                         gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
 
-                        cur_pnsr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                        cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
                         cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
                         # cur_ssim = ssim(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).item()
                         if lpips_eval_on:
@@ -2048,7 +2045,7 @@ class Mapper:
 
                         if not self.silence:
                             print("Camera id: {}".format(cur_view_cam.uid))
-                            print("Current view PSNR  ↑ :", f"{cur_pnsr:.3f}")
+                            print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                             if self.config.exposure_correction_on:
@@ -2097,7 +2094,7 @@ class Mapper:
                             # as train views
                             if not self.silence:
                                 print("Evalualted as a train view")
-                            self.train_psnr_list.append(cur_pnsr)
+                            self.train_psnr_list.append(cur_psnr)
                             self.train_ssim_list.append(cur_ssim)
                             self.train_lpips_list.append(cur_lpips)
                             if cur_view_cam.depth_on and rendered_depth is not None: 
@@ -2108,7 +2105,7 @@ class Mapper:
                             # as test views
                             if not self.silence:
                                 print("Evaluated as a test view")
-                            self.test_psnr_list.append(cur_pnsr)
+                            self.test_psnr_list.append(cur_psnr)
                             self.test_ssim_list.append(cur_ssim)
                             self.test_lpips_list.append(cur_lpips)
                             if cur_view_cam.depth_on and rendered_depth is not None: 
@@ -2160,19 +2157,21 @@ class Mapper:
 
     def gs_eval_out(self):
         
-        train_pnsr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
+        train_psnr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
+
+        cam_count = len(self.dataset.cam_names) # better to also compute for each cam
 
         train_frame_count = len(self.train_psnr_list) 
 
         # TODO: it's even better to print the results for each camera, it's possible
         if train_frame_count > 0:
-            train_pnsr_np = np.mean(np.array(self.train_psnr_list))
+            train_psnr_np = np.mean(np.array(self.train_psnr_list))
             train_ssim_np = np.mean(np.array(self.train_ssim_list))
             train_lpips_np = np.mean(np.array(self.train_lpips_list))
             
-            print(f"Calculated on {train_frame_count} train frames")
+            print(f"Calculated on {train_frame_count} train views")
 
-            print("Average train view PSNR  ↑ :", f"{train_pnsr_np:.3f}")
+            print("Average train view PSNR  ↑ :", f"{train_psnr_np:.3f}")
             print("Average train view SSIM  ↑ :", f"{train_ssim_np:.3f}")
             print("Average train view LPIPS ↓ :", f"{train_lpips_np:.3f}")
 
@@ -2189,17 +2188,17 @@ class Mapper:
             print("Average train frame CD (m) ↓ :", f"{train_cd_np:.3f}")
             print("Average train frame F1 (%) ↓ :", f"{train_f1_np:.3f}")
 
-        test_pnsr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
+        test_psnr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
 
         test_frame_count = len(self.test_psnr_list) 
         if test_frame_count > 0:
-            test_pnsr_np = np.mean(np.array(self.test_psnr_list))
+            test_psnr_np = np.mean(np.array(self.test_psnr_list))
             test_ssim_np = np.mean(np.array(self.test_ssim_list))
             test_lpips_np = np.mean(np.array(self.test_lpips_list))
             
             print(f"Calculated on {test_frame_count} test frames")
 
-            print("Average test view PSNR  ↑ :", f"{test_pnsr_np:.3f}")
+            print("Average test view PSNR  ↑ :", f"{test_psnr_np:.3f}")
             print("Average test view SSIM  ↑ :", f"{test_ssim_np:.3f}")
             print("Average test view LPIPS ↓ :", f"{test_lpips_np:.3f}")
 
@@ -2230,7 +2229,7 @@ class Mapper:
         gs_eval = [
             {
                 gs_csv_columns[0]: "train",
-                gs_csv_columns[1]: train_pnsr_np,
+                gs_csv_columns[1]: train_psnr_np,
                 gs_csv_columns[2]: train_ssim_np,
                 gs_csv_columns[3]: train_lpips_np,
                 gs_csv_columns[4]: train_depthl1_np,
@@ -2241,7 +2240,7 @@ class Mapper:
             },
             {
                 gs_csv_columns[0]: "test",
-                gs_csv_columns[1]: test_pnsr_np,
+                gs_csv_columns[1]: test_psnr_np,
                 gs_csv_columns[2]: test_ssim_np,
                 gs_csv_columns[3]: test_lpips_np,
                 gs_csv_columns[4]: test_depthl1_np,

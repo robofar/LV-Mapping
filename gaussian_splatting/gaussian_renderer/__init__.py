@@ -614,18 +614,14 @@ def spawn_gaussians(neural_points_data: Dict,
         # print(view_distance)
         geo_feature_in = torch.concat((geo_feature_in, view_distance), dim=1)
 
-    # ------------------
+      # ------------------
     # Opacity (view dependent)
 
     # gaussian_alpha = torch.sigmoid(gaussian_alpha_mlp.mlp_batch(geo_feature_in) 
     gaussian_alpha = torch.tanh(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) 
-    # gaussian_alpha = 0.9 + 0.1 * torch.sigmoid(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) 
-    # gaussian_alpha = 0.5-0.5*torch.tanh(gaussian_alpha_mlp.mlp_batch(geo_feature_in)) # N, K  #[-1,1] --> [0,1]
 
     gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
     
-    # print("mean opacity:", gaussian_alpha.mean().item()) # the opacity is too low, may have some problem, better to have either 0 or 1 opacity
-
     # ------------------
     # Color (view dependent)
 
@@ -638,7 +634,14 @@ def spawn_gaussians(neural_points_data: Dict,
         color_feature_in = torch.concat((color_feature_in, view_direction), dim=1) # no high freq positional embedding yet
     
     # try to now use only one single feature vector
-    
+
+    # # ------------------
+    # # Opacity (view dependent)
+
+    # gaussian_alpha = torch.tanh(gaussian_alpha_mlp.mlp_batch(color_feature_in)) 
+
+    # gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
+
     ## learn residual now
     # TODO: compare, but it seems that there's no much difference
     if learn_color_residual:

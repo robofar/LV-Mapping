@@ -148,6 +148,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     gaussian_rot_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 4, n_gaussian, 0)
     gaussian_scale_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 3, n_gaussian, 0)
     gaussian_alpha_mlp = Decoder(config, geo_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 1, n_gaussian, dist_concat_dim) # concat distance
+    # gaussian_alpha_mlp = Decoder(config, color_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 1, n_gaussian, view_concat_dim) # concat distance
     gaussian_color_mlp = Decoder(config, color_feature_dim, config.gs_mlp_hidden_dim, config.gs_mlp_level, 3, n_gaussian, view_concat_dim) # concat view direction
 
     mlp_dict = {}
@@ -588,7 +589,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
         # don't do visualization
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=True) # FIXME
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=False) # FIXME
         # visualize the results
         # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()

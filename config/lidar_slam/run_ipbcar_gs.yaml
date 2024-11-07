@@ -65,12 +65,11 @@ gs:
   lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   # lambda_isotropic: 1.0
-  # lambda_area: 1e-4 # 1e-3 # test turning on this (TODO)
-  # lambda_mono_normal: 0.01
-  # lambda_normal_depth: 0.01 # check this # the d2n function still have some problem, or maybe the depth function has such problem
-  # # consist_normal_fixed: True
-  # lambda_sdf_cons: 0.1
-  # lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
+  lambda_area: 1e-3 # 1e-3 # test turning on this (TODO)
+  lambda_normal_depth: 0.01 # check this # the d2n function still have some problem, or maybe the depth function has such problem
+  # consist_normal_fixed: True
+  lambda_sdf_cons: 0.1
+  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper

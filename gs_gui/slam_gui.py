@@ -218,6 +218,7 @@ class SLAM_GUI:
         # other geometry entities
         self.mesh = o3d.geometry.TriangleMesh()
         self.scan = o3d.geometry.PointCloud()
+        self.rendered_scan = o3d.geometry.PointCloud()
         self.sdf_pool = o3d.geometry.PointCloud() # sample pool
         self.sdf_slice = o3d.geometry.PointCloud()
         self.neural_points = o3d.geometry.PointCloud()
@@ -402,11 +403,11 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
 
-        self.sdf_pool_chbox = gui.Checkbox("SDF Samples")
-        self.sdf_pool_chbox.checked = False
-        self.sdf_pool_chbox.set_on_checked(self._on_sdf_pool_chbox)
-        chbox_tile_3dobj.add_child(self.sdf_pool_chbox)
-        self.sdf_pool_name = "sdf_sample_pool"
+        self.rendered_scan_chbox = gui.Checkbox("Rendered Points")
+        self.rendered_scan_chbox.checked = True
+        self.rendered_scan_chbox.set_on_checked(self._on_rendered_scan_chbox)
+        chbox_tile_3dobj.add_child(self.rendered_scan_chbox)
+        self.rendered_scan_name = "cur_rendered_scan"
 
         # self.sky_chbox = gui.Checkbox("Sky")
         # self.sky_chbox.checked = False
@@ -435,7 +436,6 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.sdf_chbox)
         self.sdf_name = "cur_sdf_slice"
 
-
         self.cad_chbox = gui.Checkbox("Robot")
         self.cad_chbox.checked = self.robot_default_on
         self.cad_chbox.set_on_checked(self._on_cad_chbox)
@@ -454,17 +454,21 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
         self.slam_traj_name = "slam_trajectory"
 
-        self.range_circle_chbox = gui.Checkbox("Range Circle")
+        self.range_circle_chbox = gui.Checkbox("R Circle")
         self.range_circle_chbox.checked = False
         self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
         chbox_tile_3dobj_2.add_child(self.range_circle_chbox)
         self.range_circle_name = "range_circle"
 
+        self.sdf_pool_chbox = gui.Checkbox("SDF Samples")
+        self.sdf_pool_chbox.checked = False
+        self.sdf_pool_chbox.set_on_checked(self._on_sdf_pool_chbox)
+        chbox_tile_3dobj_2.add_child(self.sdf_pool_chbox)
+        self.sdf_pool_name = "sdf_sample_pool"
 
         self.panel.add_child(chbox_tile_3dobj)
 
         self.panel.add_child(chbox_tile_3dobj_2)
-
 
 
         self.panel.add_child(gui.Label("Neural Point Color Options"))
@@ -833,6 +837,13 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
         else:
             self.widget3d.scene.remove_geometry(self.scan_name)
+
+    def _on_rendered_scan_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.rendered_scan_name)
+            self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
+        else:
+            self.widget3d.scene.remove_geometry(self.rendered_scan_name)
     
     def _on_sdf_pool_chbox(self, is_checked):
         if is_checked:

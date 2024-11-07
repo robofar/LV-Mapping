@@ -157,7 +157,7 @@ def gs_eval_offline(self, dataset, neural_points, decoders, used_poses,
                         rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
                         gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
 
-                        cur_pnsr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                        cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
                         cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
                         # cur_ssim = ssim(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).item()
                         if lpips_eval_on:
@@ -167,7 +167,7 @@ def gs_eval_offline(self, dataset, neural_points, decoders, used_poses,
 
                         if not self.silence:
                             print("Camera id: {}".format(cur_view_cam.uid))
-                            print("Current view PSNR  ↑ :", f"{cur_pnsr:.3f}")
+                            print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                             if self.config.exposure_correction_on:
@@ -216,7 +216,7 @@ def gs_eval_offline(self, dataset, neural_points, decoders, used_poses,
                             # as train views
                             if not self.silence:
                                 print("Evalualted as a train view")
-                            self.train_psnr_list.append(cur_pnsr)
+                            self.train_psnr_list.append(cur_psnr)
                             self.train_ssim_list.append(cur_ssim)
                             self.train_lpips_list.append(cur_lpips)
                             if cur_view_cam.depth_on and rendered_depth is not None: 
@@ -227,7 +227,7 @@ def gs_eval_offline(self, dataset, neural_points, decoders, used_poses,
                             # as test views
                             if not self.silence:
                                 print("Evaluated as a test view")
-                            self.test_psnr_list.append(cur_pnsr)
+                            self.test_psnr_list.append(cur_psnr)
                             self.test_ssim_list.append(cur_ssim)
                             self.test_lpips_list.append(cur_lpips)
                             if cur_view_cam.depth_on and rendered_depth is not None: 
