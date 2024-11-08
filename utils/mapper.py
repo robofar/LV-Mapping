@@ -1450,10 +1450,13 @@ class Mapper:
                         if not self.silence:
                             print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
 
-                        # sampled_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask].mean()) + (sampled_guassians_alpha[~valid_grad_mask].mean())
+                        valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask].mean()) 
+                        invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask].mean())
                         
-                        # if not self.silence:
-                        #     print(" Sampled opacity loss:", sampled_opacity_loss.item())
+                        if not self.silence:
+                            print(" Invalid part opacity loss:", invalid_opacity_loss.item())
+
+                        invalid_opacity_loss *= self.config.lambda_invalid_opacity
                         
                         # sampled_opacity_loss *= (10.0 * self.config.lambda_opacity)
                         # opacity_loss += sampled_opacity_loss
@@ -1553,7 +1556,7 @@ class Mapper:
                     + normal_depth_consist_loss + normal_smoothness_loss \
                     + mono_normal_loss + sky_loss + distort_loss \
                     + isotropic_loss + area_loss + opacity_loss + opacity_ent_loss \
-                    + sdf_consistency_loss + sdf_normal_consistency_loss \
+                    + sdf_consistency_loss + sdf_normal_consistency_loss + invalid_opacity_loss \
                     + sdf_loss + eikonal_loss + color_loss
 
                 # print("Total loss:", total_loss.item())

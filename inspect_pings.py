@@ -188,7 +188,7 @@ def inspect_pings_map():
             robot_default_on=False,
             neural_point_default_on=False,
             mesh_default_on=True,
-            neural_point_color_default_mode=1, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
+            neural_point_color_default_mode=3, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
@@ -203,7 +203,7 @@ def inspect_pings_map():
     else:
         pose_path_used = args.pose_path
 
-    # # dataset
+    # dataset
     dataset = SLAMDataset(config)
     # print(dataset.cam_names)
 
@@ -217,14 +217,20 @@ def inspect_pings_map():
 
     # used_poses
     if args.render_video or args.recon_3d or args.eval_seq:
-        render_with_poses(config, dataset, neural_points, mlp_dict, poses_for_render, dataset.cam_names, 
+        render_with_poses(config, 
+            dataset, 
+            neural_points, 
+            mlp_dict,
+            poses_for_render, 
+            dataset.cam_names, 
             recon_3d_tsdf_on=args.recon_3d, 
             eval_on=args.eval_seq,
             video_save_base_path=video_folder_path, 
             mesh_save_base_path=mesh_folder_path,
             eval_down_rate=config.gs_vis_down_rate,
             vis_on=True,
-            q_main2vis=q_main2vis, q_vis2main=q_vis2main)
+            q_main2vis=q_main2vis, 
+            q_vis2main=q_vis2main)
     
     # reset neural points
     center_frame_id = int(args.center_frame_id)
@@ -235,8 +241,6 @@ def inspect_pings_map():
     # ref_position = neural_points.neural_points[0]
     
     neural_points.recreate_hash(ref_position, with_ts=False)
-
-    # print(geo_feature_3d.shape)
 
     # mesh reconstructor
     mesher = Mesher(config, neural_points, mlp_dict)
@@ -274,17 +278,16 @@ def inspect_pings_map():
         
         q_main2vis.put(packet_to_vis)
 
-        # while True:
-        #     # print("what's wrong")
-
-        #         if not q_vis2main.empty():
-        #             while q_vis2main.get().flag_pause:
-        #                 continue
+        while True:
+            if not q_vis2main.empty():
+                while q_vis2main.get().flag_pause:
+                    continue
 
 
 
 def render_with_poses(config: Config, dataset: SLAMDataset,
-                      neural_points: NeuralPoints, decoders: Dict[str, Decoder], 
+                      neural_points: NeuralPoints, 
+                      decoders: Dict[str, Decoder], 
                       lidar_poses: Dict[str, np.array], 
                       cam_list: List[str],
                       video_save_base_path: str = None,
@@ -618,6 +621,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     if cur_frame_measured_pcd_o3d is not None:
                         packet_to_vis.add_scan(np.array(cur_frame_measured_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_measured_pcd_o3d.colors, dtype=np.float64))
 
+                    if cur_frame_rendered_pcd_o3d is not None:
+                        packet_to_vis.add_rendered_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
+                    
                     # odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
                     # packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
 

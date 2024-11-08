@@ -96,6 +96,8 @@ class VisPacket:
         kf_window=None,
         current_pointcloud_xyz=None,
         current_pointcloud_rgb=None,
+        current_rendered_xyz=None,
+        current_rendered_rgb=None,
         mesh_verts=None,
         mesh_faces=None,
         mesh_verts_rgb=None,
@@ -158,6 +160,8 @@ class VisPacket:
         self.add_cam_frames(keyframes, img_down_rate) # could take too much memory (FIXME)
         
         self.add_scan(current_pointcloud_xyz, current_pointcloud_rgb)
+
+        self.add_rendered_scan(current_rendered_xyz, current_rendered_rgb)
 
         self.add_mesh(mesh_verts, mesh_faces, mesh_verts_rgb)
 
@@ -320,6 +324,11 @@ class VisPacket:
     def add_scan(self, current_pointcloud_xyz=None, current_pointcloud_rgb=None):
         self.current_pointcloud_xyz = current_pointcloud_xyz
         self.current_pointcloud_rgb = current_pointcloud_rgb
+        # TODO: add normal later
+
+    def add_rendered_scan(self, current_rendered_xyz=None, current_rendered_rgb=None):
+        self.current_rendered_xyz = current_rendered_xyz
+        self.current_rendered_rgb = current_rendered_rgb
         # TODO: add normal later
 
     def add_sdf_slice(self, sdf_slice_xyz=None, sdf_slice_rgb=None):

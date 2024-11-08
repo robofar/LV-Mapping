@@ -1129,6 +1129,14 @@ class SLAM_GUI:
                     self.widget3d.scene.remove_geometry(self.scan_name)
                     self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
 
+            if gaussian_packet.current_rendered_xyz is not None:
+                self.rendered_scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_rendered_xyz)
+                if gaussian_packet.current_rendered_rgb is not None:
+                    self.rendered_scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_rendered_rgb)
+                if self.rendered_scan_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.rendered_scan_name)
+                    self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
+
             if gaussian_packet.sdf_slice_xyz is not None:
                 if self.sdf_chbox.checked:
                     self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)

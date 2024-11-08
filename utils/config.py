@@ -275,7 +275,8 @@ class Config:
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction
-        self.lambda_sdf: float = 0.0 # pin map sdf fitting loss
+        self.lambda_invalid_opacity: float = 0.0 # to let those part with not well constructed sdf to have a samller opacity
+        self.lambda_sdf: float = 0.0 # pin map sdf fitting loss 
 
         # consistency loss supervision direction (FIXME)
         # cannot be all true
@@ -677,6 +678,7 @@ class Config:
             self.lambda_sky = float(config_args["gs"].get("lambda_sky", self.lambda_sky))
             self.lambda_sdf_cons = float(config_args["gs"].get("lambda_sdf_cons", self.lambda_sdf_cons))
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
+            self.lambda_invalid_opacity = float(config_args["gs"].get("lambda_invalid_opacity", self.lambda_invalid_opacity)) # add this to better deal with dynamic objects
             self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)

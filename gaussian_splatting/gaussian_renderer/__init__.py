@@ -540,6 +540,7 @@ def spawn_gaussians(neural_points_data: Dict,
         view_distance = view_direction.norm(dim=1, keepdim=True) # N, 1
         # normalize
         view_direction = view_direction / view_distance
+        # needs to be further transform to the neural point coordinate system
 
     geo_feature_in = neural_point_geo_features[:-1]
 
@@ -566,7 +567,7 @@ def spawn_gaussians(neural_points_data: Dict,
     xyz_displacement = xyz_displacement.view(local_gaussian_count, -1) # NK, 3
     
     xyz_displacement = apply_quaternion_rotation(neural_point_quat, xyz_displacement) # NK, 3            
-    ## passive rotation (axis rotation w.r.t point)
+    ## passive rotation (axis rotation w.r.t point) # TODO: is this correct
 
     neural_point_xyz = neural_point_position.repeat(1, gaussian_count_per_point).view(local_gaussian_count, -1) # NK, 3
 
@@ -586,7 +587,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # ------------------
     # Scale (view dependent or not) ? # TODO
-    max_gaussian_scale = 2.0 * neural_point_resolution
+    max_gaussian_scale = 2.0 * neural_point_resolution # TODO: 2.0 or 1.0
     dist_ratio = 0.0
     if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1
@@ -629,7 +630,7 @@ def spawn_gaussians(neural_points_data: Dict,
     if view_concat_on and view_direction is not None:
         # here view direction should in a local coordinate frame (FIXME)
         neural_point_orientation_inverse = quat_inverse(neural_point_orientation)
-        view_direction = apply_quaternion_rotation(neural_point_orientation_inverse ,view_direction)
+        view_direction = apply_quaternion_rotation(neural_point_orientation_inverse ,view_direction) # already considered
 
         color_feature_in = torch.concat((color_feature_in, view_direction), dim=1) # no high freq positional embedding yet
     

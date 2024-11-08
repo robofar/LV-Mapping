@@ -9,7 +9,7 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.1
-  dynamic_sdf_ratio_thre: 0.5
+  dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 2
@@ -60,14 +60,13 @@ gs:
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
-  inverse_depth_loss: True
-  lambda_depth: 1.0 # 20.0 # decrease this , it's not useful ... depth rendering
+  inverse_depth_loss: False
+  lambda_depth: 0.02 # 20.0 # decrease this , it's not useful ... depth rendering
   lambda_opacity: 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  # lambda_isotropic: 1.0
-  lambda_area: 2e-3 # 1e-3
-  # lambda_mono_normal: 0.01
-  lambda_normal_depth: 0.01 # check this # the d2n function still have some problem, or maybe the depth function has such problem
+  lambda_invalid_opacity: 1e-2
+  lambda_area: 1e-3 # 1e-3
+  lambda_normal_depth: 0.01
   # consist_normal_fixed: True
   lambda_sdf_cons: 0.1
   lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
