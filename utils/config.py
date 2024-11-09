@@ -478,7 +478,7 @@ class Config:
         if "sampler" in config_args:
             self.surface_sample_range_m = config_args["sampler"].get("surface_sample_range_m", self.vox_down_m * 3.0) 
             self.free_sample_begin_ratio = config_args["sampler"].get("free_sample_begin_ratio", self.free_sample_begin_ratio)
-            self.free_sample_end_dist_m = config_args["sampler"].get("free_sample_end_dist_m", self.surface_sample_range_m * 4.0) # this value should be at least 2 times of surface_sample_range_m
+            self.free_sample_end_dist_m = config_args["sampler"].get("free_sample_end_dist_m", self.surface_sample_range_m * 2.0) # this value should be at least 2 times of surface_sample_range_m
             self.surface_sample_n = config_args["sampler"].get("surface_sample_n", self.surface_sample_n)
             self.free_front_n = config_args["sampler"].get("free_front_sample_n", self.free_front_n)
             self.free_behind_n = config_args["sampler"].get("free_behind_sample_n", self.free_behind_n)
@@ -738,5 +738,5 @@ class Config:
         self.consistency_count = int(self.bs / 4)
         self.local_map_radius = min(self.max_range*1.05, self.max_range+5.0) # for the local neural points
         self.window_radius = max(self.local_map_radius-self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small
-        self.sorrounding_map_radius = self.local_map_radius * 2.0
+        self.sorrounding_map_radius = self.local_map_radius * 1.8
         self.vis_frame_axis_len = self.max_range / 50.0

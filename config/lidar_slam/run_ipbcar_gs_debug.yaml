@@ -8,13 +8,13 @@ setting:
 process:
   min_range_m: 1.5
   max_range_m: 60.0
-  vox_down_m: 0.1
+  vox_down_m: 0.08
   dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.4
-  surface_sample_n: 4
+  surface_sample_n: 6
   free_sample_begin_ratio: 0.3
-  free_front_sample_n: 1
+  free_front_sample_n: 2
 neuralpoints:
   voxel_size_m: 0.25 # 0.25
   search_alpha: 0.8 # 0.8
@@ -22,19 +22,18 @@ neuralpoints:
   feature_dim: 32 # 32 # not worth further improving this
   color_feature_dim: 32 # 16
   weighted_first: False # not much difference True or False 
-  map_surface_ratio: 0.2
 decoder:
   freeze_after_frame: 30 # 30
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
-  sigma_sigmoid_m: 0.1
+  sigma_sigmoid_m: 0.05
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   numerical_grad: False # FIXME
-  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
+  weight_e: 1.0 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
@@ -53,7 +52,7 @@ gs:
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
-  gs_iters: 50 # 50 # 100
+  gs_iters: 10 # 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -74,7 +73,7 @@ gs:
   lambda_normal_depth: 0.01 #
   lambda_sdf_cons: 0.02 # the weight do not need to be very large
   lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large
-  lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
+  lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
   iters: 15  # iterations per frame

@@ -1446,7 +1446,7 @@ class Mapper:
                         # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                         # maybe relax this a bit
-                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
+                        valid_grad_mask = (grad_norm < 1.4) & (grad_norm > 0.6) & (valid_nnk_mask)
                         
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()

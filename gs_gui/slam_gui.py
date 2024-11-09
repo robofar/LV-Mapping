@@ -572,6 +572,14 @@ class SLAM_GUI:
         self.elliopsoid_chbox.set_on_checked(self._on_elliopsoid_chbox)
         chbox_tile_gsrender.add_child(self.elliopsoid_chbox)
 
+        self.normal_in_world_chbox = gui.Checkbox("Normal in world")
+        self.normal_in_world_chbox.checked = True
+        chbox_tile_gsrender.add_child(self.normal_in_world_chbox)
+
+        self.normal_with_alpha_chbox = gui.Checkbox("Normal with alpha")
+        self.normal_with_alpha_chbox.checked = True
+        chbox_tile_gsrender.add_child(self.normal_with_alpha_chbox)
+
         self.panel.add_child(chbox_tile_gsrender)
 
         slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
@@ -1608,7 +1616,7 @@ class SLAM_GUI:
 
 
     # main rendering function for the 3D visualizer
-    def render_o3d_image(self, results, current_cam, normal_in_world_frame: bool = True):
+    def render_o3d_image(self, results, current_cam, normal_in_world_frame: bool = True, normal_with_alpha: bool = True):
 
         if not self.gs_chbox.checked:
             return None # don't show gs rendering results
@@ -1646,11 +1654,14 @@ class SLAM_GUI:
             if normal_in_world_frame: 
             # transform to world frame
                 normal = -1.0 * (normal.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
-        
-            # normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
-            normal_norm = normal.norm(2, dim=0) 
-            normal_color = 0.5 * (normal_norm - normal) #   # convert to the normal vis color
-            # normal_color = 0.5 * (1 - normal)
+
+            if normal_with_alpha:
+                normal_norm = normal.norm(2, dim=0) 
+                normal_color = 0.5 * (normal_norm - normal) #   # convert to the normal vis color
+            else:
+                normal = torch.nn.functional.normalize(normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+                normal_color = 0.5 * (1 - normal)
+
             normal_color = (normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             normal_color = np.ascontiguousarray(normal_color)
             render_img = o3d.geometry.Image(normal_color)
@@ -1664,9 +1675,13 @@ class SLAM_GUI:
             # transform to world frame
                 d2n = -1.0 * (d2n.permute(1,2,0) @ (current_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
 
-            # d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
-            d2n_norm = d2n.norm(2, dim=0) 
-            d2n_color =  0.5 * (d2n_norm - d2n) # convert to the normal vis color
+            if normal_with_alpha:
+                d2n_norm = d2n.norm(2, dim=0) 
+                d2n_color =  0.5 * (d2n_norm - d2n) # convert to the normal vis color
+            else:
+                d2n = torch.nn.functional.normalize(d2n, dim=0) # normalize to norm==1
+                d2n_color = 0.5 * (1 - d2n)
+            
             d2n_color = (d2n_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
             d2n_color = np.ascontiguousarray(d2n_color)
             render_img = o3d.geometry.Image(d2n_color)
@@ -1830,7 +1845,9 @@ class SLAM_GUI:
             results = self.rasterise(current_cam)
             if results is None:
                 return
-            self.render_img = self.render_o3d_image(results, current_cam)
+            self.render_img = self.render_o3d_image(results, current_cam, 
+                    self.normal_in_world_chbox.checked, 
+                    self.normal_with_alpha_chbox.checked)
             results = {} # free memory 
         ## self.widget3d.scene.set_background([0, 0, 0, 1], self.render_img)
         self.widget3d.scene.set_background([1, 1, 1, 1], self.render_img)

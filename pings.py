@@ -111,7 +111,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         if args.dataset_name is not None: # specific dataset [optional]
             set_dataset_path(config, args.dataset_name, args.sequence_name)
         if args.tag is not None:
-            config.name += "_{}".format(args.tag)  
+            config.name = "{}_{}".format(args.tag, config.name)  
         run_path = setup_experiment(config, argv)
         print("[bold green]PIN-SLAM starts[/bold green]","📍" )
 
