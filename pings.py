@@ -71,6 +71,7 @@ parser.add_argument('--save_mesh', '-m', action='store_true', help='Save the rec
 parser.add_argument('--save_merged_pc', '-p', action='store_true', help='Save the merged point cloud after SLAM')
 parser.add_argument('--gs_on', '-g', action='store_true', help='Turn on GS')
 parser.add_argument('--deskew', action='store_true', help='Try to deskew the LiDAR scans')
+parser.add_argument('--tag', type=str, default=None, help='A tag for this experiment')
 
 args, unknown = parser.parse_known_args()
 
@@ -109,6 +110,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             config.output_root = args.output_path
         if args.dataset_name is not None: # specific dataset [optional]
             set_dataset_path(config, args.dataset_name, args.sequence_name)
+        if args.tag is not None:
+            config.name += "_{}".format(args.tag)  
         run_path = setup_experiment(config, argv)
         print("[bold green]PIN-SLAM starts[/bold green]","📍" )
 
@@ -588,7 +591,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
         # don't do visualization
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=True) # FIXME
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=True) # FIXME
         # visualize the results
         # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()

@@ -144,7 +144,7 @@ class SLAM_GUI:
         self.window_w, self.window_h = 2560, 1600
 
         self.window = gui.Application.instance.create_window(
-           "PINGS Viewer", self.window_w, self.window_h
+           "PINGS Viewer for {}".format(self.config.name), self.window_w, self.window_h
         ) # open3d gui #FIXME, now this is crashing
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
@@ -385,9 +385,11 @@ class SLAM_GUI:
         viewpoint_tile.add_child(vp_subtile2)
         viewpoint_tile.add_child(vp_subtile3)
         viewpoint_tile.add_child(vp_subtile4)
-        viewpoint_tile.add_child(self.reset_view_btn)
+
         viewpoint_tile.add_child(self.save_view_btn)
         viewpoint_tile.add_child(self.load_view_btn)
+        viewpoint_tile.add_child(self.reset_view_btn)
+        
         self.panel.add_child(viewpoint_tile)
 
         self.panel.add_child(gui.Label("3D Objects"))
@@ -537,24 +539,28 @@ class SLAM_GUI:
 
         self.panel.add_child(chbox_tile_neuralpoint)
 
-
         self.panel.add_child(gui.Label("GS Rendering Options"))
         chbox_tile_gsrender = gui.Horiz(0.5 * em, gui.Margins(margin))
 
+        # these cannot be on at the same time
         self.depth_chbox = gui.Checkbox("Depth")
         self.depth_chbox.checked = False
+        self.depth_chbox.set_on_checked(self._on_depth_chbox)
         chbox_tile_gsrender.add_child(self.depth_chbox)
 
         self.normal_chbox = gui.Checkbox("Normal")
         self.normal_chbox.checked = False
+        self.normal_chbox.set_on_checked(self._on_normal_chbox)
         chbox_tile_gsrender.add_child(self.normal_chbox)
 
         self.d2n_chbox = gui.Checkbox("D2N")
         self.d2n_chbox.checked = False
+        self.d2n_chbox.set_on_checked(self._on_d2n_chbox)
         chbox_tile_gsrender.add_child(self.d2n_chbox)
 
         self.opacity_chbox = gui.Checkbox("Opacity")
         self.opacity_chbox.checked = False
+        self.opacity_chbox.set_on_checked(self._on_opacity_chbox)
         chbox_tile_gsrender.add_child(self.opacity_chbox)
 
         # self.time_shader_chbox = gui.Checkbox("Time Shader")
@@ -563,6 +569,7 @@ class SLAM_GUI:
 
         self.elliopsoid_chbox = gui.Checkbox("Ellipsoid")
         self.elliopsoid_chbox.checked = False
+        self.elliopsoid_chbox.set_on_checked(self._on_elliopsoid_chbox)
         chbox_tile_gsrender.add_child(self.elliopsoid_chbox)
 
         self.panel.add_child(chbox_tile_gsrender)
@@ -924,6 +931,41 @@ class SLAM_GUI:
             self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
         else:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
+
+    def _on_elliopsoid_chbox(self, is_checked):
+        if is_checked:
+            self.depth_chbox.checked = False
+            self.normal_chbox.checked = False
+            self.d2n_chbox.checked = False
+            self.opacity_chbox.checked = False
+
+    def _on_depth_chbox(self, is_checked):
+        if is_checked:
+            self.elliopsoid_chbox.checked = False
+            self.normal_chbox.checked = False
+            self.d2n_chbox.checked = False
+            self.opacity_chbox.checked = False
+
+    def _on_normal_chbox(self, is_checked):
+        if is_checked:
+            self.elliopsoid_chbox.checked = False
+            self.depth_chbox.checked = False
+            self.d2n_chbox.checked = False
+            self.opacity_chbox.checked = False
+
+    def _on_d2n_chbox(self, is_checked):
+        if is_checked:
+            self.elliopsoid_chbox.checked = False
+            self.normal_chbox.checked = False
+            self.depth_chbox.checked = False
+            self.opacity_chbox.checked = False
+
+    def _on_opacity_chbox(self, is_checked):
+        if is_checked:
+            self.elliopsoid_chbox.checked = False
+            self.normal_chbox.checked = False
+            self.d2n_chbox.checked = False
+            self.depth_chbox.checked = False
 
     def _on_sky_chbox(self, is_checked):
         self.widget3d.scene.show_skybox(is_checked)

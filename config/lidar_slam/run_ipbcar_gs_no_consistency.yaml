@@ -11,10 +11,10 @@ process:
   vox_down_m: 0.1
   dynamic_sdf_ratio_thre: 0.8
 sampler:
-  surface_sample_range_m: 0.5
+  surface_sample_range_m: 0.4
   surface_sample_n: 4
   free_sample_begin_ratio: 0.3
-  free_front_sample_n: 2
+  free_front_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.25 # 0.25
   search_alpha: 0.8 # 0.8
@@ -51,7 +51,7 @@ gs:
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
-  gs_iters: 200 # 50 # 100
+  gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -60,6 +60,7 @@ gs:
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
+  invalid_check_on: False # do not turn on this
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
   # inverse_depth_loss: True

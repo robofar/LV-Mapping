@@ -2219,7 +2219,7 @@ class Mapper:
             test_cd_np = np.mean(np.array(self.test_cd_list))
             test_f1_np = np.mean(np.array(self.test_f1_list))
             print("Average test frame CD (m) ↓ :", f"{test_cd_np:.3f}")
-            print("Average test frame F1 (%) ↓ :", f"{test_f1_np:.3f}")
+            print("Average test frame F1 (%) ↑ :", f"{test_f1_np:.3f}")
 
         gs_csv_columns = [
                 "Frame-Type",

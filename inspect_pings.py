@@ -661,7 +661,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             cd_np = np.mean(np.array(cd_list))
             f1_np = np.mean(np.array(f1_list))
             print("Average eval frame CD (m) ↓ :", f"{cd_np:.3f}")
-            print("Average eval frame F1 (%) ↓ :", f"{f1_np:.3f}")
+            print("Average eval frame F1 (%) ↑ :", f"{f1_np:.3f}")
 
         gs_csv_columns = [
                 "Frame-Type",
