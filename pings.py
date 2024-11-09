@@ -496,7 +496,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             
             if config.sdfslice_freq_frame > 0:
                 if o3d_vis.render_sdf and (frame_id == 0 or frame_id == last_frame or (frame_id + 1) % config.sdfslice_freq_frame == 0):
-                    slice_res_m = config.voxel_size_m * 0.5 # better be larger (to save time) # TODO: add to config
+                    slice_res_m = config.voxel_size_m * 0.6 # better be larger (to save time) # TODO: add to config
                     sdf_bound = config.surface_sample_range_m * 4.0
                     query_sdf_locally = True
                     if o3d_vis.vis_global:
@@ -588,7 +588,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
         # don't do visualization
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=False) # FIXME
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, pc_cd_eval_on=True) # FIXME
         # visualize the results
         # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
         mapper.gs_eval_out()
@@ -603,7 +603,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
         print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
-        output_mc_res_m = config.mc_res_m*0.5
+        output_mc_res_m = config.mc_res_m*0.6
         chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 100) # reconstruct in chunks
         mc_cm_str = str(round(output_mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
@@ -614,12 +614,12 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # if config.save_merged_pc:
     #     dataset.write_merged_point_cloud() # replay: save merged point cloud map
     
-    if config.o3d_vis_on:
-        while True:
-            o3d_vis.ego_view = False
-            o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
-            odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
-            o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
+    # if config.o3d_vis_on:
+    #     while True:
+    #         o3d_vis.ego_view = False
+    #         o3d_vis.update(dataset.cur_frame_o3d, dataset.cur_pose_ref, cur_sdf_slice, cur_mesh, neural_pcd, pool_pcd)
+    #         odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
+    #         o3d_vis.update_traj(dataset.cur_pose_ref, odom_poses, gt_poses, pgo_poses, loop_edges)
     
     return pose_eval_results
 

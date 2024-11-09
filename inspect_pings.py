@@ -254,7 +254,7 @@ def inspect_pings_map():
         mesh_vox_size_m = args.mesh_mc_m
         mesh_min_nn_k_used = args.mesh_min_nn_k
         if args.mesh_mc_m < 0:
-            mesh_vox_size_m = config.voxel_size_m*0.5 # use the default value
+            mesh_vox_size_m = config.voxel_size_m*0.6 # use the default value
         if args.mesh_min_nn_k < 0:
             mesh_min_nn_k_used = config.mesh_min_nn # use the default value
         

@@ -108,7 +108,7 @@ class Config:
         # If True may lead to larger memory consumption, but is more robust while the reconstruction.
         self.from_sample_points: bool = True
         self.from_all_samples: bool = False  # even use the freespace samples (for better ESDF mapping at a cost of larger memory consumption)
-        self.map_surface_ratio: float = 0.2 # FIXME # ratio * surface sample std, use those samples for initializing neural points
+        self.map_surface_ratio: float = 0.2 # FIXME # ratio * surface sample range, use those samples for initializing neural points
 
         # local map
         self.diff_ts_local: float = 400.0 # deprecated (use travel distance instead)
@@ -128,7 +128,7 @@ class Config:
         self.free_sample_begin_ratio: float = 0.3 # minimum ray distance ratio in front of the surface 
         self.free_sample_end_dist_m: float = 1.0 # maximum distance behind the surface (unit: m)
         self.free_front_n: int = 2
-        self.free_behind_n: int = 1
+        self.free_behind_n: int = 0
 
         # training data pool related (for replay)
         self.window_radius: float = 50.0 # unit: m

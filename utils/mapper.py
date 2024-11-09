@@ -1423,6 +1423,9 @@ class Mapper:
 
                     T4 = get_time()
 
+                    valid_opacity_loss = 0.0
+                    invalid_opacity_loss = 0.0
+
                     # Gaussian SDF consistency loss
                     if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                         
@@ -1435,7 +1438,7 @@ class Mapper:
 
                         sampled_guassians_alpha = gaussian_alpha[sampled_indices]
 
-                        sampled_guassians_sdf, _, valid_nnk_mask = self.sdf(sampled_guassians_xyz, min_nn_count=self.config.query_nn_k) # sdf, sdf_std, valid_mask
+                        sampled_guassians_sdf, _, valid_nnk_mask = self.sdf(sampled_guassians_xyz, min_nn_count=3) # self.config.query_nn_k sdf, sdf_std, valid_mask
                         sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
                         grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
                         
@@ -1444,7 +1447,7 @@ class Mapper:
 
                         # maybe relax this a bit
                         valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
-                        # # TODO: why there are fewer and fewer valid points TODO TODO
+                        
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()
                         if not self.silence:

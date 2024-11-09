@@ -183,3 +183,10 @@ tmp*
 screenshots/
 screenshots
 *png
+
+# viewpoints
+*pkl
+
+# experiment scripts
+run_exp.sh
+*exp.sh

@@ -16,6 +16,7 @@ rospkg==1.5.1
 scikit-image==0.21.0
 wandb==0.17.0
 # for gs
+brisque
 opencv-python
 torchmetrics==1.4.1
 -e submodules/diff-surfel-rasterization # editable install # 2D GS

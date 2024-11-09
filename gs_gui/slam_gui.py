@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 
 import cv2
+import os
 import glfw
 import matplotlib.cm as cm
 import numpy as np
@@ -14,6 +15,9 @@ import open3d.visualization.rendering as rendering
 import torch
 import torch.nn.functional as F
 from OpenGL import GL as gl
+from brisque import BRISQUE
+
+from pickle import load, dump
 
 # import pycg # TODO
 
@@ -46,6 +50,16 @@ GREEN = np.array([0, 128, 0]) / 255.0
 BLUE = np.array([0, 0, 128]) / 255.0
 LIGHTBLUE = np.array([0.00, 0.65, 0.93])
 
+ToGLCamera = np.array([
+    [1,  0,  0,  0],
+    [0,  -1,  0,  0],
+    [0,  0,  -1,  0],
+    [0,  0,  0,  1]
+])
+FromGLGamera = np.linalg.inv(ToGLCamera)
+
+
+os.environ["PYOPENGL_PLATFORM"] = "osmesa"
 
 class SLAM_GUI:
     def __init__(self, params_gui=None):
@@ -93,17 +107,26 @@ class SLAM_GUI:
 
         self.gaussian_nums = []
 
+        self.brisque_scorer = BRISQUE(url=False)
+
         # these are only used for the elliopsoid rendering 
       
         self.g_camera = util.Camera(self.window_h, self.window_w)
         self.window_gl = self.init_glfw() # this has no issue
 
         # TODO: something wrong here with the glfw (just crash) after I use mini-forge
-        # Maybe a pyQT issue
         # exactly this line here
-        # self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)  
 
-        gl.glEnable(gl.GL_TEXTURE_2D)
+        # solution:
+        # os.environ["PYOPENGL_PLATFORM"] = "osmesa"
+        # or set in your conda environment
+        # export PYOPENGL_PLATFORM=osmesa
+        # reference: 
+        # https://github.com/facebookresearch/AnimatedDrawings/issues/99
+
+        self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)  
+
+        # gl.glEnable(gl.GL_TEXTURE_2D)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LEQUAL)
         self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
@@ -298,11 +321,11 @@ class SLAM_GUI:
         vp_subtile1.add_child(gui.Label("Camera follow options"))
         chbox_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         
-        self.followcam_chbox = gui.Checkbox("Follow Camera")
+        self.followcam_chbox = gui.Checkbox("Follow")
         self.followcam_chbox.checked = True
         chbox_tile.add_child(self.followcam_chbox)
 
-        self.staybehind_chbox = gui.Checkbox("From Behind")
+        self.staybehind_chbox = gui.Checkbox("Behind")
         self.staybehind_chbox.checked = True
         chbox_tile.add_child(self.staybehind_chbox)
 
@@ -319,7 +342,7 @@ class SLAM_GUI:
 
         self.combo_cams = gui.Combobox()
         self.combo_cams.set_on_selection_changed(self._on_combo_cams)
-        combo_tile.add_child(gui.Label("Current cameras"))
+        combo_tile.add_child(gui.Label("Cur. cameras"))
         combo_tile.add_child(self.combo_cams)
         vp_subtile2.add_child(combo_tile)
 
@@ -334,6 +357,10 @@ class SLAM_GUI:
         ##Combo panels for preset views # TODO
         combo_tile3 = gui.Vert(0.5 * em, gui.Margins(margin))
         self.combo_preset_cams = gui.Combobox()
+
+        for i in range(10):
+            self.combo_preset_cams.add_item(str(i))
+
         # self.combo_preset_cams.set_on_selection_changed(self._on_combo_preset_cams) 
         combo_tile3.add_child(gui.Label("Preset views"))
         combo_tile3.add_child(self.combo_preset_cams)
@@ -344,11 +371,23 @@ class SLAM_GUI:
             self._on_reset_view_btn
         )  # set the callback function
 
+        self.save_view_btn = gui.Button("Save")
+        self.save_view_btn.set_on_clicked(
+            self._on_save_view_btn
+        )  # set the callback function
+
+        self.load_view_btn = gui.Button("Load")
+        self.load_view_btn.set_on_clicked(
+            self._on_load_view_btn
+        )  # set the callback function
+
         viewpoint_tile.add_child(vp_subtile1)
         viewpoint_tile.add_child(vp_subtile2)
         viewpoint_tile.add_child(vp_subtile3)
         viewpoint_tile.add_child(vp_subtile4)
         viewpoint_tile.add_child(self.reset_view_btn)
+        viewpoint_tile.add_child(self.save_view_btn)
+        viewpoint_tile.add_child(self.load_view_btn)
         self.panel.add_child(viewpoint_tile)
 
         self.panel.add_child(gui.Label("3D Objects"))
@@ -562,6 +601,9 @@ class SLAM_GUI:
         self.freq_info = gui.Label("Render FPS: ")
         tab_info.add_child(self.freq_info)
 
+        self.brisque_score_info = gui.Label("Current view BRISQUE score: ")
+        tab_info.add_child(self.brisque_score_info)
+
         tabs.add_tab("Info", tab_info)
         self.panel.add_child(tabs)
 
@@ -650,8 +692,8 @@ class SLAM_GUI:
         self.g_renderer.update_gaussian_data(gaus)
         self.g_renderer.sort_and_update(self.g_camera)
         self.g_renderer.set_scale_modifier(self.scaling_slider.double_value)
-        self.g_renderer.set_render_mod(rend_mode)
-        self.g_renderer.update_camera_pose(self.g_camera)
+        self.g_renderer.set_render_mod(rend_mode) #  // > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball, -4 gaussian ball
+        self.g_renderer.update_camera_pose(self.g_camera) 
         self.g_renderer.update_camera_intrin(self.g_camera)
         self.g_renderer.set_render_reso(self.g_camera.w, self.g_camera.h)
 
@@ -741,6 +783,8 @@ class SLAM_GUI:
         frustum = self.frustum_dict[new_val]
         viewpoint = frustum.view_dir
 
+        # look_at(center, eye, up): sets the camera view so that the camera is located at ‘eye’, pointing towards ‘center’, and oriented so that the up vector is ‘up’
+        # both center, eye, up are 3x1 np arrays
         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
     def _on_combo_cams(self, new_val, new_idx):
@@ -953,6 +997,16 @@ class SLAM_GUI:
         self.center_bev()
         self.fly_chbox.checked = False
         self.widget3d.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA_SPHERE)
+    
+    def _on_save_view_btn(self):
+        save_view_file_name = '.saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
+        if self.save_view(save_view_file_name):
+            print("Camera view {} saved".format(self.combo_preset_cams.selected_text))
+    
+    def _on_load_view_btn(self):
+        load_view_file_name = '.saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
+        if self.load_view(load_view_file_name):
+            print("Camera view {} loaded".format(self.combo_preset_cams.selected_text))
 
     def _set_mouse_mode(self, is_on):
         if is_on:
@@ -976,6 +1030,32 @@ class SLAM_GUI:
 
     #         self.gaussian_id_dict[idx] = 0
     #         self.combo_gaussian_id.add_item(str(idx))
+
+    def save_view(self, fname='.saved_view.pkl'):
+        try:
+            model_matrix = np.asarray(self.widget3d.scene.camera.get_model_matrix())
+            extrinsic = model_matrix_to_extrinsic_matrix(model_matrix)
+            height, width = int(self.window.size.height), int(self.widget3d_width)
+            intrinsic = create_camera_intrinsic_from_size(width, height)
+            saved_view = dict(extrinsic=extrinsic, intrinsic=intrinsic, width=width, height=height)
+            with open(fname, 'wb') as pickle_file:
+                dump(saved_view, pickle_file)
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
+    def load_view(self, fname=".saved_view.pkl"):
+        try:
+            with open(fname, 'rb') as pickle_file:
+                saved_view = load(pickle_file)
+            self.widget3d.setup_camera(saved_view['intrinsic'], saved_view['extrinsic'], saved_view['width'], saved_view['height'], self.widget3d.scene.bounding_box)
+            # Looks like the ground plane gets messed up, no idea how to fix
+            return True
+        except Exception as e:
+            print("Can't find file", e)
+            return False
+    
 
     def receive_data(self, q):
         if q is None:
@@ -1491,6 +1571,19 @@ class SLAM_GUI:
         if not self.gs_chbox.checked:
             return None # don't show gs rendering results
 
+        rgb = (
+                (torch.clamp(results["render"], min=0, max=1.0) * 255)
+                .byte()
+                .permute(1, 2, 0)
+                .contiguous()
+                .cpu()
+                .numpy()
+            )
+
+        if self.step % 200 == 0:  # 2 second
+            cur_brisque_score = self.brisque_scorer.score(img=rgb)
+            self.brisque_score_info.text = ("Current view BRISQUE score: {:.3f}".format(cur_brisque_score))
+        
         if self.depth_chbox.checked:
             depth = results["surf_depth"]
             if depth is None:
@@ -1552,12 +1645,14 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.elliopsoid_chbox.checked: # important
+        elif self.elliopsoid_chbox.checked: # important # TODO: try this still
 
-            return None # TODO: currently has some issue
+            # return None # TODO: currently has some issue
 
             if self.gaussian_cur is None:
                 return
+            
+
             glfw.poll_events()
             # gl.glClearColor(0, 0, 0, 1.0)
             gl.glClearColor(1.0, 1.0, 1.0, 0.0)
@@ -1580,6 +1675,14 @@ class SLAM_GUI:
             self.g_camera.target = frustum.center.astype(np.float32)
             self.g_camera.up = frustum.up.astype(np.float32)
 
+            # neural gaussian version
+            self.gaussians_gl.xyz = results["gaussian_xyz"].cpu().numpy()
+            self.gaussians_gl.scale = results["gaussian_scale"].cpu().numpy()
+            self.gaussians_gl.rot = results["gaussian_rot"].cpu().numpy()
+            self.gaussians_gl.opacity = results["gaussian_alpha"].cpu().numpy()
+            gaussians_gl_rgb = results["gaussian_color"].cpu().numpy()
+            self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814
+
             # here all the gaussians in the global map
             # self.gaussians_gl.xyz = self.gaussian_cur.get_xyz.cpu().numpy()
             # self.gaussians_gl.opacity = self.gaussian_cur.get_opacity.cpu().numpy()
@@ -1588,19 +1691,17 @@ class SLAM_GUI:
             # self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
 
             # local map only
-            gaussian_count = self.gaussian_cur.gaussian_xyz.shape[0]
+            # self.gaussians_gl.xyz = self.gaussian_cur.gaussian_xyz.cpu().numpy()
+            # self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy() + 1.0
+            # self.gaussians_gl.scale = self.gaussian_cur.gaussian_scale.cpu().numpy()
+            # self.gaussians_gl.rot = self.gaussian_cur.gaussian_rot.cpu().numpy()
 
-            self.gaussians_gl.xyz = self.gaussian_cur.gaussian_xyz.cpu().numpy()
-            self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy() + 1.0
-            self.gaussians_gl.scale = self.gaussian_cur.gaussian_scale.cpu().numpy()
-            self.gaussians_gl.rot = self.gaussian_cur.gaussian_rot.cpu().numpy()
+            # gaussians_gl_rgb = self.gaussian_cur.gaussian_color.cpu().numpy()
+            # self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814 # C0
 
-            gaussians_gl_rgb = self.gaussian_cur.gaussian_color.cpu().numpy()
-            self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814 # C0
+            # # self.gaussians_gl.sh = self.gaussian_cur.gaussian_color.cpu().numpy()[:, 0, :]
 
-            # self.gaussians_gl.sh = self.gaussian_cur.gaussian_color.cpu().numpy()[:, 0, :]
-
-            self.update_activated_renderer_state(self.gaussians_gl, -3) # -4 as gauss ball, -3 as flat gauss
+            self.update_activated_renderer_state(self.gaussians_gl, -3) # > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball (better fit with Gaussian Surfels), -4 gaussian ball
             self.g_renderer.sort_and_update(self.g_camera)
             width, height = glfw.get_framebuffer_size(self.window_gl)
             self.g_renderer.draw()
@@ -1612,18 +1713,10 @@ class SLAM_GUI:
             render_img = o3d.geometry.Image(img)
             glfw.swap_buffers(self.window_gl)
         else:
-            rgb = (
-                (torch.clamp(results["render"], min=0, max=1.0) * 255)
-                .byte()
-                .permute(1, 2, 0)
-                .contiguous()
-                .cpu()
-                .numpy()
-            )
-
-            # print(rgb)
-
             render_img = o3d.geometry.Image(rgb)
+
+
+
         return render_img
 
     def rasterise(self, current_cam):
@@ -1673,7 +1766,8 @@ class SLAM_GUI:
             render_time = render_toc - render_tic # s
             render_freq = 1.0/render_time
             
-            self.freq_info.text = "Render FPS: {:.1f}".format(render_freq)
+            if self.step % 10 == 0:
+                self.freq_info.text = "Render FPS: {:.1f}".format(render_freq)
         
         return rendering_data
 
@@ -1755,6 +1849,18 @@ def generate_circle(radius=1.0, num_points=100):
     z = np.zeros(num_points)  # Z-coordinates are 0 for a flat circle in XY-plane
     circle_points = np.vstack((x, y, z)).T  # Shape (num_points, 3)
     return circle_points
+
+def model_matrix_to_extrinsic_matrix(model_matrix):
+    return np.linalg.inv(model_matrix @ FromGLGamera)
+
+def create_camera_intrinsic_from_size(width=1024, height=768, hfov=60.0, vfov=60.0):
+    fx = (width / 2.0)  / np.tan(np.radians(hfov)/2)
+    fy = (height / 2.0)  / np.tan(np.radians(vfov)/2)
+    fx = fy # not sure why, but it looks like fx should be governed/limited by fy
+    return np.array(
+        [[fx, 0, width / 2.0],
+         [0, fy, height / 2.0],
+         [0, 0,  1]])
 
 
 if __name__ == "__main__":

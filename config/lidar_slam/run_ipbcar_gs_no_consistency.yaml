@@ -1,5 +1,5 @@
 setting:
-  name: "test_ipbcar_gs"
+  name: "test_ipbcar_gs_without_consistency"
   output_root: "./pings_experiments"
   deskew: True
   deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
@@ -11,20 +11,19 @@ process:
   vox_down_m: 0.1
   dynamic_sdf_ratio_thre: 0.8
 sampler:
-  surface_sample_range_m: 0.3
-  surface_sample_n: 2
+  surface_sample_range_m: 0.5
+  surface_sample_n: 4
   free_sample_begin_ratio: 0.3
-  free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.3 # 0.25
-  search_alpha: 0.5 # 0.8
-  query_nn_k: 6
-  feature_dim: 24 # 32 # not worth further improving this
-  color_feature_dim: 16 # 16
+  voxel_size_m: 0.25 # 0.25
+  search_alpha: 0.8 # 0.8
+  query_nn_k: 6 # 6 # changed
+  feature_dim: 32 # 32 # not worth further improving this
+  color_feature_dim: 32 # 16
   weighted_first: False # not much difference True or False 
 decoder:
-  freeze_after_frame: 30
+  freeze_after_frame: 30 # 30
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
@@ -34,43 +33,45 @@ loss:
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   numerical_grad: False # FIXME
-  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5
+  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
+  pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
 # now test a mapping mode
-tracker:
-  source_vox_down_m: 0.6
-  iter_n: 50
-pgo:
-  map_context: True
-  pgo_freq_frame: 30
-  virtual_side_count: 6
+# tracker:
+#   source_vox_down_m: 0.6
+#   iter_n: 50
+# pgo:
+#   map_context: True
+#   pgo_freq_frame: 30
+#   virtual_side_count: 6
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
-  gs_iters: 100 # 50 # 100
+  gs_iters: 200 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
-  long_term_train_down: True
+  long_term_train_down: False
   short_term_train_prob: 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  gs_keyframe_accu_dist: 1.0 # unit: m
+  gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
   inverse_depth_loss: False
-  lambda_depth: 0.02 # 20.0 # decrease this , it's not useful ... depth rendering
-  lambda_opacity: 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_depth: 0.01 # 0.02
+  # inverse_depth_loss: True
+  # lambda_depth: 1.0 # 10.0
+  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  lambda_invalid_opacity: 1e-2
-  lambda_area: 1e-3 # 1e-3
-  lambda_normal_depth: 0.01
+  # lambda_invalid_opacity: 1e-3 # TODO
+  lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
-  lambda_sdf_cons: 0.1
-  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
+  # lambda_normal_depth: 0.01 #
+  # lambda_sdf_cons: 0.05
+  # lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
@@ -78,9 +79,10 @@ optimizer: # mapper
   batch_size: 8192
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr
+  learning_rate_exposure: 1e-3 # or 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 10
+  mesh_min_nn: 12
   visualizer_split_width_ratio: 0.6
