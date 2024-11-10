@@ -520,21 +520,25 @@ class SLAM_GUI:
         # mode 1
         self.neuralpoint_geofeature_chbox = gui.Checkbox("Geometric Feature")
         self.neuralpoint_geofeature_chbox.checked = (self.neural_point_color_default_mode==1)
+        self.neuralpoint_geofeature_chbox.set_on_checked(self._on_neuralpoint_geofeature_chbox)
         chbox_tile_neuralpoint.add_child(self.neuralpoint_geofeature_chbox)
 
         # mode 2
         self.neuralpoint_colorfeature_chbox = gui.Checkbox("Photometric Feature")
         self.neuralpoint_colorfeature_chbox.checked = (self.neural_point_color_default_mode==2)
+        self.neuralpoint_colorfeature_chbox.set_on_checked(self._on_neuralpoint_colorfeature_chbox)
         chbox_tile_neuralpoint.add_child(self.neuralpoint_colorfeature_chbox)
 
         # mode 3
         self.neuralpoint_ts_chbox = gui.Checkbox("Timestep")
         self.neuralpoint_ts_chbox.checked = (self.neural_point_color_default_mode==3)
+        self.neuralpoint_ts_chbox.set_on_checked(self._on_neuralpoint_ts_chbox)
         chbox_tile_neuralpoint.add_child(self.neuralpoint_ts_chbox)
 
         # mode 4
         self.neuralpoint_stability_chbox = gui.Checkbox("Stability")
         self.neuralpoint_stability_chbox.checked = (self.neural_point_color_default_mode==4)
+        self.neuralpoint_stability_chbox.set_on_checked(self._on_neuralpoint_stability_chbox)
         chbox_tile_neuralpoint.add_child(self.neuralpoint_stability_chbox)
 
         self.panel.add_child(chbox_tile_neuralpoint)
@@ -940,6 +944,7 @@ class SLAM_GUI:
         else:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
 
+    # only one can be selected at the same time
     def _on_elliopsoid_chbox(self, is_checked):
         if is_checked:
             self.depth_chbox.checked = False
@@ -974,6 +979,30 @@ class SLAM_GUI:
             self.normal_chbox.checked = False
             self.d2n_chbox.checked = False
             self.depth_chbox.checked = False
+
+    def _on_neuralpoint_geofeature_chbox(self, is_checked):
+        if is_checked:
+            self.neuralpoint_colorfeature_chbox.checked = False
+            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_ts_chbox.checked = False
+
+    def _on_neuralpoint_colorfeature_chbox(self, is_checked):
+        if is_checked:
+            self.neuralpoint_geofeature_chbox.checked = False
+            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_ts_chbox.checked = False
+
+    def _on_neuralpoint_ts_chbox(self, is_checked):
+        if is_checked:
+            self.neuralpoint_geofeature_chbox.checked = False
+            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_colorfeature_chbox.checked = False
+
+    def _on_neuralpoint_stability_chbox(self, is_checked):
+        if is_checked:
+            self.neuralpoint_geofeature_chbox.checked = False
+            self.neuralpoint_ts_chbox.checked = False
+            self.neuralpoint_colorfeature_chbox.checked = False
 
     def _on_sky_chbox(self, is_checked):
         self.widget3d.scene.show_skybox(is_checked)

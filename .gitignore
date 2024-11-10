@@ -188,5 +188,9 @@ screenshots
 *pkl
 
 # experiment scripts
-run_exp.sh
 *exp.sh
+*test.sh
+*eval.sh
+*train.sh
+*val.sh
+*run.sh
