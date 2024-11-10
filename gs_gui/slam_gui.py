@@ -1777,12 +1777,19 @@ class SLAM_GUI:
 
             # neural gaussian version
             self.gaussians_gl.xyz = results["gaussian_xyz"].cpu().numpy()
-            self.gaussians_gl.scale = results["gaussian_scale"].cpu().numpy()
+
+            gaussian_scale = results["gaussian_scale"]
+            if self.config.gs_type == "2d_gs":
+                thin_dim_scale = torch.full((gaussian_scale.shape[0], 1), 1e-7).to(gaussian_scale) # already after activation, last dim, very thin
+                gaussian_scale = torch.cat((gaussian_scale, thin_dim_scale), dim=1) # NK, 3
+
+            self.gaussians_gl.scale = gaussian_scale.cpu().numpy()
             self.gaussians_gl.rot = results["gaussian_rot"].cpu().numpy()
             self.gaussians_gl.opacity = results["gaussian_alpha"].cpu().numpy()
             gaussians_gl_rgb = results["gaussian_color"].cpu().numpy()
             self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814
 
+            # TODO
             # here all the gaussians in the global map
             # self.gaussians_gl.xyz = self.gaussian_cur.get_xyz.cpu().numpy()
             # self.gaussians_gl.opacity = self.gaussian_cur.get_opacity.cpu().numpy()

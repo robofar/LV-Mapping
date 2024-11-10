@@ -53,7 +53,8 @@ def render(viewpoint_camera: CamImage,
            front_only_on: bool = True,
            d2n_on: bool = False,
            gs_type: str = "gaussian_surfel",
-           min_alpha: float = 1e-2):
+           use_median_depth: bool = False,
+           min_alpha: float = 1e-3):
 
     """
     Render the scene. 
@@ -302,6 +303,9 @@ def render(viewpoint_camera: CamImage,
         # additional regularizations
         rendered_alpha = allmap[1:2]
 
+        rendered_alpha_detached = rendered_alpha.detach()
+        mask_vis = (rendered_alpha_detached > min_alpha)
+
         # get normal map
         # transform normal from view space to world space
         # this is the normal of the gaussian at the rendered surface
@@ -310,7 +314,7 @@ def render(viewpoint_camera: CamImage,
         # rendered_normal = rendered_normal / rendered_alpha
         rendered_normal = torch.nan_to_num(rendered_normal, 0, 0) 
 
-        rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
+        # rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
 
         # not the same, but why?
         # print(rendered_normal_norm)
@@ -322,25 +326,21 @@ def render(viewpoint_camera: CamImage,
 
         # get expected depth map
         rendered_depth_expected = allmap[0:1] # this is normalized depth
-        
-        rendered_depth_expected = rendered_depth_expected / rendered_alpha.detach() # alpha normalized alpha blending of the gaussian depth (camera to ray-splat intersection)
         rendered_depth_expected = torch.nan_to_num(rendered_depth_expected, 0, 0)
+        rendered_depth_expected[mask_vis] /= rendered_alpha_detached[mask_vis] # alpha normalized alpha blending of the gaussian depth (camera to ray-splat intersection)
         
-        # get depth distortion map (this is depth distortion instead of depth) (something like distortion?)
-        rendered_dist = allmap[6:7]
-
-        # print(render_dist)
-
         # pseudo surface attributes
         # surf depth is either median or expected by setting depth_ratio to 1 or 0
         # for bounded scene, use median depth, i.e., depth_ratio = 1; 
         # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
-
         # depth_ratio = 0 # unbounded scene, in this case, just rendered_depth_expected (mean)
         # # depth_ratio = 1 # bounded scene, in this case, just rendered_depth_median
         # surf_depth = rendered_depth_expected * (1-depth_ratio) + (depth_ratio) * rendered_depth_median
         
-        surf_depth = rendered_depth_expected
+        if use_median_depth:
+            surf_depth = rendered_depth_median
+        else:
+            surf_depth = rendered_depth_expected # alpha blending depth
 
         # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.
         # surf_normal = depth_to_normal(viewpoint_camera, surf_depth)
@@ -348,21 +348,23 @@ def render(viewpoint_camera: CamImage,
         # remember to multiply with accum_alpha since render_normal is unnormalized.
         # surf_normal = surf_normal * (render_alpha).detach()  # pointing toward the surface
 
-        mask_vis = (rendered_alpha.detach() > min_alpha)
-        d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera) # normal computed from rendered depth # in camera frame
+        d2n = None
+        if d2n_on:
+            d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # in camera frame
+            d2n = d2n * rendered_alpha_detached
 
         # does not look good here
         # d2n = depth_to_normal(viewpoint_camera, surf_depth) # in world frame # why use this, there's not much difference
         # d2n = (d2n.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3])).permute(2,0,1) # back to camera frame
 
-        d2n = d2n * rendered_alpha.detach() # 
-        # d2n = None 
+        # get depth distortion map (this is depth distortion instead of depth)
+        ray_distortion = allmap[6:7]
 
         # rendered result
         results.update({
             'rend_alpha': rendered_alpha,
             'rend_normal': rendered_normal,
-            'rend_dist': rendered_dist, # distortion
+            'rend_dist': ray_distortion, # distortion
             'surf_depth': surf_depth, # rendered depth
             'surf_normal': d2n, # normal calemoculated from rendered depth # in cam frame
             "viewspace_points": means2D,
@@ -397,7 +399,8 @@ def render(viewpoint_camera: CamImage,
 
         # d2n = None
 
-        mask_vis = (rendered_alpha.detach() > min_alpha)
+        rendered_alpha_detached = rendered_alpha.detach()
+        mask_vis = (rendered_alpha_detached > min_alpha)
 
         # d2n = depth_to_normal(viewpoint_camera, rendered_depth, in_cam_frame=True) # in cam frame
 
@@ -406,7 +409,7 @@ def render(viewpoint_camera: CamImage,
         d2n = None
         if d2n_on:
             d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
-            d2n = d2n * rendered_alpha.detach()
+            d2n = d2n * rendered_alpha_detached
         
         # depth normalization by accumulated alpha is already fone inside the cuda code 
         rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
@@ -437,14 +440,17 @@ def render(viewpoint_camera: CamImage,
             scales = scales,
             rotations = rotations)
 
+
+        rendered_alpha_detached = rendered_alpha.detach()
+        mask_vis = (rendered_alpha_detached > min_alpha)
+        
         # normalized the depth
-        mask_vis = (rendered_alpha.detach() > min_alpha)
-        rendered_depth[mask_vis] /= rendered_alpha[mask_vis]
+        rendered_depth[mask_vis] /= rendered_alpha_detached[mask_vis]
 
         d2n = None
         if d2n_on:
             d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
-            d2n = d2n * rendered_alpha.detach()
+            d2n = d2n * rendered_alpha_detached
 
         results.update({
             "rend_normal": None, 
