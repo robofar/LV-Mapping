@@ -1139,7 +1139,7 @@ class Mapper:
                     front_only_on=self.config.train_front_only,
                     d2n_on=(self.config.lambda_normal_depth_consist > 0.0),
                     gs_type=self.config.gs_type,
-                    min_alpha=self.config.min_alpha) # render gaussians  # FIXME: front only
+                    ) # render gaussians  # FIXME: front only
 
                 if render_pkg is None:
                     continue
@@ -1249,6 +1249,8 @@ class Mapper:
                 valid_depth_mask = None
                 if rendered_depth is not None and gt_depth_image is not None and self.config.lambda_depth > 0:
                     valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
+                    if rendered_alpha is not None:
+                        valid_depth_mask = valid_depth_mask & (rendered_alpha > self.config.depth_min_accu_alpha)
                     gt_depth_image = gt_depth_image[valid_depth_mask]
                     # print(gt_depth_image)
                     rendered_depth_valid = rendered_depth[valid_depth_mask]
@@ -1270,9 +1272,10 @@ class Mapper:
                 # Regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
                 # if valid_depth_mask is not None:
-                #     rendered_normal = rendered_normal[:, valid_depth_mask]
-                #     depth_normal = depth_normal[:, valid_depth_mask]
-                #     dist_distortion = dist_distortion[:, valid_depth_mask]    
+                #     if rendered_normal is not None:
+                #         rendered_normal = rendered_normal[:, valid_depth_mask]
+                #     if depth_normal is not None:
+                #         depth_normal = depth_normal[:, valid_depth_mask]
 
                 if rendered_normal is not None:
                     rendered_normal_norm = rendered_normal.norm(2, dim=0).detach()
@@ -1677,7 +1680,7 @@ class Mapper:
                     correct_exposure=self.config.exposure_correction_on, 
                     front_only_on=self.config.train_front_only,
                     gs_type=self.config.gs_type,
-                    min_alpha=self.config.min_alpha) # render gaussians 
+                    ) # render gaussians 
 
                 # T3 = get_time()
 
@@ -2014,8 +2017,7 @@ class Mapper:
                             correct_exposure=self.config.exposure_correction_on, 
                             learn_color_residual=self.config.learn_color_residual,
                             front_only_on=self.config.train_front_only,
-                            gs_type=self.config.gs_type,
-                            min_alpha=self.config.min_alpha)
+                            gs_type=self.config.gs_type,)
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -2062,6 +2064,12 @@ class Mapper:
                             eval_depth_min = self.config.min_range
                             gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
                             depth_valid_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
+                            
+                            accu_alpha_mask = None
+                            if render_pkg["rend_alpha"] is not None:
+                                accu_alpha_mask = render_pkg["rend_alpha"] > self.config.depth_min_accu_alpha
+                                depth_valid_mask = depth_valid_mask
+                                            
                             diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
                             # diff_depth[~depth_valid_mask] = 0.0
                             diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
@@ -2076,6 +2084,9 @@ class Mapper:
 
                                 rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).detach().contiguous().cpu().numpy().astype(np.uint8) 
                                 rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
+                                
+                                if accu_alpha_mask is not None:
+                                    rendered_depth[~accu_alpha_mask] = 0.0
 
                                 rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
                                 rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
@@ -2192,7 +2203,7 @@ class Mapper:
             train_cd_np = np.mean(np.array(self.train_cd_list))
             train_f1_np = np.mean(np.array(self.train_f1_list))
             print("Average train frame CD (m) ↓ :", f"{train_cd_np:.3f}")
-            print("Average train frame F1 (%) ↓ :", f"{train_f1_np:.3f}")
+            print("Average train frame F1 (%) ↑ :", f"{train_f1_np:.3f}")
 
         test_psnr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
 
@@ -2314,8 +2325,7 @@ class Mapper:
                 correct_exposure=self.config.exposure_correction_on, 
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=self.config.train_front_only,
-                gs_type=self.config.gs_type,
-                min_alpha=self.config.min_alpha)
+                gs_type=self.config.gs_type)
 
 
             # render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 

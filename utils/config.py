@@ -286,6 +286,7 @@ class Config:
         self.learn_color_residual: bool = False
 
         self.min_alpha: float = 0.01
+        self.depth_min_accu_alpha: float = 0.5
 
         # these are deprecated
         # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
@@ -684,7 +685,9 @@ class Config:
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
 
-            self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha)
+            self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha) # this is the per-gaussian alpha
+            self.depth_min_accu_alpha = config_args["gs"].get("depth_min_accu_alpha", self.depth_min_accu_alpha) # this is the rendered accumulated alpha for valid depth
+
 
             # deprecated
             # self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))

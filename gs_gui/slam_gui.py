@@ -576,6 +576,13 @@ class SLAM_GUI:
         self.elliopsoid_chbox.set_on_checked(self._on_elliopsoid_chbox)
         chbox_tile_gsrender.add_child(self.elliopsoid_chbox)
 
+        self.elliopsoid_2d_chbox = gui.Checkbox("Surfel mode")
+        if self.config.gs_type == "3d_gs":
+            self.elliopsoid_2d_chbox.checked = False
+        else:
+            self.elliopsoid_2d_chbox.checked = True
+        chbox_tile_gsrender.add_child(self.elliopsoid_2d_chbox)
+
         self.normal_in_world_chbox = gui.Checkbox("Normal in world")
         self.normal_in_world_chbox.checked = True
         chbox_tile_gsrender.add_child(self.normal_in_world_chbox)
@@ -1481,8 +1488,8 @@ class SLAM_GUI:
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=(not self.backface_chbox.checked),
                     d2n_on=False,
-                    gs_type=self.config.gs_type,
-                    min_alpha=self.config.min_alpha)
+                    gs_type=self.config.gs_type)
+                    
 
             if render_results is not None:
                 
@@ -1510,6 +1517,9 @@ class SLAM_GUI:
                 if rendered_depth is not None and cur_gt_depth is not None:
                     
                     depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
+                    if render_results["rend_alpha"] is not None:
+                        depth_valid_mask = depth_valid_mask & (render_results["rend_alpha"] > self.config.depth_min_accu_alpha)
+
                     diff_depth = torch.abs(rendered_depth - cur_gt_depth)
                     diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                     cur_depthl1 = np.mean(diff_depth_masked)
@@ -1667,6 +1677,10 @@ class SLAM_GUI:
             depth = results["surf_depth"]
             if depth is None:
                 return None # don't show gs rendering results
+            
+            if results["rend_alpha"] is not None:
+                valid_depth_mask = (results["rend_alpha"] > self.config.depth_min_accu_alpha)
+                depth[~valid_depth_mask] = 0.0
 
             depth = depth.detach().cpu().numpy()
             # max_depth = np.max(depth)
@@ -1787,7 +1801,12 @@ class SLAM_GUI:
 
             # # self.gaussians_gl.sh = self.gaussian_cur.gaussian_color.cpu().numpy()[:, 0, :]
 
-            self.update_activated_renderer_state(self.gaussians_gl, -3) # > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball (better fit with Gaussian Surfels), -4 gaussian ball
+            if self.elliopsoid_2d_chbox.checked:
+                render_mode = -3 # 2D surfel
+            else:
+                render_mode = -4 # 3D elliopsoid
+
+            self.update_activated_renderer_state(self.gaussians_gl, render_mode) # > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball (better fit with Gaussian Surfels), -4 gaussian ball
             self.g_renderer.sort_and_update(self.g_camera)
             width, height = glfw.get_framebuffer_size(self.window_gl)
             self.g_renderer.draw()
@@ -1798,6 +1817,7 @@ class SLAM_GUI:
             img = cv2.flip(img, 0)
             render_img = o3d.geometry.Image(img)
             glfw.swap_buffers(self.window_gl)
+        
         else:
             render_img = o3d.geometry.Image(rgb)
 
@@ -1835,8 +1855,7 @@ class SLAM_GUI:
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=(not self.backface_chbox.checked),
                 d2n_on=self.d2n_chbox.checked,
-                gs_type=self.config.gs_type,
-                min_alpha=self.config.min_alpha)
+                gs_type=self.config.gs_type)
             
             render_toc = get_time()
 

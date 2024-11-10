@@ -53,7 +53,7 @@ def render(viewpoint_camera: CamImage,
            front_only_on: bool = True,
            d2n_on: bool = False,
            gs_type: str = "gaussian_surfel",
-           min_alpha: float = 0.001):
+           min_alpha: float = 1e-2):
 
     """
     Render the scene. 
@@ -173,6 +173,7 @@ def render(viewpoint_camera: CamImage,
             scale_modifier=scaling_modifier,
             viewmatrix=viewpoint_camera.world_view_transform,
             projmatrix=viewpoint_camera.full_proj_transform,
+            projmatrix_raw=viewpoint_camera.projection_matrix,
             sh_degree=active_sh_degree,
             campos=viewpoint_camera.camera_center,
             prefiltered=False,
@@ -396,7 +397,6 @@ def render(viewpoint_camera: CamImage,
 
         # d2n = None
 
-        # mask_vis = (rendered_alpha.detach() > 1e-3) # original one
         mask_vis = (rendered_alpha.detach() > min_alpha)
 
         # d2n = depth_to_normal(viewpoint_camera, rendered_depth, in_cam_frame=True) # in cam frame
@@ -408,6 +408,7 @@ def render(viewpoint_camera: CamImage,
             d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
             d2n = d2n * rendered_alpha.detach()
         
+        # depth normalization by accumulated alpha is already fone inside the cuda code 
         rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
 
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
@@ -428,21 +429,28 @@ def render(viewpoint_camera: CamImage,
     elif gs_type == "3d_gs":
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-        rendered_image, radii, rendered_depth = rasterizer(
+        rendered_image, radii, rendered_depth, rendered_alpha, n_touched = rasterizer(
             means3D = means3D,
             means2D = means2D,
             colors_precomp = colors,
             opacities = opacity,
             scales = scales,
             rotations = rotations)
-        
-        # TODO: add d2n
+
+        # normalized the depth
+        mask_vis = (rendered_alpha.detach() > min_alpha)
+        rendered_depth[mask_vis] /= rendered_alpha[mask_vis]
+
+        d2n = None
+        if d2n_on:
+            d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
+            d2n = d2n * rendered_alpha.detach()
 
         results.update({
             "rend_normal": None, 
             "surf_depth": rendered_depth,
-            "rend_alpha": None, 
-            'surf_normal': None, 
+            "rend_alpha": rendered_alpha, 
+            'surf_normal': d2n, 
             'rend_dist': None,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,

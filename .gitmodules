@@ -3,13 +3,16 @@
 	url = https://github.com/hbb1/diff-surfel-rasterization
 [submodule "submodules/diff-gaussian-surfel-rasterization"]
 	path = submodules/diff-gaussian-surfel-rasterization
-	url = https://github.com/YuePanEdward/diff-gaussian-surfel-rasterization.git
+	url = https://github.com/YuePanEdward/diff-gaussian-surfel-rasterization
 [submodule "submodules/diff-gaussian-rasterization"]
 	path = submodules/diff-gaussian-rasterization
-	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization.git
+	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization
 [submodule "submodules/depth-diff-gaussian-rasterization"]
 	path = submodules/depth-diff-gaussian-rasterization
 	url = https://github.com/ingra14m/depth-diff-gaussian-rasterization
+[submodule "submodules/diff-gaussian-rasterization-w-pose"]
+	path = submodules/diff-gaussian-rasterization-w-pose
+	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose
 [submodule "submodules/fused-ssim"]
 	path = submodules/fused-ssim
 	url = https://github.com/rahul-goel/fused-ssim

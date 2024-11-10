@@ -211,7 +211,7 @@ def inspect_pings_map():
 
     if args.eval_seq:
         poses_for_render = dataset.gt_poses # need to guarantee gt_poses exist
-        print("Evaluate the map built by the experiment {}".format(experiment_path.split("/")[-1]))
+        print("Evaluate the map built by the experiment {}".format(experiment_path))
     else:
         poses_for_render = poses_used
 
@@ -257,8 +257,9 @@ def inspect_pings_map():
             if args.range is not None:
                 frame_begin, frame_end, frame_step = args.range
                 poses_for_render_show = poses_for_render[frame_begin:frame_end]
-            
-            packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
+                packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
+            else:
+                packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render))
 
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
             
@@ -287,7 +288,9 @@ def inspect_pings_map():
     if not args.vis_off:
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
-        packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render))    
+        packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render))
+        if cur_mesh is not None:
+            packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))    
         q_main2vis.put(packet_to_vis)
 
         while True:
@@ -486,11 +489,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 correct_exposure=config.exposure_correction_on, 
                 learn_color_residual=config.learn_color_residual,
                 front_only_on=config.train_front_only,
-                gs_type=config.gs_type,
-                min_alpha=config.min_alpha)
+                gs_type=config.gs_type)
             
             # rendered results
-            rendered_rgb_image, rendered_depth, rendered_normal = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"] # 3, H, W / 1, H, W
+            rendered_rgb_image, rendered_depth, rendered_normal, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
             
             # rgb 
             rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
@@ -498,8 +500,15 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             if save_video_on:
                 rendered_rgb_cam_dict[cur_cam_name].append(rendered_rgb_np)
 
+            alpha_mask = None
+            if rendered_alpha is not None:
+                alpha_mask = rendered_alpha > config.depth_min_accu_alpha
+
             # depth
             if rendered_depth is not None:
+                if alpha_mask is not None:
+                    rendered_depth[~alpha_mask] = 0.0
+                    
                 color_map_used = "inferno_r"
                 rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
                 rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
