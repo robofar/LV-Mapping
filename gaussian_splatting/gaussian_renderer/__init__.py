@@ -388,23 +388,12 @@ def render(viewpoint_camera: CamImage,
         
         # rendered_depth is normalized by (alpha_blending depth / rendered opacity 1-T)
         # but rendered_normal is not normalized ?
-        
         # rendered_normal = rendered_normal / rendered_alpha # don't do this, we can just use the unnormalized version
-
         # rendered_normal_norm = rendered_normal.norm(2, dim=0)  # 3, H, W
-
-        # print(rendered_normal_norm) # why is this not 1?, how is it calculated
-
         # print(rendered_alpha)
-
-        # d2n = None
 
         rendered_alpha_detached = rendered_alpha.detach()
         mask_vis = (rendered_alpha_detached > min_alpha)
-
-        # d2n = depth_to_normal(viewpoint_camera, rendered_depth, in_cam_frame=True) # in cam frame
-
-        # this depth2normal function has some problem
 
         d2n = None
         if d2n_on:
@@ -412,7 +401,7 @@ def render(viewpoint_camera: CamImage,
             d2n = d2n * rendered_alpha_detached
         
         # depth normalization by accumulated alpha is already fone inside the cuda code 
-        rendered_depth[~mask_vis] = 0.0 # TODO, add for other rasterizer engine
+        rendered_depth[~mask_vis] = 0.0
 
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
         # toc_d2n = get_time()
@@ -451,6 +440,8 @@ def render(viewpoint_camera: CamImage,
         if d2n_on:
             d2n = depth2normal(rendered_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # pointing inward the surface # in camera frame
             d2n = d2n * rendered_alpha_detached
+
+        rendered_depth[~mask_vis] = 0.0
 
         results.update({
             "rend_normal": None, 
