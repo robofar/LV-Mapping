@@ -109,6 +109,9 @@ class SLAM_GUI:
 
         self.brisque_scorer = BRISQUE(url=False)
 
+        self.view_save_base_path = "~/.viewpoints/"
+        os.makedirs(self.view_save_base_path, 0o755, exist_ok=True)
+
         # these are only used for the elliopsoid rendering 
       
         self.g_camera = util.Camera(self.window_h, self.window_w)
@@ -1085,13 +1088,15 @@ class SLAM_GUI:
         self.widget3d.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA_SPHERE)
     
     def _on_save_view_btn(self):
-        save_view_file_name = '.saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
-        if self.save_view(save_view_file_name):
+        save_view_file_name = 'saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
+        save_view_file_path = os.path.join(self.view_save_base_path, save_view_file_name)
+        if self.save_view(save_view_file_path):
             print("Camera view {} saved".format(self.combo_preset_cams.selected_text))
     
     def _on_load_view_btn(self):
-        load_view_file_name = '.saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
-        if self.load_view(load_view_file_name):
+        load_view_file_name = 'saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
+        load_view_file_path = os.path.join(self.view_save_base_path, load_view_file_name)
+        if self.load_view(load_view_file_path):
             print("Camera view {} loaded".format(self.combo_preset_cams.selected_text))
 
     def _set_mouse_mode(self, is_on):

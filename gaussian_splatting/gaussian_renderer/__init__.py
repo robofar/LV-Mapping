@@ -49,7 +49,7 @@ def render(viewpoint_camera: CamImage,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            correct_exposure: bool = True,
-           learn_color_residual: bool = True,
+           learn_color_residual: bool = False,
            front_only_on: bool = True,
            d2n_on: bool = False,
            gs_type: str = "gaussian_surfel",
@@ -74,7 +74,8 @@ def render(viewpoint_camera: CamImage,
     elif gs_type == "3d_gs":
         from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
     else:
-        print("select from a kind of gs variants")
+        print("wrong gs type selected, use the default one 3d gs")
+        from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 
     # if neural_points.count() == 0: # not yet started
     #     return None
@@ -326,9 +327,9 @@ def render(viewpoint_camera: CamImage,
 
         # get expected depth map
         rendered_depth_expected = allmap[0:1] # this is normalized depth
+        rendered_depth_expected[mask_vis] /= rendered_alpha_detached[mask_vis]
         rendered_depth_expected = torch.nan_to_num(rendered_depth_expected, 0, 0)
-        rendered_depth_expected[mask_vis] /= rendered_alpha_detached[mask_vis] # alpha normalized alpha blending of the gaussian depth (camera to ray-splat intersection)
-        
+
         # pseudo surface attributes
         # surf depth is either median or expected by setting depth_ratio to 1 or 0
         # for bounded scene, use median depth, i.e., depth_ratio = 1; 
@@ -350,7 +351,7 @@ def render(viewpoint_camera: CamImage,
 
         d2n = None
         if d2n_on:
-            d2n = depth2normal(surf_depth, mask_vis, viewpoint_camera, img_scale=img_scale) # in camera frame
+            d2n = depth_to_normal(viewpoint_camera, surf_depth, in_cam_frame=True, img_scale=img_scale) # in camera frame
             d2n = d2n * rendered_alpha_detached
 
         # does not look good here
@@ -358,7 +359,7 @@ def render(viewpoint_camera: CamImage,
         # d2n = (d2n.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3])).permute(2,0,1) # back to camera frame
 
         # get depth distortion map (this is depth distortion instead of depth)
-        ray_distortion = allmap[6:7]
+        # ray_distortion = allmap[6:7]
 
         # rendered result
         results.update({
@@ -394,6 +395,8 @@ def render(viewpoint_camera: CamImage,
 
         rendered_alpha_detached = rendered_alpha.detach()
         mask_vis = (rendered_alpha_detached > min_alpha)
+        
+        # mask_vis = torch.ones_like(rendered_alpha, dtype=torch.bool, device=device)
 
         d2n = None
         if d2n_on:
@@ -401,7 +404,7 @@ def render(viewpoint_camera: CamImage,
             d2n = d2n * rendered_alpha_detached
         
         # depth normalization by accumulated alpha is already fone inside the cuda code 
-        rendered_depth[~mask_vis] = 0.0
+        # rendered_depth[~mask_vis] = 0.0
 
         # # d2n = depth_to_normal(viewpoint_camera, rendered_depth) # in world frame
         # toc_d2n = get_time()

@@ -19,7 +19,6 @@ def depths_to_points(camera, depth, in_cam_frame: bool = False, img_scale: int =
 
     # print(camera.world_view_transform)
     
-
     if in_cam_frame:
         c2w = torch.eye(4).to(camera.full_proj_transform)
     else:
@@ -54,7 +53,7 @@ def depths_to_points(camera, depth, in_cam_frame: bool = False, img_scale: int =
     rays_d = points @ torch.linalg.inv(intrins).T @ c2w[:3,:3].T
     rays_o = c2w[:3,3]
     points = depth.reshape(-1, 1) * rays_d + rays_o
-    # points in world frame
+
     return points
 
 # used by 2D GS

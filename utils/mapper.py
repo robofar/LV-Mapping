@@ -1385,8 +1385,9 @@ class Mapper:
                 #     print(" # Gaussians for 3D losses in current view:", constraint_count) # non-free visible gaussians
 
                 isotropic_loss = area_loss = sdf_consistency_loss = sdf_normal_consistency_loss = 0.0
+                valid_opacity_loss = invalid_opacity_loss = 0.0
 
-                if constraint_count > 0:
+                if constraint_count > 10:
                     true_indices = torch.where(constraint_mask)[0]
                     gaussian_bs = int(self.config.bs * self.config.gaussian_bs_ratio) # TODO
                     sample_bs = min(constraint_count, gaussian_bs)  # Number of indices to sample # infer_bs is a bit too large here, TODO: add to config
@@ -1426,9 +1427,7 @@ class Mapper:
 
                     T4 = get_time()
 
-                    valid_opacity_loss = 0.0
-                    invalid_opacity_loss = 0.0
-
+                    
                     # Gaussian SDF consistency loss
                     if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                         
