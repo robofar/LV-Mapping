@@ -321,7 +321,7 @@ class SLAM_GUI:
         # self.panel.add_child(h)
 
         ##Check boxes
-        vp_subtile1.add_child(gui.Label("Camera follow options"))
+        vp_subtile1.add_child(gui.Label("Camera view options"))
         chbox_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
         
         self.followcam_chbox = gui.Checkbox("Follow")
@@ -357,10 +357,9 @@ class SLAM_GUI:
         combo_tile2.add_child(self.combo_train_cams)
         vp_subtile3.add_child(combo_tile2)
 
-        ##Combo panels for preset views # TODO
+        ##Combo panels for preset views 
         combo_tile3 = gui.Vert(0.5 * em, gui.Margins(margin))
         self.combo_preset_cams = gui.Combobox()
-
         for i in range(10):
             self.combo_preset_cams.add_item(str(i))
 

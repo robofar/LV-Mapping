@@ -1,5 +1,5 @@
 setting:
-  name: "test_ipbcar_gs_ours"
+  name: "test_ipbcar_gs_newours"
   output_root: "./pings_experiments"
   deskew: True
   deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
@@ -53,7 +53,7 @@ gs:
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 4.0 # 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
@@ -69,8 +69,8 @@ gs:
   # lambda_opacity_ent: 1e-3
   lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
-  # consist_normal_fixed: True
-  lambda_normal_depth: 0.01 #
+  consist_normal_fixed: True # NOTE: the changed part, false --> true
+  lambda_normal_depth: 0.01
   lambda_sdf_cons: 0.01 # the weight do not need to be very large
   lambda_sdf_normal_cons: 0.01 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0

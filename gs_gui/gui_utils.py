@@ -364,7 +364,7 @@ class VisPacket:
         # or as torch
         resize_height = int(resize_width * img.shape[1] / img.shape[2])
         # img is 3xHxW
-        if is_sparse:
+        if is_sparse: # check this
             img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(resize_height, resize_width), mode='nearest-exact')
         else:
             img = torch.nn.functional.interpolate(img.unsqueeze(0), size=(resize_height, resize_width), mode="bilinear", align_corners=False)
