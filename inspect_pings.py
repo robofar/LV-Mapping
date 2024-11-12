@@ -232,7 +232,7 @@ def inspect_pings_map():
 
         print("Reconstruct mesh from the SDF")
 
-        down_rate = 31 # prime number
+        down_rate = 17 # prime number
         mesh_vox_size_m = args.mesh_mc_m
         mesh_min_nn_k_used = args.mesh_min_nn_k
         if args.mesh_mc_m < 0:
@@ -242,7 +242,7 @@ def inspect_pings_map():
         
         neural_pcd = neural_points.get_neural_points_o3d(query_global=args.show_global, color_mode=2, random_down_ratio=down_rate)
         mesh_aabb = neural_pcd.get_axis_aligned_bounding_box()
-        chunks_aabb = split_chunks(neural_pcd, mesh_aabb, mesh_vox_size_m*100) 
+        chunks_aabb = split_chunks(neural_pcd, mesh_aabb, mesh_vox_size_m*500) 
         print("Number of chunks for reconstruction:", len(chunks_aabb))
         print("Marching cubes resolution: {:.2f} m".format(mesh_vox_size_m))
 

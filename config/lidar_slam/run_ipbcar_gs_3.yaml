@@ -1,5 +1,5 @@
 setting:
-  name: "test_ipbcar_gs_3dgs"
+  name: "test_ipbcar_gs_better_sdf"
   output_root: "./pings_experiments"
   deskew: True
   deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
@@ -8,10 +8,11 @@ setting:
 process:
   min_range_m: 1.5
   max_range_m: 60.0
-  vox_down_m: 0.08
+  vox_down_m: 0.06
+  dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.4
-  surface_sample_n: 6
+  surface_sample_range_m: 0.25
+  surface_sample_n: 9
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
 neuralpoints:
@@ -26,7 +27,7 @@ decoder:
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
-  sigma_sigmoid_m: 0.05
+  sigma_sigmoid_m: 0.03 # the smaller, we care more about the part very close to the surface
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
@@ -46,13 +47,13 @@ continual:
 #   pgo_freq_frame: 30
 #   virtual_side_count: 6
 gs:
-  gs_type: 3d_gs # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
+  gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
@@ -60,19 +61,18 @@ gs:
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
-  invalid_check_on: False
-  # inverse_depth_loss: False
-  # lambda_depth: 0.01 # 0.02
+  inverse_depth_loss: False
+  lambda_depth: 0.01 # 0.02
   # inverse_depth_loss: True
   # lambda_depth: 1.0 # 10.0
   lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  # lambda_invalid_opacity: 1e-3 # TODO
-  # lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
+  lambda_invalid_opacity: 2e-3 # TODO
+  lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
-  # lambda_normal_depth: 0.01 #
-  # lambda_sdf_cons: 0.05
-  # lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss
+  lambda_normal_depth: 0.01 #
+  lambda_sdf_cons: 0.02 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper

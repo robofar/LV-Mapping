@@ -61,8 +61,8 @@ gs:
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
   invalid_check_on: False
-  inverse_depth_loss: False
-  lambda_depth: 0.01 # 0.02
+  # inverse_depth_loss: False
+  # lambda_depth: 0.01 # 0.02
   # inverse_depth_loss: True
   # lambda_depth: 1.0 # 10.0
   lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians

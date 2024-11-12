@@ -6,8 +6,8 @@ exp_tag=1111_1
 
 # echo "Begin the mapping on 5 IPB car sequences"
 
-python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sgm --range 2030 2180 1 --tag church_${exp_tag}
-python pings.py ./config/lidar_slam/run_ipbcar_gs_2.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sgm --range 2030 2180 1 --tag church_${exp_tag}
+# python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sgm --range 2030 2180 1 --tag church_${exp_tag}
+# python pings.py ./config/lidar_slam/run_ipbcar_gs_2.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sgm --range 2030 2180 1 --tag church_${exp_tag}
 python pings.py ./config/lidar_slam/run_ipbcar_gs_3dgs_cons.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sgm --range 2030 2180 1 --tag church_${exp_tag}
 # # python pings.py ./config/lidar_slam/run_ipbcar_gs_no_consistency.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sg --range 2030 2180 1 --tag church_${exp_tag}
 # python pings.py ./config/lidar_slam/run_ipbcar_gs_3dgs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -sg --range 2030 2180 1 --tag church_${exp_tag}

@@ -1131,6 +1131,7 @@ class Mapper:
                 render_pkg = render(viewpoint_cam, None, neural_points_data, 
                     self.decoders, sorrounding_spawn_results, background, down_rate=train_down_rate, 
                     min_visible_neural_point_ratio=cur_min_visible_neural_point_ratio,
+                    verbose=(not self.silence),
                     replay_mode=is_replay_mode, 
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 

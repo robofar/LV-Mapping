@@ -1004,7 +1004,7 @@ def deskewing(
 
     return points_deskewd
 
-
+# for stop status check
 def tranmat_close_to_identity(mats: np.ndarray, rot_thre: float, tran_thre: float):
 
     rot_diff = np.abs(mats[:3, :3] - np.identity(3))

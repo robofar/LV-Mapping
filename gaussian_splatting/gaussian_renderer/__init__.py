@@ -207,7 +207,7 @@ def render(viewpoint_camera: CamImage,
 
         # print("# Local neural points: {:d}, # Visible: {:d}".format(neural_point_count, visible_neural_point_count))
 
-        visible_neural_point_ratio = visible_neural_point_count / neural_point_count
+        visible_neural_point_ratio = 1.0 * visible_neural_point_count / neural_point_count
 
         if visible_neural_point_ratio < min_visible_neural_point_ratio and replay_mode: # is 0.05 too small?
             if verbose:
