@@ -204,6 +204,14 @@ class Config:
         self.lr_exposure: float = 0.001
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
         self.lr_ba_map: float = 0.01 # learning rate for map during bundle adjustment
+        
+        # for the mlps of the gaussian parameters (not very crucial)
+        self.lr_mlp_gs_xyz = 1e-3
+        self.lr_mlp_gs_scale = 1e-3
+        self.lr_mlp_gs_rot = 1e-3
+        self.lr_mlp_gs_alpha = 1e-3
+        self.lr_mlp_gs_color = 1e-2 # better to be larger, like 1e-2
+        
         self.weight_decay: float = 0.0 # weight_decay is only applied to the latent codes for the l2 regularization
         self.adam_eps: float = 1e-15
         self.adaptive_iters: bool = False # adptive map optimization iterations on (train for fewer iterations when there's not much new information to learn)
@@ -254,8 +262,14 @@ class Config:
         self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
         self.gs_vis_down_rate: int = 0 # for the visualization
         self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
-        self.movable_gs: bool = True # allow the gaussians' position to be optimized or not
+        self.movable_gs: bool = True # allow the gaussians' position to be optimized or not (deprecated)
+
+        # for gaussian spawning, the unit length is the neural point resolution
+        self.displacement_range_ratio: float = 1.0 # 2.0
+        self.max_scale_ratio: float = 1.0 # 2.0
+        self.unit_scale_ratio: float = 0.2 # 0.5
         
+        # disable backface rendering
         self.train_front_only: bool = True
 
         self.min_visible_neural_point_ratio: float = 0.15 # only train when the visible local neural point in this frame is larger than this threshold

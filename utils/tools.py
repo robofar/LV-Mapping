@@ -149,7 +149,6 @@ def setup_optimizer(
     mlp_gs_color_param=None,
     cams=None,
     poses=None,
-    lr_ratio=1.0,
 ) -> Optimizer:
     
     """
@@ -190,19 +189,12 @@ def setup_optimizer(
             "name": "sem_mlp_param",
         }
         opt_setting.append(mlp_sem_param_opt_dict)
-    
-    # TODO: add to config
-    lr_mlp_gs_xyz = 1e-3
-    lr_mlp_gs_scale = 1e-3
-    lr_mlp_gs_rot = 1e-3
-    lr_mlp_gs_alpha = 1e-3
-    lr_mlp_gs_color = 1e-2 # better to be larger, like 1e-2 # FIXME
 
     if config.gs_on:
         if mlp_gs_xyz_param is not None:
             mlp_gs_xyz_param_opt_dict = {
                 "params": mlp_gs_xyz_param,
-                "lr": lr_mlp_gs_xyz,
+                "lr": config.lr_mlp_gs_xyz,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_xyz_mlp_param",
             }
@@ -210,7 +202,7 @@ def setup_optimizer(
         if mlp_gs_scale_param is not None:
             mlp_gs_scale_param_opt_dict = {
                 "params": mlp_gs_scale_param,
-                "lr": lr_mlp_gs_scale,
+                "lr": config.lr_mlp_gs_scale,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_scale_mlp_param",
             }
@@ -218,7 +210,7 @@ def setup_optimizer(
         if mlp_gs_rot_param is not None:
             mlp_gs_rot_param_opt_dict = {
                 "params": mlp_gs_rot_param,
-                "lr": lr_mlp_gs_rot,
+                "lr": config.lr_mlp_gs_rot,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_rot_mlp_param",
             }
@@ -226,7 +218,7 @@ def setup_optimizer(
         if mlp_gs_alpha_param is not None:
             mlp_gs_alpha_param_opt_dict = {
                 "params": mlp_gs_alpha_param,
-                "lr": lr_mlp_gs_alpha,
+                "lr": config.lr_mlp_gs_alpha,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_xyz_alpha_param",
             }
@@ -234,7 +226,7 @@ def setup_optimizer(
         if mlp_gs_color_param is not None:
             mlp_gs_color_param_opt_dict = {
                 "params": mlp_gs_color_param,
-                "lr": lr_mlp_gs_color,
+                "lr": config.lr_mlp_gs_color,
                 "weight_decay": weight_decay_mlp,
                 "name": "gs_color_mlp_param",
             }
@@ -261,9 +253,6 @@ def setup_optimizer(
                 }
             )
 
-    # lr_cur_feature = 5e-3 # too small then it does not work for color decoder? # 1e-3 is not good
-    # lr_cur_feature = 0.01 # we need it to converge fast (also more prune to forget)
-
     weight_decay_feature = 0.0
 
     if neural_point_geo_feat is not None:
@@ -285,12 +274,11 @@ def setup_optimizer(
         opt_setting.append(color_feat_opt_dict)
 
     if config.opt_adam:
-        opt = optim.Adam(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps)
+        opt = optim.Adam(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps) # 1e-15
     else:
         opt = optim.SGD(opt_setting, momentum=0.9)
 
     return opt
-
 
 # set up weight and bias
 def setup_wandb():

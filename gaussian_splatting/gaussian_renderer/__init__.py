@@ -54,7 +54,12 @@ def render(viewpoint_camera: CamImage,
            d2n_on: bool = False,
            gs_type: str = "gaussian_surfel",
            use_median_depth: bool = False,
-           min_alpha: float = 1e-3):
+           min_alpha: float = 1e-3,
+           # for spawning, the unit is the neural point resolution
+           displacement_range_ratio: float = 1.0, # 2.0
+           max_scale_ratio: float = 1.0, # 2.0
+           unit_scale_ratio: float = 0.2, # 0.5
+           ):
 
     """
     Render the scene. 
@@ -221,9 +226,15 @@ def render(viewpoint_camera: CamImage,
 
         # Spawn Gaussians
         spawn_results = spawn_gaussians(neural_points_data,
-            decoders, visible_neural_point_mask, viewpoint_camera.camera_center, 
+            decoders, visible_neural_point_mask,
+            viewpoint_camera.camera_center, 
             dist_concat_on, view_concat_on, 
-            z_far=z_far, learn_color_residual=learn_color_residual, gs_type=gs_type)
+            z_far=z_far, 
+            learn_color_residual=learn_color_residual, 
+            gs_type=gs_type,
+            displacement_range_ratio=displacement_range_ratio,
+            max_scale_ratio=max_scale_ratio,
+            unit_scale_ratio=unit_scale_ratio)
 
         if spawn_results is None: # in the case when there's no visible neural points in current FOV
             gaussian_xyz = torch.empty((0, 3), dtype=dtype, device=device)
@@ -489,7 +500,11 @@ def spawn_gaussians(neural_points_data: Dict,
                     dist_adaptive_scale: bool = False,
                     learn_color_residual: bool = True,
                     view_direction_xy_only: bool = True,
-                    gs_type: str = "gaussian_surfel"): 
+                    gs_type: str = "gaussian_surfel",
+                    displacement_range_ratio: float = 1.0, # 2.0
+                    max_scale_ratio: float = 1.0, # 2.0
+                    unit_scale_ratio: float = 0.2, # 0.5
+                    ): 
 
     neural_point_position = neural_points_data["position"]
     neural_point_orientation = neural_points_data["orientation"] # as quat
@@ -569,9 +584,9 @@ def spawn_gaussians(neural_points_data: Dict,
 
     # TODO: how to set the displacement limit
 
-    displacement_range = 2.0 * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position) # 1.0 might be too small maybe
+    displacement_range = displacement_range_ratio * neural_point_resolution * torch.ones((neural_point_count, 1)).to(neural_point_position) # 1.0 might be too small maybe
     if neural_point_free_mask is not None:
-        displacement_range[neural_point_free_mask] = 5.0 * neural_point_resolution
+        displacement_range[neural_point_free_mask] = 3.0 * displacement_range_ratio * neural_point_resolution
 
     # test this scale here, better to not be too large (FIXME)
     xyz_displacement = displacement_range * torch.tanh(gaussian_xyz_mlp.mlp_batch(geo_feature_in)) # N, 3K # [-1,1]        
@@ -611,13 +626,13 @@ def spawn_gaussians(neural_points_data: Dict,
     # Scale (view dependent or not) ? # TODO
 
     # TODO: how to set the size limit
-    max_gaussian_scale = 2.0 * neural_point_resolution # TODO: 2.0 or 1.0
+    max_gaussian_scale = max_scale_ratio * neural_point_resolution # TODO: 2.0 or 1.0
     dist_ratio = 0.0
     if view_distance is not None and dist_adaptive_scale:
         dist_ratio = view_distance / z_far # N, 1
         dist_ratio = dist_ratio.repeat(1, gaussian_scale_mlp.mlp_out_dim)
 
-    gaussian_scale = 0.5 * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp_batch(geo_feature_in) + dist_ratio) # N, 2K
+    gaussian_scale = unit_scale_ratio * neural_point_resolution * torch.exp(gaussian_scale_mlp.mlp_batch(geo_feature_in) + dist_ratio) # N, 2K
     gaussian_scale = torch.clamp(gaussian_scale, max=max_gaussian_scale)
     # FIXME
     # what should be the maximum size here? $ TODO
@@ -668,7 +683,7 @@ def spawn_gaussians(neural_points_data: Dict,
     # gaussian_alpha = gaussian_alpha.view(local_gaussian_count, -1) # NK, 1 # [0-1] (after activation)
 
     ## learn residual now
-    # TODO: compare, but it seems that there's no much difference
+    # (disabled for now)
     if learn_color_residual:
         # by doing so, we can somehow restrict the color to not diverge much from the initial guess, so that the view-dependent color would not give very random results
         residual_range = 0.1
@@ -748,7 +763,3 @@ def spawn_gaussians(neural_points_data: Dict,
     # gaussian_mask = gaussian_xyz
 
     return spawn_results
-
-
-# TODO: add a gaussian filter function
-# remove gaussians based on alpha, size, etc.

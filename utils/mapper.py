@@ -992,21 +992,18 @@ class Mapper:
 
         cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
-        # lr_ratio = 1.0 if self.config.decoder_freezed else 10.0
-
         opt = setup_optimizer(
             self.config,
             self.neural_points.local_geo_features,
             self.neural_points.local_color_features,
             mlp_sdf_param=list(self.sdf_mlp.parameters()),
+            mlp_color_param=list(self.color_mlp.parameters()),
             mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
             mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
             mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
             mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
             mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
             cams = cams_param,
-            # lr_ratio=lr_ratio,
-            # TODO: add camera exposures # add all cams in the train pool
         )
 
         self.cur_frame_train_views = {} # set back to empty

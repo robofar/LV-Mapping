@@ -109,7 +109,7 @@ class SLAM_GUI:
 
         self.brisque_scorer = BRISQUE(url=False)
 
-        self.view_save_base_path = "~/.viewpoints/"
+        self.view_save_base_path = os.path.expanduser("~/.viewpoints")
         os.makedirs(self.view_save_base_path, 0o755, exist_ok=True)
 
         # these are only used for the elliopsoid rendering 
