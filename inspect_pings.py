@@ -489,7 +489,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 correct_exposure=config.exposure_correction_on, 
                 learn_color_residual=config.learn_color_residual,
                 front_only_on=config.train_front_only,
-                gs_type=config.gs_type)
+                gs_type=config.gs_type,
+                displacement_range_ratio=config.displacement_range_ratio,
+                max_scale_ratio=config.max_scale_ratio,
+                unit_scale_ratio=config.unit_scale_ratio)
             
             # rendered results
             rendered_rgb_image, rendered_depth, rendered_normal, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W

@@ -1125,6 +1125,7 @@ class Mapper:
 
                 T2 = get_time()
 
+                # render gaussians
                 render_pkg = render(viewpoint_cam, None, neural_points_data, 
                     self.decoders, sorrounding_spawn_results, background, down_rate=train_down_rate, 
                     min_visible_neural_point_ratio=cur_min_visible_neural_point_ratio,
@@ -1137,8 +1138,10 @@ class Mapper:
                     front_only_on=self.config.train_front_only,
                     d2n_on=(self.config.lambda_normal_depth_consist > 0.0),
                     gs_type=self.config.gs_type,
-                    ) # render gaussians  # FIXME: front only
-
+                    displacement_range_ratio=self.config.displacement_range_ratio,
+                    max_scale_ratio=self.config.max_scale_ratio,
+                    unit_scale_ratio=self.config.unit_scale_ratio)
+                    
                 if render_pkg is None:
                     continue
                 
@@ -1677,7 +1680,9 @@ class Mapper:
                     correct_exposure=self.config.exposure_correction_on, 
                     front_only_on=self.config.train_front_only,
                     gs_type=self.config.gs_type,
-                    ) # render gaussians 
+                    displacement_range_ratio=self.config.displacement_range_ratio,
+                    max_scale_ratio=self.config.max_scale_ratio,
+                    unit_scale_ratio=self.config.unit_scale_ratio)
 
                 # T3 = get_time()
 
@@ -2014,7 +2019,10 @@ class Mapper:
                             correct_exposure=self.config.exposure_correction_on, 
                             learn_color_residual=self.config.learn_color_residual,
                             front_only_on=self.config.train_front_only,
-                            gs_type=self.config.gs_type,)
+                            gs_type=self.config.gs_type,
+                            displacement_range_ratio=self.config.displacement_range_ratio,
+                            max_scale_ratio=self.config.max_scale_ratio,
+                            unit_scale_ratio=self.config.unit_scale_ratio)
 
                         # rendered results
                         rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W
@@ -2322,10 +2330,10 @@ class Mapper:
                 correct_exposure=self.config.exposure_correction_on, 
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=self.config.train_front_only,
-                gs_type=self.config.gs_type)
-
-
-            # render_pkg = render(cur_view_cam, T_w_c, self.neural_points, background, down_rate=down_rate) # render gaussians 
+                gs_type=self.config.gs_type,
+                displacement_range_ratio=self.config.displacement_range_ratio,
+                max_scale_ratio=self.config.max_scale_ratio,
+                unit_scale_ratio=self.config.unit_scale_ratio)
 
             # rendered results
             rendered_rgb_image, rendered_depth = render_pkg["render"], render_pkg["surf_depth"] # 3, H, W / 1, H, W

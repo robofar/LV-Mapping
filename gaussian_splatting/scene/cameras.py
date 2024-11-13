@@ -170,6 +170,7 @@ class CamImage:
 
             self.free_memory_under_levels(img_down_rate-1)
     
+    # deprecated
     def random_patch(self, h_size=float('inf'), w_size=float('inf')):
         # just use part (a random patch) of the image
         h = self.image_height

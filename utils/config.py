@@ -265,7 +265,11 @@ class Config:
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not (deprecated)
 
         # for gaussian spawning, the unit length is the neural point resolution
-        self.displacement_range_ratio: float = 1.0 # 2.0
+        # self.displacement_range_ratio: float = 1.0 # 2.0
+        # self.max_scale_ratio: float = 1.0 # 2.0
+        # self.unit_scale_ratio: float = 0.2 # 0.5
+
+        self.displacement_range_ratio: float = 2.0 # 2.0
         self.max_scale_ratio: float = 1.0 # 2.0
         self.unit_scale_ratio: float = 0.2 # 0.5
         

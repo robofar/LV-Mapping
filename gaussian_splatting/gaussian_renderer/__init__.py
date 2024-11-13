@@ -15,14 +15,6 @@ import math
 import numpy as np
 import torch
 
-# we support multiple GS variants: 3d_gs, 2d_gs, gaussian_surfel
-gs_zoo = ["3d_gs", "2d_gs", "gaussian_surfel"]
-
-# gs_type = "gaussian_surfel"
-# # gs_type = "2d_gs"
-# gs_type = "3d_gs"
-
-
 from gaussian_splatting.utils.sh_utils import eval_sh
 from gaussian_splatting.utils.point_utils import depth_to_normal, depth2normal
 from gaussian_splatting.utils.graphics_utils import getWorld2View

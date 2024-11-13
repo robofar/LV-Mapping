@@ -1492,7 +1492,10 @@ class SLAM_GUI:
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=(not self.backface_chbox.checked),
                     d2n_on=False,
-                    gs_type=self.config.gs_type)
+                    gs_type=self.config.gs_type,
+                    displacement_range_ratio=self.config.displacement_range_ratio,
+                    max_scale_ratio=self.config.max_scale_ratio,
+                    unit_scale_ratio=self.config.unit_scale_ratio)
                     
 
             if render_results is not None:
@@ -1866,7 +1869,10 @@ class SLAM_GUI:
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=(not self.backface_chbox.checked),
                 d2n_on=self.d2n_chbox.checked,
-                gs_type=self.config.gs_type)
+                gs_type=self.config.gs_type,
+                displacement_range_ratio=self.config.displacement_range_ratio,
+                max_scale_ratio=self.config.max_scale_ratio,
+                unit_scale_ratio=self.config.unit_scale_ratio)
             
             render_toc = get_time()
 
