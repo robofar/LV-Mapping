@@ -203,10 +203,6 @@ class NeuralPoints(nn.Module):
         # self.local_rotation = nn.Parameter()
         # self.local_opacity = nn.Parameter()
 
-        self.local_scaling = torch.empty(0, dtype=self.dtype, device=self.device)
-        self.local_rotation = torch.empty(0, dtype=self.dtype, device=self.device)
-        self.local_opacity = torch.empty(0, dtype=self.dtype, device=self.device)
-
         # this is just for vis
         self.local_valid_color_mask = torch.empty(0, dtype=torch.bool, device=self.device) # current not used
         # this is for gs (as a kind of pruning)
@@ -308,9 +304,9 @@ class NeuralPoints(nn.Module):
             if sample_colors is not None:
                 # FIXME (we do not need valid_color_mask any more)
                 # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
-                # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
+                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
                 # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
-                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
+                # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
 
                 color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
                 hash_idx_color_update = hash_idx[color_update_mask]
@@ -486,8 +482,8 @@ class NeuralPoints(nn.Module):
         ## Mask
         if added_colors is not None:
             # FIXME
-            # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
-            new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
+            new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
+            # new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
 
             self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
         else:

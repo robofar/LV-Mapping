@@ -178,9 +178,15 @@ class CamImage:
         w_size = min(w_size, w) # w
         h0 = random.randint(0, h - h_size) # 0
         w0 = random.randint(0, w - w_size) # 0
-        h1 = h0 + h_size
-        w1 = w0 + w_size
+        h1 = h0 + h_size - 1 
+        w1 = w0 + w_size - 1
         return torch.tensor([h0, w0, h1, w1]).to(dtype=self.dtype, device=self.device)
+
+    def full_patch(self, img_down_rate: int = 0):
+        img_down_scale = 2**(img_down_rate)
+        h1 = int(self.image_height / img_down_scale) - 1
+        w1 = int(self.image_width / img_down_scale) - 1
+        return torch.tensor([0, 0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
     def set_pose(self, cam_pose):
 

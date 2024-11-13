@@ -271,7 +271,7 @@ class Config:
         self.lambda_normal_depth_consist: float = 0.0 # normal consistency regularization weight # 0.05
         self.lambda_normal_smooth: float = 0.0
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
-        self.lambda_distort: float = 100.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections # [confirmed to be not very useful]
+        self.lambda_distort: float = 0.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections # [confirmed to be not very useful]
         self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction

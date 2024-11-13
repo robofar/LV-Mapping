@@ -16,3 +16,6 @@
 [submodule "submodules/fused-ssim"]
 	path = submodules/fused-ssim
 	url = https://github.com/rahul-goel/fused-ssim
+[submodule "submodules/diff-gaussian-rasterization_2d"]
+	path = submodules/diff-gaussian-rasterization_2d
+	url = https://github.com/liren-jin/diff-gaussian-rasterization_2d
