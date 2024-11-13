@@ -229,14 +229,7 @@ class SLAM_GUI:
         self.cad_render.shader = "defaultLit"
         self.cad_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
-        # how to apply different materials (TODO)
-        self.clay_geo = rendering.MaterialRecord()
-        self.clay_geo.shader = "defaultLit"
-
-        # self.line_mat = rendering.MaterialRecord()
-        # self.line_mat.shader = "unlitLine"
-        # self.line_mat.line_width = 5  # note that this is scaled with respect to pixels,
-
+        # deprecated
         self.axis = o3d.geometry.TriangleMesh.create_coordinate_frame(
             size=0.5, origin=[0, 0, 0]
         )
@@ -281,7 +274,7 @@ class SLAM_GUI:
         self.widget3d.setup_camera(60.0, bounds, bounds.get_center())
         
         em = self.window.theme.font_size
-        margin = 0.8 * em
+        margin = 0.5 * em
         
         self.panel = gui.Vert(0.5 * em, gui.Margins(margin))
 
@@ -364,14 +357,9 @@ class SLAM_GUI:
             self.combo_preset_cams.add_item(str(i))
 
         # self.combo_preset_cams.set_on_selection_changed(self._on_combo_preset_cams) 
-        combo_tile3.add_child(gui.Label("Preset views"))
+        combo_tile3.add_child(gui.Label("Preset"))
         combo_tile3.add_child(self.combo_preset_cams)
         vp_subtile4.add_child(combo_tile3)
-
-        self.reset_view_btn = gui.Button("Reset")
-        self.reset_view_btn.set_on_clicked(
-            self._on_reset_view_btn
-        )  # set the callback function
 
         self.save_view_btn = gui.Button("Save")
         self.save_view_btn.set_on_clicked(
@@ -381,6 +369,11 @@ class SLAM_GUI:
         self.load_view_btn = gui.Button("Load")
         self.load_view_btn.set_on_clicked(
             self._on_load_view_btn
+        )  # set the callback function
+
+        self.reset_view_btn = gui.Button("Reset")
+        self.reset_view_btn.set_on_clicked(
+            self._on_reset_view_btn
         )  # set the callback function
 
         viewpoint_tile.add_child(vp_subtile1)
@@ -403,7 +396,7 @@ class SLAM_GUI:
         # self.gs_chbox.set_on_checked(self._on_gs_chbox)
         chbox_tile_3dobj.add_child(self.gs_chbox)
 
-        self.backface_chbox = gui.Checkbox("Backface")
+        self.backface_chbox = gui.Checkbox("Back")
         self.backface_chbox.checked = False
         # self.backface_chbox.set_on_checked(self._on_backface_chbox)
         chbox_tile_3dobj.add_child(self.backface_chbox)
@@ -497,7 +490,7 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
         self.slam_traj_name = "slam_trajectory"
 
-        self.range_circle_chbox = gui.Checkbox("R Circle")
+        self.range_circle_chbox = gui.Checkbox("Ring")
         self.range_circle_chbox.checked = False
         self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
         chbox_tile_3dobj_2.add_child(self.range_circle_chbox)
@@ -546,57 +539,60 @@ class SLAM_GUI:
         self.panel.add_child(chbox_tile_neuralpoint)
 
         self.panel.add_child(gui.Label("GS Rendering Options"))
-        chbox_tile_gsrender = gui.Horiz(0.5 * em, gui.Margins(margin))
+        chbox_tile_gsrender_1 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         # these cannot be on at the same time
         self.depth_chbox = gui.Checkbox("Depth")
         self.depth_chbox.checked = False
         self.depth_chbox.set_on_checked(self._on_depth_chbox)
-        chbox_tile_gsrender.add_child(self.depth_chbox)
+        chbox_tile_gsrender_1.add_child(self.depth_chbox)
 
         self.normal_chbox = gui.Checkbox("Normal")
         self.normal_chbox.checked = False
         self.normal_chbox.set_on_checked(self._on_normal_chbox)
-        chbox_tile_gsrender.add_child(self.normal_chbox)
+        chbox_tile_gsrender_1.add_child(self.normal_chbox)
 
         self.d2n_chbox = gui.Checkbox("D2N")
         self.d2n_chbox.checked = False
         self.d2n_chbox.set_on_checked(self._on_d2n_chbox)
-        chbox_tile_gsrender.add_child(self.d2n_chbox)
+        chbox_tile_gsrender_1.add_child(self.d2n_chbox)
 
         self.opacity_chbox = gui.Checkbox("Opacity")
         self.opacity_chbox.checked = False
         self.opacity_chbox.set_on_checked(self._on_opacity_chbox)
-        chbox_tile_gsrender.add_child(self.opacity_chbox)
-
-        # self.time_shader_chbox = gui.Checkbox("Time Shader")
-        # self.time_shader_chbox.checked = False
-        # chbox_tile_gsrender.add_child(self.time_shader_chbox)
+        chbox_tile_gsrender_1.add_child(self.opacity_chbox)
 
         self.elliopsoid_chbox = gui.Checkbox("Ellipsoid")
         self.elliopsoid_chbox.checked = False
         self.elliopsoid_chbox.set_on_checked(self._on_elliopsoid_chbox)
-        chbox_tile_gsrender.add_child(self.elliopsoid_chbox)
+        chbox_tile_gsrender_1.add_child(self.elliopsoid_chbox)
 
-        self.elliopsoid_2d_chbox = gui.Checkbox("Surfel mode")
+        chbox_tile_gsrender_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        # self.time_shader_chbox = gui.Checkbox("Time Shader")
+        # self.time_shader_chbox.checked = False
+        # chbox_tile_gsrender_2.add_child(self.time_shader_chbox)
+
+        self.elliopsoid_2d_chbox = gui.Checkbox("Surfel Mode")
         if self.config.gs_type == "3d_gs":
             self.elliopsoid_2d_chbox.checked = False
         else:
             self.elliopsoid_2d_chbox.checked = True
-        chbox_tile_gsrender.add_child(self.elliopsoid_2d_chbox)
+        chbox_tile_gsrender_2.add_child(self.elliopsoid_2d_chbox)
 
-        self.normal_in_world_chbox = gui.Checkbox("Normal in world")
+        self.normal_in_world_chbox = gui.Checkbox("Normal in World")
         self.normal_in_world_chbox.checked = True
-        chbox_tile_gsrender.add_child(self.normal_in_world_chbox)
+        chbox_tile_gsrender_2.add_child(self.normal_in_world_chbox)
 
-        self.normal_with_alpha_chbox = gui.Checkbox("Normal with alpha")
+        self.normal_with_alpha_chbox = gui.Checkbox("Normal with Alpha")
         self.normal_with_alpha_chbox.checked = True
-        chbox_tile_gsrender.add_child(self.normal_with_alpha_chbox)
+        chbox_tile_gsrender_2.add_child(self.normal_with_alpha_chbox)
 
-        self.panel.add_child(chbox_tile_gsrender)
+        self.panel.add_child(chbox_tile_gsrender_1)
+        self.panel.add_child(chbox_tile_gsrender_2)
 
         slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
-        slider_label = gui.Label("Gaussian Scale (0-1)")
+        slider_label = gui.Label("Gaussian Scale (0.0-1.0)")
         self.scaling_slider = gui.Slider(gui.Slider.DOUBLE)
         # Scaling Modifier to control the size of the displayed Gaussians
         self.scaling_slider.set_limits(0.001, 1.0)
@@ -604,6 +600,15 @@ class SLAM_GUI:
         slider_tile.add_child(slider_label)
         slider_tile.add_child(self.scaling_slider)
         self.panel.add_child(slider_tile)
+
+        slider_tile_down_rate = gui.Horiz(0.5 * em, gui.Margins(margin))
+        slider_label_down_rate = gui.Label("Render Image Downsample Rate (0-3)")
+        self.scaling_slider_downrate = gui.Slider(gui.Slider.INT)
+        self.scaling_slider_downrate.set_limits(0, 3)
+        self.scaling_slider_downrate.int_value = 0
+        slider_tile_down_rate.add_child(slider_label_down_rate)
+        slider_tile_down_rate.add_child(self.scaling_slider_downrate)
+        self.panel.add_child(slider_tile_down_rate)
 
         # screenshot buttom
         self.screenshot_btn = gui.Button("Screenshot")
@@ -1242,7 +1247,10 @@ class SLAM_GUI:
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
                     learn_color_residual=self.config.learn_color_residual,
-                    gs_type=self.config.gs_type)
+                    gs_type=self.config.gs_type,
+                    displacement_range_ratio=self.config.displacement_range_ratio,
+                    max_scale_ratio=self.config.max_scale_ratio,
+                    unit_scale_ratio=self.config.unit_scale_ratio)
             
             frustum_size = self.config.max_range*0.008
 
@@ -1485,7 +1493,7 @@ class SLAM_GUI:
                     None, self.gaussian_cur.neural_points_data, 
                     self.decoders, self.cur_base_gaussians, self.background,
                     scaling_modifier=self.scaling_slider.double_value, 
-                    down_rate=down_rate_used, 
+                    down_rate=down_rate_used,
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
@@ -1862,7 +1870,7 @@ class SLAM_GUI:
                 self.gaussian_cur.neural_points_data, 
                 self.decoders, self.cur_base_gaussians, self.background, 
                 scaling_modifier=self.scaling_slider.double_value, 
-                down_rate=self.config.gs_vis_down_rate, 
+                down_rate=self.scaling_slider_downrate.int_value,  # TODO: better to add this to the slider
                 dist_concat_on=self.config.dist_concat_on, 
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=False,

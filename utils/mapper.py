@@ -1031,7 +1031,10 @@ class Mapper:
                         scale_filter_on=True,
                         z_far=self.config.sorrounding_map_radius,
                         learn_color_residual=self.config.learn_color_residual,
-                        gs_type=self.config.gs_type)        
+                        gs_type=self.config.gs_type,
+                        displacement_range_ratio=self.config.displacement_range_ratio,
+                        max_scale_ratio=self.config.max_scale_ratio,
+                        unit_scale_ratio=self.config.unit_scale_ratio)        
 
         # also have a valid mask for the neural points
 
@@ -1942,7 +1945,10 @@ class Mapper:
                     scale_filter_on=True,
                     z_far=self.config.sorrounding_map_radius,
                     learn_color_residual=self.config.learn_color_residual,
-                    gs_type=self.config.gs_type)
+                    gs_type=self.config.gs_type,
+                    displacement_range_ratio=self.config.displacement_range_ratio,
+                    max_scale_ratio=self.config.max_scale_ratio,
+                    unit_scale_ratio=self.config.unit_scale_ratio)
 
                 # load the cam datas to cur_cam_img
                 self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here

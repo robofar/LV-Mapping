@@ -53,7 +53,7 @@ gs:
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 4.0 # 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
@@ -85,5 +85,5 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
+  mesh_min_nn: 18
   visualizer_split_width_ratio: 0.6

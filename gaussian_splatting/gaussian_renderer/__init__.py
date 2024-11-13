@@ -116,33 +116,13 @@ def render(viewpoint_camera: CamImage,
     normalize_depth_on = True # render normalized depth (with D = D/opacity)
     perpix_depth_on = True
     default_on = True
-    # front_only_on = False # TODO: (false) does not work, but why? # don't cull those gaussians with back normals, optimize all the gaussians in the fov
-    # check if we shall set to False
-    # front_only_on = False
 
     gaussian_surfel_train_config = torch.tensor([surface_on, normalize_depth_on, perpix_depth_on, default_on, front_only_on], dtype=dtype, device=device) # surface_on, normalize_depth_on, perpix_depth_on
 
     # print(resolution_height, resolution_width)
 
-
     # Rasterizer settings
-    if gs_type == "2d_gs":
-        # 2D GS
-        raster_settings = GaussianRasterizationSettings(
-            image_height=resolution_height,
-            image_width=resolution_width,
-            tanfovx=tanfovx,
-            tanfovy=tanfovy,
-            bg=bg_color,
-            scale_modifier=scaling_modifier, # Scaling Modifier to control the size of the displayed Gaussians
-            viewmatrix=viewpoint_camera.world_view_transform, # from world frame to camera space 
-            projmatrix=viewpoint_camera.full_proj_transform, 
-            sh_degree=active_sh_degree,
-            campos=viewpoint_camera.camera_center,
-            prefiltered=False,
-            debug=False,
-        )
-    elif gs_type == "gaussian_surfel":
+    if gs_type == "gaussian_surfel":
         # Gaussian Surfel
         raster_settings = GaussianRasterizationSettings(
             image_height=resolution_height,
@@ -160,6 +140,22 @@ def render(viewpoint_camera: CamImage,
             prefiltered=False,
             debug=False,
             config=gaussian_surfel_train_config,
+        )
+    elif gs_type == "2d_gs":
+        # 2D GS
+        raster_settings = GaussianRasterizationSettings(
+            image_height=resolution_height,
+            image_width=resolution_width,
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier, # Scaling Modifier to control the size of the displayed Gaussians
+            viewmatrix=viewpoint_camera.world_view_transform, # from world frame to camera space 
+            projmatrix=viewpoint_camera.full_proj_transform, 
+            sh_degree=active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=False,
         )
     elif gs_type == "3d_gs":
         # 3D GS
