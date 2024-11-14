@@ -427,9 +427,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     z_far=config.sorrounding_map_radius,
                     learn_color_residual=config.learn_color_residual,
                     gs_type=config.gs_type,
-                    displacement_range_ratio=self.config.displacement_range_ratio,
-                    max_scale_ratio=self.config.max_scale_ratio,
-                    unit_scale_ratio=self.config.unit_scale_ratio)
+                    displacement_range_ratio=config.displacement_range_ratio,
+                    max_scale_ratio=config.max_scale_ratio,
+                    unit_scale_ratio=config.unit_scale_ratio)
         
         # may not load images
         # print("Begin data loading")

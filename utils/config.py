@@ -657,13 +657,16 @@ class Config:
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
             self.monodepth_gaussian_res = config_args["gs"].get("monodepth_gaussian_res", self.voxel_size_m * 5.0)
 
+            # spawning related
             self.spawn_n_gaussian = config_args["gs"].get("n_gaussian", self.spawn_n_gaussian)
             self.dist_concat_on = config_args["gs"].get("dist_concat_on", self.dist_concat_on)
             self.view_concat_on = config_args["gs"].get("view_concat_on", self.view_concat_on)
+            self.learn_color_residual = config_args["gs"].get("learn_color_residual", self.learn_color_residual)
+            self.displacement_range_ratio = float(config_args["gs"].get("displacement_range_ratio", self.displacement_range_ratio))
+            self.max_scale_ratio = float(config_args["gs"].get("max_scale_ratio", self.max_scale_ratio))
+            self.unit_scale_ratio = float(config_args["gs"].get("unit_scale_ratio", self.unit_scale_ratio))
 
             self.train_front_only = config_args["gs"].get("train_front_only", self.train_front_only)
-
-            self.learn_color_residual = config_args["gs"].get("learn_color_residual", self.learn_color_residual)
 
             self.gs_iters = config_args["gs"].get("gs_iters", self.gs_iters)
             self.gaussian_bs_ratio = config_args["gs"].get("gaussian_bs_ratio", self.gaussian_bs_ratio) # gaussian count per iter (for gsdf consistency loss)
@@ -705,15 +708,6 @@ class Config:
 
             self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha) # this is the per-gaussian alpha
             self.depth_min_accu_alpha = config_args["gs"].get("depth_min_accu_alpha", self.depth_min_accu_alpha) # this is the rendered accumulated alpha for valid depth
-
-
-            # deprecated
-            # self.gs_position_lr = float(config_args["gs"].get("gs_position_lr", self.gs_position_lr))
-            # self.gs_rotation_lr = float(config_args["gs"].get("gs_rotation_lr", self.gs_rotation_lr))
-            # self.gs_scaling_lr = float(config_args["gs"].get("gs_scaling_lr", self.gs_scaling_lr))
-            # self.gs_opacity_lr = float(config_args["gs"].get("gs_opacity_lr", self.gs_opacity_lr))
-            # self.gaussian_vis_scale = float(config_args["gs"].get("gaussian_vis_scale", self.gaussian_vis_scale)) # only for vis
-
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:

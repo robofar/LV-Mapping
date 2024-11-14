@@ -50,7 +50,6 @@ gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
-  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
@@ -60,12 +59,10 @@ gs:
   short_term_train_prob: 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
+  gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  # inverse_depth_loss: True
-  # lambda_depth: 1.0 # 10.0
-  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)

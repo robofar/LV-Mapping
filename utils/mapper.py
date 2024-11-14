@@ -1508,7 +1508,7 @@ class Mapper:
                     # with batch size bs (this is done for all the sdf samples in the local map)
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
-                    surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+                    surface_mask = torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m
                     close_to_surface_mask = torch.abs(sdf_label) < self.config.free_sample_end_dist_m
 
                     poses = self.used_poses[ts]
