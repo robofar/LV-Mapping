@@ -150,6 +150,19 @@ The light across different cameras seem to be not identical, figure out a way to
 
 **pass**
 
+## Run on SS3DM dataset
+
+```
+# with LiDAR
+python pings.py ./config/lidar_slam/run_ss3dm_gs.yaml ss3dm -i ./data/SS3DM-Dataset/SS3DM_data/Town10/200_streetsurf/ -vgml 
+
+
+# with depth image
+python pings.py ./config/lidar_slam/run_ss3dm_gs_rgbd.yaml ss3dm rgbd -i ./data/SS3DM-Dataset/SS3DM_data/Town10/200_streetsurf/ -vgml 
+
+```
+
+
 ## Run on R3Live dataset
 
 ```

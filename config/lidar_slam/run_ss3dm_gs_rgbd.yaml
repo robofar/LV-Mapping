@@ -1,5 +1,5 @@
 setting:
-  name: "test_ss3dm_gs"
+  name: "test_ss3dm_gs_rgbd"
   output_root: "./pings_experiments"
   deskew: False
   color_channel: 3
@@ -57,11 +57,11 @@ gs:
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 0.5 # unit: m
-  displacement_range_ratio: 4.0
-  max_scale_ratio: 4.0
-  unit_scale_ratio: 0.5
-  # inverse_depth_loss: False
-  # lambda_depth: 0.01 
+  # displacement_range_ratio: 2.0
+  # max_scale_ratio: 2.0
+  # unit_scale_ratio: 0.5
+  inverse_depth_loss: False
+  lambda_depth: 0.05 
   lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   lambda_area: 2e-4 # 1e-3
   # consist_normal_fixed: True

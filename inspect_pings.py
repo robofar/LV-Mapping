@@ -444,7 +444,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             if config.deskew and frame_id > 0:
                 dataset.deskew_at_frame(frame_id)
 
-            dataset.project_pointcloud_to_cams(use_only_colorized_points=True) 
+            if not dataset.is_rgbd:
+                dataset.project_pointcloud_to_cams(use_only_colorized_points=True) 
     
             if pc_cd_eval_on:
                 cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()

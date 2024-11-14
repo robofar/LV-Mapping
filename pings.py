@@ -365,7 +365,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
-        if config.gs_on:
+        if config.gs_on and (not dataset.is_rgbd):
             dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
@@ -591,10 +591,9 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         print("Begin rendering evaluation")
         # don't do visualization
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=True) # FIXME
-        # visualize the results
-        # mapper.gs_eval_offline(q_main2vis, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10)
-        mapper.gs_eval_out()
+        if config.gs_eval_on:
+            mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=True) # FIXME
+            mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map

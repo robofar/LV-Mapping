@@ -230,7 +230,7 @@ class Config:
 
         self.gs_type: str = "gaussian_surfel" # now we support 3d_gs, 2d_gs and gaussian_surfel
 
-        self.gs_eval_on: bool = False
+        self.gs_eval_on: bool = True
         self.monodepth_on: bool = False
         self.monodepth_gaussian_res: float = self.voxel_size_m * 2.0
 
@@ -648,7 +648,7 @@ class Config:
             self.gs_on = True
             self.gs_type = config_args["gs"].get("gs_type", self.gs_type)
 
-            # self.gs_eval_on = config_args["gs"].get("eval_on", self.gs_eval_on)
+            self.gs_eval_on = config_args["gs"].get("eval_on", self.gs_eval_on)
 
             self.exposure_correction_on = config_args["gs"].get("exposure_correction_on", self.exposure_correction_on)
             

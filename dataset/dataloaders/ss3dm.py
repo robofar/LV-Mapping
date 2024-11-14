@@ -69,6 +69,13 @@ class SS3DMDataset:
             self.cam_list = self.cam_list_all
             print("Use all the cameras")
 
+        if cam_name == "rgbd":
+            self.use_depth_img = True
+        else:
+            self.use_depth_img = False
+            
+        self.is_rgbd = self.use_depth_img
+
         self.lidar_list = self.lidar_list_all
 
         scenario_file_path = os.path.join(data_dir, "scenario.pt")
@@ -100,6 +107,7 @@ class SS3DMDataset:
         K_mat[1,2] = cy
 
         self.depth_scale = 100.0 # 1 correspondong to 1cm
+        self.max_depth_m = 100.0 # m
 
         self.T_l_v = np.array([[0, 0, -1, 0],
                                 [1, 0, 0, 0],
@@ -121,7 +129,7 @@ class SS3DMDataset:
             self.img_files[cam_name] = cur_img_files
 
             cur_depth_cam_dir = os.path.join(data_dir, "depth_gts", "camera_{}/".format(cam_name))
-            cur_depth_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+            cur_depth_img_files = sorted(glob.glob(cur_depth_cam_dir + "*.png"))
 
             self.depth_img_files[cam_name] = cur_depth_img_files
 
@@ -149,17 +157,15 @@ class SS3DMDataset:
         # read from the scenario_file_path
         
         # # main cam parameters
-        # self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
 
-        # # NOTE for the rear camera, from about h=920 is the ego car's tail
-
-        # self.intrinsic.set_intrinsics(
-        #                             height=H,
-        #                             width=W,
-        #                             fx=self.K_mats[self.main_cam_name][0,0],
-        #                             fy=self.K_mats[self.main_cam_name][1,1],
-        #                             cx=self.K_mats[self.main_cam_name][0,2],
-        #                             cy=self.K_mats[self.main_cam_name][1,2])
+        self.intrinsic.set_intrinsics(
+                                    height=H,
+                                    width=W,
+                                    fx=fx,
+                                    fy=fy,
+                                    cx=cx,
+                                    cy=cy) # all the cams are the same
 
         # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
 
@@ -206,6 +212,8 @@ class SS3DMDataset:
 
             points_rgb = np.ones_like(points) # N,4, last channel for the mask
 
+            depth_cam_pcd = o3d.geometry.PointCloud()
+
             for cam_name in self.cam_list:
                 
                 # tic_0 = get_time()
@@ -213,32 +221,43 @@ class SS3DMDataset:
 
                 # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
 
-                cur_img_file = self.img_files[cam_name][idx]
+                cur_rgb_img_file = self.img_files[cam_name][idx]
+                rgb_image = o3d.io.read_image(cur_rgb_img_file)
 
-                # print(cur_img_file)
-
-                img_cam = self.read_img(cur_img_file) 
-                
-
-                # TODO: add depth image loading
-
-                # toc_1 = get_time()
-                
-                # TODO: a bit slow, try to speed it up
-                # we do not to do this here anymore
-                # FIXME: not used now
-                # points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
-
-                # toc_1 = get_time()
-
-                # depth_img_dict[cam_name] = depth_map # H, W, 1
-                
+                img_cam = np.array(rgb_image)
                 img_dict[cam_name] = img_cam # H, W, 3
+                
+                if self.use_depth_img:
+                    cur_depth_img_file = self.depth_img_files[cam_name][idx]
+                    depth_image = o3d.io.read_image(cur_depth_img_file)
 
-            # we skip the intensity here for now (and also the color mask)
-            points = np.hstack((points[:,:3], points_rgb[:,:3]))
+                    rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
+                                                                        depth_image, 
+                                                                        depth_scale=self.depth_scale, 
+                                                                        depth_trunc=self.max_depth_m, 
+                                                                        convert_rgb_to_intensity=False)
 
-            frame_data = {"points": points, "img": img_dict}
+                    cur_cam_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+                        rgbd_image, self.intrinsic, self.T_c_l_mats[cam_name])
+
+                    depth_cam_pcd += cur_cam_pcd
+
+                    depth_image = np.array(depth_image)/self.depth_scale
+                    depth_image[depth_image > self.max_depth_m] = 0.0
+
+                    depth_image = np.expand_dims(depth_image, axis=-1) # H, W, 1
+                    depth_img_dict[cam_name] = depth_image
+                
+            if self.use_depth_img:
+                points_xyz = np.array(depth_cam_pcd.points, dtype=np.float64)
+                points_rgb = np.array(depth_cam_pcd.colors, dtype=np.float64)
+                points = np.hstack((points_xyz, points_rgb))
+                frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
+
+            else:
+                # we skip the intensity here for now (and also the color mask)
+                points = np.hstack((points[:,:3], points_rgb[:,:3]))
+                frame_data = {"points": points, "img": img_dict}
             
         else:
             frame_data = {"points": points}
@@ -250,33 +269,35 @@ class SS3DMDataset:
         return len(self.lidar_files[self.lidar_list[0]])
     
 
-    def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
+    # def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
         
-        tic_0 = get_time()
-        img = cv2.imread(img_file)
-        toc_0 = get_time()
+    #     tic_0 = get_time()
+    #     img = cv2.imread(img_file)
+    #     toc_0 = get_time()
 
-        # print("img reading time (ms):" , (toc_0 -tic_0)*1e3)
+    #     # print("img reading time (ms):" , (toc_0 -tic_0)*1e3)
 
-        # apply undistortion:
-        # tic_undistort = get_time()
-        if undistort_on and K_mat is not None and dist_coeffs is not None:
-            img = cv2.undistort(img, K_mat, dist_coeffs)
-            img_file_split = img_file.split("/")
-            img_file_split[-2] = "data_undistorted" # data --> data_undistorted # ugly fix here
-            out_img_file = "/".join(img_file_split)
-            # print(out_img_file)
+    #     # TODO: add depth image loading
 
-            cv2.imwrite(out_img_file, img)
+    #     # apply undistortion:
+    #     # tic_undistort = get_time()
+    #     if undistort_on and K_mat is not None and dist_coeffs is not None:
+    #         img = cv2.undistort(img, K_mat, dist_coeffs)
+    #         img_file_split = img_file.split("/")
+    #         img_file_split[-2] = "data_undistorted" # data --> data_undistorted # ugly fix here
+    #         out_img_file = "/".join(img_file_split)
+    #         # print(out_img_file)
 
-        # toc_undistort = get_time() 
+    #         cv2.imwrite(out_img_file, img)
 
-        # print("Image undistortion time (ms):", (toc_undistort-tic_undistort)*1e3) # 12 ms / each 
-        # for 4 imgs, takes about 50ms, better to do this offline
+    #     # toc_undistort = get_time() 
+
+    #     # print("Image undistortion time (ms):", (toc_undistort-tic_undistort)*1e3) # 12 ms / each 
+    #     # for 4 imgs, takes about 50ms, better to do this offline
         
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        return img
+    #     return img
 
     
     def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):

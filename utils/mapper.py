@@ -1960,7 +1960,8 @@ class Mapper:
                 if self.config.deskew and frame_id > 0:
                     self.dataset.deskew_at_frame(frame_id)
                 
-                self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
+                if not self.dataset.is_rgbd:
+                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
 
                 if pc_cd_eval_on:
                     cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
