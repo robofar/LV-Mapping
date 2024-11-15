@@ -340,6 +340,11 @@ class SLAMDataset():
                 else:
                     depth_dict = None
 
+                if "sky" in dict_keys: # have depth img
+                    sky_dict: dict = frame_data["sky"]
+                else:
+                    sky_dict = None
+
                 for cam_name in cam_list:
                     
                     tic_load_cam = get_time() # this part is very slow, but why?
@@ -351,12 +356,16 @@ class SLAMDataset():
                     if depth_dict is not None:
                         cur_img_depth_np = depth_dict[cam_name] # H, W, 1
 
-                        # cur_img_depth = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.device) # unit: m
-                        cur_img_depth = torch.from_numpy(cur_img_depth_np).float().to(self.device) # unit: m
+                        cur_img_depth = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.device) # unit: m
                         cur_img_depth = cur_img_depth.permute(2,0,1) # 1, H, W
                         # cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8) # [0,255]
 
                         cur_img_depth_np = np.squeeze(cur_img_depth_np) # H, W
+
+                    sky_mask = None # optional sky mask (sky:1, non-sky:0)
+                    if sky_dict is not None:
+                        sky_mask = torch.tensor(sky_dict[cam_name], dtype=torch.bool, device=self.device) #
+                        sky_mask = sky_mask.permute(2,0,1) # 1, H, W
                     
                     # cur_img_rgb_torch = torch.tensor(cur_img_rgb_np, dtype=self.dtype, device=self.device) 
                     cur_img_rgb_torch = torch.from_numpy(cur_img_rgb_np).float().to(self.device)
@@ -365,7 +374,7 @@ class SLAMDataset():
                     # print(cur_img[3])
 
                     H, W = cur_img_rgb_torch.shape[1], cur_img_rgb_torch.shape[2]
-                    sky_mask = None # optional sky mask (sky:1, non-sky:0)
+
                     pred_normal = None # optional normal image 
 
                     toc_load_cam = get_time()

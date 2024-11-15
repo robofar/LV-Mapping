@@ -10,15 +10,16 @@ process:
   vox_down_m: 0.08
 sampler:
   surface_sample_range_m: 0.4
-  surface_sample_n: 6
+  surface_sample_n: 8
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.25 # 0.3
+  buffer_size: 1e8
+  voxel_size_m: 0.3 # 0.3
   search_alpha: 0.8
   query_nn_k: 6
   feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 32 # 16
+  color_feature_dim: 16 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30
@@ -50,24 +51,24 @@ gs:
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 50 # 50 # 100
-  gaussian_bs_ratio: 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 4.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
-  short_term_train_prob: 0.5
+  short_term_train_prob: 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 0.5 # unit: m
-  displacement_range_ratio: 4.0
-  max_scale_ratio: 4.0
-  unit_scale_ratio: 0.5
+  # displacement_range_ratio: 4.0
+  # max_scale_ratio: 4.0
+  # unit_scale_ratio: 0.5
   # inverse_depth_loss: False
   # lambda_depth: 0.01 
   lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   lambda_area: 2e-4 # 1e-3
   # consist_normal_fixed: True
-  # lambda_normal_depth: 0.01 # check this
-  lambda_sdf_cons: 0.05
-  lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss
+  lambda_normal_depth: 0.01 # check this
+  lambda_sdf_cons: 0.1
+  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
   lambda_sdf: 0.2 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
@@ -79,5 +80,5 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   # sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 15
+  mesh_min_nn: 10
   visualizer_split_width_ratio: 0.6

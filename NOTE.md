@@ -131,9 +131,6 @@ python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waym
 ## Run on IPB car dataset
 
 ```
-python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl
-
-python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car2 -i ./data/ipb_car/2023-06-13-new_setup_long_recording/kitti_format/ -vl --range 600 1000 1
 
 python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 1
 
@@ -154,11 +151,14 @@ The light across different cameras seem to be not identical, figure out a way to
 
 ```
 # with LiDAR
-python pings.py ./config/lidar_slam/run_ss3dm_gs.yaml ss3dm -i ./data/SS3DM-Dataset/SS3DM_data/Town10/200_streetsurf/ -vgml 
+python pings.py ./config/lidar_slam/run_ss3dm_gs.yaml ss3dm -i ./data/SS3DM-Dataset/SS3DM_data/Town10/300_streetsurf/ -vgml 
 
 
 # with depth image
-python pings.py ./config/lidar_slam/run_ss3dm_gs_rgbd.yaml ss3dm rgbd -i ./data/SS3DM-Dataset/SS3DM_data/Town10/200_streetsurf/ -vgml 
+python pings.py ./config/lidar_slam/run_ss3dm_gs_rgbd.yaml ss3dm rgbd -i ./data/SS3DM-Dataset/SS3DM_data/Town10/300_streetsurf/ -vgml 
+
+
+# 200 does not align well the ground truth (image and lidar and not well aligned)
 
 ```
 

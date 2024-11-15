@@ -73,7 +73,9 @@ class SS3DMDataset:
             self.use_depth_img = True
         else:
             self.use_depth_img = False
-            
+
+        # self.use_depth_img = False # wrong depth, don't use it for now
+
         self.is_rgbd = self.use_depth_img
 
         self.lidar_list = self.lidar_list_all
@@ -106,8 +108,8 @@ class SS3DMDataset:
         K_mat[1,1] = fy 
         K_mat[1,2] = cy
 
-        self.depth_scale = 100.0 # 1 correspondong to 1cm
-        self.max_depth_m = 100.0 # m
+        self.depth_scale = 65535 / 1000.0 # 100.0 # 1 correspondong to 1cm
+        self.max_depth_m = 250.0 # m
 
         self.T_l_v = np.array([[0, 0, -1, 0],
                                 [1, 0, 0, 0],
@@ -142,7 +144,7 @@ class SS3DMDataset:
 
             cur_cam_T_v_c = ((cam_meta_data["data"])["c2v"])[0]
 
-            self.T_c_l_mats[cam_name] = np.linalg.inv(self.T_l_v @ cur_cam_T_v_c)  # still wrong
+            self.T_c_l_mats[cam_name] = np.linalg.inv(self.T_l_v @ cur_cam_T_v_c)  # still wrong # this might be wrong
 
             # print(self.T_c_l_mats[cam_name])
 
@@ -167,8 +169,6 @@ class SS3DMDataset:
                                     cx=cx,
                                     cy=cy) # all the cams are the same
 
-        # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
-
         self.mono_depth_for_high_z: bool = True # complete the low Z part 
 
 
@@ -176,39 +176,42 @@ class SS3DMDataset:
 
         points = np.empty((0,4))
 
-        for lidar_name in self.lidar_list:
-            
-            cur_lidar_file = self.lidar_files[lidar_name][idx]
+        if not self.use_depth_img:
 
-            lidar_data = np.load(cur_lidar_file)
+            for lidar_name in self.lidar_list:
+                
+                cur_lidar_file = self.lidar_files[lidar_name][idx]
 
-            # here already under world frame
-            cur_lidar_xyz = lidar_data['rays_o'] + lidar_data['rays_d'] * lidar_data['ranges'].reshape((-1, 1)) # xyz # already in world frame?
+                lidar_data = np.load(cur_lidar_file)
 
-            cur_lidar_xyz_homo = np.hstack((cur_lidar_xyz, np.ones((np.shape(cur_lidar_xyz)[0], 1))))
+                # here already under world frame
+                cur_lidar_xyz = lidar_data['rays_o'] + lidar_data['rays_d'] * lidar_data['ranges'].reshape((-1, 1)) # xyz # already in world frame?
 
-            # if lidar_name == self.main_lidar_name:
-            #     print((lidar_data['rays_o'])[0])
+                cur_lidar_xyz_homo = np.hstack((cur_lidar_xyz, np.ones((np.shape(cur_lidar_xyz)[0], 1))))
 
-            # cur_lidar_T_w_l = (self.lidar_poses[lidar_name])[idx] # 4,4 # F**K, this T_v_l has nothing to do with the lidar frame, I felt really confused
-            # cur_lidar_T_l_w = np.linalg.inv(cur_lidar_T_w_l) # 4,4
+                # if lidar_name == self.main_lidar_name:
+                #     print((lidar_data['rays_o'])[0])
 
-            cur_T_l_wl = self.T_l_v @ self.T_v_wl[idx] # this is back to the unified lidar frame
+                # cur_lidar_T_w_l = (self.lidar_poses[lidar_name])[idx] # 4,4 
+                # cur_lidar_T_l_w = np.linalg.inv(cur_lidar_T_w_l) # 4,4
 
-            # print(cur_T_l_wl[:3,3])
+                cur_T_l_wl = self.T_l_v @ self.T_v_wl[idx] # this is back to the unified lidar frame
 
-            # convert to vehicle frame
-            cur_lidar_xyz_l_frame = (cur_lidar_xyz_homo @ cur_T_l_wl.T) # v frame actually as front camera # N, 4
+                # print(cur_T_l_wl[:3,3])
 
-            points = np.concatenate((points, cur_lidar_xyz_l_frame), axis=0) # N, 4
+                # convert to vehicle frame
+                cur_lidar_xyz_l_frame = (cur_lidar_xyz_homo @ cur_T_l_wl.T) # v frame actually as front camera # N, 4
 
-            # valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
-            # points = points[valid_mask]
+                points = np.concatenate((points, cur_lidar_xyz_l_frame), axis=0) # N, 4
+
+                # valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
+                # points = points[valid_mask]
 
         if self.load_img:
             
             img_dict = {}
             depth_img_dict = {}
+            sky_img_dict = {}
 
             points_rgb = np.ones_like(points) # N,4, last channel for the mask
 
@@ -229,7 +232,7 @@ class SS3DMDataset:
                 
                 if self.use_depth_img:
                     cur_depth_img_file = self.depth_img_files[cam_name][idx]
-                    depth_image = o3d.io.read_image(cur_depth_img_file)
+                    depth_image = o3d.io.read_image(cur_depth_img_file) # 0-65536
 
                     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_image, 
                                                                         depth_image, 
@@ -243,16 +246,29 @@ class SS3DMDataset:
                     depth_cam_pcd += cur_cam_pcd
 
                     depth_image = np.array(depth_image)/self.depth_scale
+
+                    sky_image = (depth_image > self.max_depth_m)
+
                     depth_image[depth_image > self.max_depth_m] = 0.0
 
                     depth_image = np.expand_dims(depth_image, axis=-1) # H, W, 1
+
+                    sky_image = np.expand_dims(sky_image, axis=-1) # H, W, 1
+
                     depth_img_dict[cam_name] = depth_image
+
+                    sky_img_dict[cam_name] = sky_image
                 
             if self.use_depth_img:
-                points_xyz = np.array(depth_cam_pcd.points, dtype=np.float64)
-                points_rgb = np.array(depth_cam_pcd.colors, dtype=np.float64)
-                points = np.hstack((points_xyz, points_rgb))
-                frame_data = {"points": points, "img": img_dict, "depth": depth_img_dict}
+                depth_cam_xyz = np.array(depth_cam_pcd.points, dtype=np.float64)
+                depth_cam_rgb = np.array(depth_cam_pcd.colors, dtype=np.float64)
+                depth_cam_points = np.hstack((depth_cam_xyz, depth_cam_rgb))
+
+                # FIXME now we combine the point cloud from depth image and LiDAR
+                # points = np.hstack((points[:,:3], points_rgb[:,:3]))
+                # depth_cam_points = np.concatenate((points, depth_cam_points), axis=0) # for debug only
+
+                frame_data = {"points": depth_cam_points, "img": img_dict, "depth": depth_img_dict, "sky": sky_img_dict}
 
             else:
                 # we skip the intensity here for now (and also the color mask)

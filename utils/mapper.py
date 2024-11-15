@@ -1202,10 +1202,18 @@ class Mapper:
                 sky_loss = 0.0
                 if viewpoint_cam.sky_mask_on: 
                     cur_sky_mask = viewpoint_cam.sky_mask_list[train_down_rate]
+                    
+                    sky_pixel_count = torch.sum(cur_sky_mask).item()
+
+                    # print(cur_sky_mask)
                     non_sky_mask = ~cur_sky_mask
-                    if self.config.lambda_sky > 0 and rendered_alpha is not None:
+                    
+                    # TODO: something wrong here
+                    if self.config.lambda_sky > 0 and sky_pixel_count > 0 and rendered_alpha is not None:
                         sky_loss = sky_mask_loss(cur_sky_mask, rendered_alpha) # sky part has 0 alpha
                         # sky_loss = sky_bce_loss(cur_sky_mask, rendered_alpha) # let the sky part has small opacity, the others have a large opacity
+                        if not self.silence:
+                            print(" Sky loss:", sky_loss.item())
                         sky_loss *= self.config.lambda_sky                  # sky mask loss
                     
                     if rendered_normal is not None:
@@ -1612,221 +1620,221 @@ class Mapper:
         # disabled for now
         # # rendered the last frame for vis
         # online_eval_on = True
-        if online_eval_on: # TODO
+        # if online_eval_on: # TODO
             
-            T1_v = get_time()
+        #     T1_v = get_time()
 
-            with torch.no_grad():
+        #     with torch.no_grad():
 
-                vis_cam_name = self.dataset.cam_names[0] # TODO # -1 
+        #         vis_cam_name = self.dataset.cam_names[0] # TODO # -1 
 
-                # if self.config.gs_batch_training_on: 
-                #     rand_idx = random.randint(0, len(self.cam_short_term_train_pool)-1) # random frame
-                #     cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[rand_idx]
-                # else: # lastest frame
-                #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
+        #         # if self.config.gs_batch_training_on: 
+        #         #     rand_idx = random.randint(0, len(self.cam_short_term_train_pool)-1) # random frame
+        #         #     cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[rand_idx]
+        #         # else: # lastest frame
+        #         #     cur_viewpoint_cam: CamImage = self.dataset.cur_cam_img[vis_cam_name]
 
-                # only use testing views
-                if len(self.cam_img_test_pool) >= self.config.img_test_pool_size-1:
-                    cur_viewpoint_cam: CamImage = self.cam_img_test_pool[0]
-                else:
-                    # use the last one in the pool (for single cam mode)
-                    cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[0] # training view
+        #         # only use testing views
+        #         if len(self.cam_img_test_pool) >= self.config.img_test_pool_size-1:
+        #             cur_viewpoint_cam: CamImage = self.cam_img_test_pool[0]
+        #         else:
+        #             # use the last one in the pool (for single cam mode)
+        #             cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[0] # training view
                 
-                # now we just use the lastest training view for a sanity test (FIXME)
-                # cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[-1]
+        #         # now we just use the lastest training view for a sanity test (FIXME)
+        #         # cur_viewpoint_cam: CamImage = self.cam_short_term_train_pool[-1]
 
-                # print("Used cam id:", cur_viewpoint_cam.uid)
+        #         # print("Used cam id:", cur_viewpoint_cam.uid)
 
-                cam_name = cur_viewpoint_cam.cam_id
-                val_frame_id = cur_viewpoint_cam.frame_id 
-                vis_down_rate = self.config.gs_vis_down_rate
-                vis_down_scale = 2**(vis_down_rate)
+        #         cam_name = cur_viewpoint_cam.cam_id
+        #         val_frame_id = cur_viewpoint_cam.frame_id 
+        #         vis_down_rate = self.config.gs_vis_down_rate
+        #         vis_down_scale = 2**(vis_down_rate)
 
-                gaussian_vis_scale = self.config.gaussian_vis_scale 
+        #         gaussian_vis_scale = self.config.gaussian_vis_scale 
 
-                rgb_img = cur_viewpoint_cam.rgb_image_list[vis_down_rate]
+        #         rgb_img = cur_viewpoint_cam.rgb_image_list[vis_down_rate]
         
-                rgb_img_np = rgb_img.detach().cpu().numpy() # C, H, W
-                rgb_img_int8 = (np.transpose(rgb_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
-                rgb_img_int8 = np.ascontiguousarray(rgb_img_int8) 
-                rgb_img_vis = cv2.cvtColor(rgb_img_int8, cv2.COLOR_RGB2BGR)
-                if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                    cv2.imshow(cam_name + ": Observed RGB", rgb_img_vis)
+        #         rgb_img_np = rgb_img.detach().cpu().numpy() # C, H, W
+        #         rgb_img_int8 = (np.transpose(rgb_img_np, (1, 2, 0))[:,:,:3] * 255.0).astype(np.uint8) # H, W, 3
+        #         rgb_img_int8 = np.ascontiguousarray(rgb_img_int8) 
+        #         rgb_img_vis = cv2.cvtColor(rgb_img_int8, cv2.COLOR_RGB2BGR)
+        #         if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #             cv2.imshow(cam_name + ": Observed RGB", rgb_img_vis)
 
-                if cur_viewpoint_cam.depth_on: # how to convert a depth map # TODO
-                    # print(np.shape(original_img_depth))
-                    # print(original_img_np[3]) # why all 1?
-                    depth_img = cur_viewpoint_cam.depth_image_list[vis_down_rate]
-                    depth_img_np = depth_img.detach().cpu().numpy()
-                    depth_img_np_color = (colorize_depth_maps(depth_img_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
-                    depth_img_np_color = np.transpose(depth_img_np_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
-                    depth_img_np_color_vis = cv2.cvtColor(depth_img_np_color, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Observed Depth", depth_img_np_color_vis)
+        #         if cur_viewpoint_cam.depth_on: # how to convert a depth map # TODO
+        #             # print(np.shape(original_img_depth))
+        #             # print(original_img_np[3]) # why all 1?
+        #             depth_img = cur_viewpoint_cam.depth_image_list[vis_down_rate]
+        #             depth_img_np = depth_img.detach().cpu().numpy()
+        #             depth_img_np_color = (colorize_depth_maps(depth_img_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
+        #             depth_img_np_color = np.transpose(depth_img_np_color[0], (1, 2, 0)) # H, W, 3 # colorized the depth map here
+        #             depth_img_np_color_vis = cv2.cvtColor(depth_img_np_color, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Observed Depth", depth_img_np_color_vis)
 
-                # for this validation render frame
-                T_w_l = self.used_poses[val_frame_id] # already in torch tensor, lidar pose for current frame
-                T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
-                T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+        #         # for this validation render frame
+        #         T_w_l = self.used_poses[val_frame_id] # already in torch tensor, lidar pose for current frame
+        #         T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_viewpoint_cam.cam_id], device=self.device) 
+        #         T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
-                self.T_w_c_cur_view = T_w_c.detach().cpu().numpy()
+        #         self.T_w_c_cur_view = T_w_c.detach().cpu().numpy()
 
-                T1_r = get_time()
+        #         T1_r = get_time()
 
-                render_pkg = render(cur_viewpoint_cam, T_w_c, neural_points_data,  
-                    self.decoders, sorrounding_spawn_results, 
-                    background, scaling_modifier=gaussian_vis_scale, 
-                    down_rate=vis_down_rate, 
-                    dist_concat_on=self.config.dist_concat_on, 
-                    view_concat_on=self.config.view_concat_on, 
-                    correct_exposure=self.config.exposure_correction_on, 
-                    front_only_on=self.config.train_front_only,
-                    gs_type=self.config.gs_type,
-                    displacement_range_ratio=self.config.displacement_range_ratio,
-                    max_scale_ratio=self.config.max_scale_ratio,
-                    unit_scale_ratio=self.config.unit_scale_ratio)
+        #         render_pkg = render(cur_viewpoint_cam, T_w_c, neural_points_data,  
+        #             self.decoders, sorrounding_spawn_results, 
+        #             background, scaling_modifier=gaussian_vis_scale, 
+        #             down_rate=vis_down_rate, 
+        #             dist_concat_on=self.config.dist_concat_on, 
+        #             view_concat_on=self.config.view_concat_on, 
+        #             correct_exposure=self.config.exposure_correction_on, 
+        #             front_only_on=self.config.train_front_only,
+        #             gs_type=self.config.gs_type,
+        #             displacement_range_ratio=self.config.displacement_range_ratio,
+        #             max_scale_ratio=self.config.max_scale_ratio,
+        #             unit_scale_ratio=self.config.unit_scale_ratio)
 
-                # T3 = get_time()
+        #         # T3 = get_time()
 
-                T2_r = get_time()
-                if not self.silence:
-                    print("Render time per frame (ms):", (T2_r-T1_r)*1e3, " [", 1.0/(T2_r-T1_r), " Hz ]")
+        #         T2_r = get_time()
+        #         if not self.silence:
+        #             print("Render time per frame (ms):", (T2_r-T1_r)*1e3, " [", 1.0/(T2_r-T1_r), " Hz ]")
                 
-                renderd_image, rendered_normal, rendered_depth, depth_normal, rendered_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
+        #         renderd_image, rendered_normal, rendered_depth, depth_normal, rendered_alpha = render_pkg["render"], render_pkg["rend_normal"], render_pkg["surf_depth"], render_pkg["surf_normal"], render_pkg["rend_alpha"]
                 
-                # normalize the normals to norm == 1
-                if rendered_normal is not None:
-                    rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) 
-                if depth_normal is not None:
-                    depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
+        #         # normalize the normals to norm == 1
+        #         if rendered_normal is not None:
+        #             rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) 
+        #         if depth_normal is not None:
+        #             depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
 
-                if cur_viewpoint_cam.sky_mask_on:
-                    cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
-                    non_sky_mask = ~ cur_sky_mask
-                    if rendered_depth is not None:
-                        rendered_depth = rendered_depth * non_sky_mask
-                    if depth_normal is not None:
-                        depth_normal = depth_normal * non_sky_mask
-                    if rendered_normal is not None:
-                        rendered_normal = rendered_normal * non_sky_mask
+        #         if cur_viewpoint_cam.sky_mask_on:
+        #             cur_sky_mask = cur_viewpoint_cam.sky_mask_list[vis_down_rate] # still torch
+        #             non_sky_mask = ~ cur_sky_mask
+        #             if rendered_depth is not None:
+        #                 rendered_depth = rendered_depth * non_sky_mask
+        #             if depth_normal is not None:
+        #                 depth_normal = depth_normal * non_sky_mask
+        #             if rendered_normal is not None:
+        #                 rendered_normal = rendered_normal * non_sky_mask
 
-                renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
-                renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
-                renderd_image_np = np.ascontiguousarray(renderd_image_np) 
-                renderd_image_rgb_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
-                if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                    cv2.imshow(cam_name + ": Rendered RGB", renderd_image_rgb_np)
+        #         renderd_image = torch.clamp(renderd_image, 0.0, 1.0) # rule out extreme value for vis
+        #         renderd_image_np = (renderd_image.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+        #         renderd_image_np = np.ascontiguousarray(renderd_image_np) 
+        #         renderd_image_rgb_np = cv2.cvtColor(renderd_image_np, cv2.COLOR_RGB2BGR)
+        #         if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #             cv2.imshow(cam_name + ": Rendered RGB", renderd_image_rgb_np)
 
-                if rendered_depth is not None:
-                    rendered_depth_np = rendered_depth.detach().cpu().numpy()
-                    rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
-                    rendered_depth_np = rendered_depth_np[0] # H, W
-                    rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
-                    rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
-                    rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
+        #         if rendered_depth is not None:
+        #             rendered_depth_np = rendered_depth.detach().cpu().numpy()
+        #             rendered_depth_color = (colorize_depth_maps(rendered_depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8) # 1, 3, H, W 
+        #             rendered_depth_np = rendered_depth_np[0] # H, W
+        #             rendered_depth_np = np.ascontiguousarray(rendered_depth_np)
+        #             rendered_depth_color = np.transpose(rendered_depth_color[0], (1, 2, 0)) # H, W, 3
+        #             rendered_depth_color = cv2.cvtColor(rendered_depth_color, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Rendered Depth", rendered_depth_color)
                 
-                if rendered_normal is not None:
-                    rendered_normal_vis = 0.5 - rendered_normal * 0.5  # convert to the normal vis color # surf_normal
-                    rendered_normal_np = (rendered_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-                    rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
+        #         if rendered_normal is not None:
+        #             rendered_normal_vis = 0.5 - rendered_normal * 0.5  # convert to the normal vis color # surf_normal
+        #             rendered_normal_np = (rendered_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        #             rendered_normal_np = cv2.cvtColor(rendered_normal_np, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Rendered Normal", rendered_normal_np)
 
-                if depth_normal is not None:
-                    depth_normal_vis = 0.5 - depth_normal * 0.5 # convert to the normal vis color # depth_normal
-                    depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-                    depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
+        #         if depth_normal is not None:
+        #             depth_normal_vis = 0.5 - depth_normal * 0.5 # convert to the normal vis color # depth_normal
+        #             depth_normal_np = (depth_normal_vis.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        #             depth_normal_np = cv2.cvtColor(depth_normal_np, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Depth Normal", depth_normal_np)
 
-                if cur_viewpoint_cam.mono_normal_on:
-                    img_mono_normal = cur_viewpoint_cam.normal_img_list[vis_down_rate]
-                    if cur_viewpoint_cam.sky_mask_on:
-                        img_mono_normal = img_mono_normal * non_sky_mask
-                    mono_normal_np = img_mono_normal.permute(1,2,0).detach().cpu().numpy()
-                    mono_normal_np = 0.5 - mono_normal_np * 0.5 # convert to the normal vis color
-                    mono_normal_vis_np = (mono_normal_np * 255.0).astype(np.uint8)  
-                    mono_normal_vis_np = cv2.cvtColor(mono_normal_vis_np, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Mono Normal", mono_normal_vis_np)
+        #         if cur_viewpoint_cam.mono_normal_on:
+        #             img_mono_normal = cur_viewpoint_cam.normal_img_list[vis_down_rate]
+        #             if cur_viewpoint_cam.sky_mask_on:
+        #                 img_mono_normal = img_mono_normal * non_sky_mask
+        #             mono_normal_np = img_mono_normal.permute(1,2,0).detach().cpu().numpy()
+        #             mono_normal_np = 0.5 - mono_normal_np * 0.5 # convert to the normal vis color
+        #             mono_normal_vis_np = (mono_normal_np * 255.0).astype(np.uint8)  
+        #             mono_normal_vis_np = cv2.cvtColor(mono_normal_vis_np, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Mono Normal", mono_normal_vis_np)
 
-                # print("Max alpha value:", torch.max(rendered_alpha).item()) # <= 1
-                # rendered_alpha_np = (rendered_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-                # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
-                # cv2.imshow(cam_name + ": Rendered Alpha", rendered_alpha_np)
+        #         # print("Max alpha value:", torch.max(rendered_alpha).item()) # <= 1
+        #         # rendered_alpha_np = (rendered_alpha.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+        #         # rendered_alpha_np = cv2.cvtColor(rendered_alpha_np, cv2.COLOR_GRAY2BGR)  
+        #         # cv2.imshow(cam_name + ": Rendered Alpha", rendered_alpha_np)
 
-                cv2.waitKey(1)
+        #         cv2.waitKey(1)
 
-                if render_pcd and rendered_depth is not None: # vis with "J"
+        #         if render_pcd and rendered_depth is not None: # vis with "J"
 
-                    # rendered_rgb_image_o3d = o3d.geometry.Image(renderd_image_np)  # with rendered RGB
-                    observed_rgb_image_o3d = o3d.geometry.Image(original_img_int8)   # with original RGB (not availbale sometimes)         
-                    rendered_depth_image_o3d = o3d.geometry.Image(rendered_depth_np)
+        #             # rendered_rgb_image_o3d = o3d.geometry.Image(renderd_image_np)  # with rendered RGB
+        #             observed_rgb_image_o3d = o3d.geometry.Image(original_img_int8)   # with original RGB (not availbale sometimes)         
+        #             rendered_depth_image_o3d = o3d.geometry.Image(rendered_depth_np)
 
-                    rendered_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(observed_rgb_image_o3d, 
-                                                                                        rendered_depth_image_o3d, 
-                                                                                        depth_scale=1.0, 
-                                                                                        depth_trunc=self.config.max_range*0.9, 
-                                                                                        convert_rgb_to_intensity=False)
+        #             rendered_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(observed_rgb_image_o3d, 
+        #                                                                                 rendered_depth_image_o3d, 
+        #                                                                                 depth_scale=1.0, 
+        #                                                                                 depth_trunc=self.config.max_range*0.9, 
+        #                                                                                 convert_rgb_to_intensity=False)
 
                     
-                    original_intrinsic = self.dataset.loader.intrinsic
-                    resized_intrinsic = o3d.camera.PinholeCameraIntrinsic(width=int(original_intrinsic.width/vis_down_scale), 
-                        height=int(original_intrinsic.height/vis_down_scale), 
-                        intrinsic_matrix=original_intrinsic.intrinsic_matrix/vis_down_scale)
+        #             original_intrinsic = self.dataset.loader.intrinsic
+        #             resized_intrinsic = o3d.camera.PinholeCameraIntrinsic(width=int(original_intrinsic.width/vis_down_scale), 
+        #                 height=int(original_intrinsic.height/vis_down_scale), 
+        #                 intrinsic_matrix=original_intrinsic.intrinsic_matrix/vis_down_scale)
 
                     
-                    # rendered point cloud in the world frame
-                    self.rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(rendered_rgbd_o3d, 
-                        resized_intrinsic, np.linalg.inv(self.T_w_c_cur_view))
+        #             # rendered point cloud in the world frame
+        #             self.rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(rendered_rgbd_o3d, 
+        #                 resized_intrinsic, np.linalg.inv(self.T_w_c_cur_view))
 
                 
-                # cur_lidar_pose_np = self.used_poses[-1].detach().cpu().numpy() 
-                # T_cr = np.linalg.inv(cur_lidar_pose_np) @ T_w_l.detach().cpu().numpy() 
-                # self.rendered_pcd_o3d.transform(T_cr) # convert to the coordinate system of current lidar frame
+        #         # cur_lidar_pose_np = self.used_poses[-1].detach().cpu().numpy() 
+        #         # T_cr = np.linalg.inv(cur_lidar_pose_np) @ T_w_l.detach().cpu().numpy() 
+        #         # self.rendered_pcd_o3d.transform(T_cr) # convert to the coordinate system of current lidar frame
 
-                # cur psnr
-                cur_psnr = psnr(renderd_image, rgb_img).mean().item()
-                cur_ssim = fused_ssim(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0), train=False).item()
+        #         # cur psnr
+        #         cur_psnr = psnr(renderd_image, rgb_img).mean().item()
+        #         cur_ssim = fused_ssim(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0), train=False).item()
 
-                if lpips_eval_on:
-                    cur_lpips = self.lpips(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0)).item()
-                else:
-                    cur_lpips = 0.0
+        #         if lpips_eval_on:
+        #             cur_lpips = self.lpips(renderd_image.unsqueeze(0), rgb_img.unsqueeze(0)).item()
+        #         else:
+        #             cur_lpips = 0.0
 
-                if not self.silence:
-                    if cur_viewpoint_cam.train_view:
-                        print("Eval (train view)") 
-                    else: # we only eval the test views
-                        print("Eval (test view)") 
-                    print("Current PSNR ↑ :", cur_psnr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
+        #         if not self.silence:
+        #             if cur_viewpoint_cam.train_view:
+        #                 print("Eval (train view)") 
+        #             else: # we only eval the test views
+        #                 print("Eval (test view)") 
+        #             print("Current PSNR ↑ :", cur_psnr, ", SSIM ↑ :", cur_ssim, ", LPIPS ↓  :", cur_lpips)
 
-                cur_depth_l1 = cur_depth_rmse = 0.0
-                if cur_viewpoint_cam.depth_on and rendered_depth is not None:
-                    # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
-                    depth_valid_mask = (depth_img_np > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
-                    diff_depth = np.abs(depth_img_np - rendered_depth_np) # already abs
-                    diff_depth[~depth_valid_mask] = 0.0
-                    diff_depth_masked = diff_depth[depth_valid_mask]
-                    cur_depth_l1 = np.mean(diff_depth_masked)
-                    cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
+        #         cur_depth_l1 = cur_depth_rmse = 0.0
+        #         if cur_viewpoint_cam.depth_on and rendered_depth is not None:
+        #             # print(np.shape(original_img_depth), np.shape(rendered_depth_np))
+        #             depth_valid_mask = (depth_img_np > eval_depth_min) & (rendered_depth_np > eval_depth_min) & (original_img_depth < eval_depth_max) & (rendered_depth_np < eval_depth_max)
+        #             diff_depth = np.abs(depth_img_np - rendered_depth_np) # already abs
+        #             diff_depth[~depth_valid_mask] = 0.0
+        #             diff_depth_masked = diff_depth[depth_valid_mask]
+        #             cur_depth_l1 = np.mean(diff_depth_masked)
+        #             cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
 
-                    diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, self.config.max_range*0.05)*255.0).astype(np.uint8) # 1, 3, H, W 
-                    diff_depth_color = np.transpose(diff_depth_color[0], (1, 2, 0)) # H, W, 3
-                    diff_depth_color = cv2.cvtColor(diff_depth_color, cv2.COLOR_RGB2BGR)
-                    if self.config.o3d_vis_on and self.config.vis_in_cv2:
-                        cv2.imshow(cam_name + ": Rendered Depth Error", diff_depth_color)
+        #             diff_depth_color = (colorize_depth_maps(diff_depth, 0.0, self.config.max_range*0.05)*255.0).astype(np.uint8) # 1, 3, H, W 
+        #             diff_depth_color = np.transpose(diff_depth_color[0], (1, 2, 0)) # H, W, 3
+        #             diff_depth_color = cv2.cvtColor(diff_depth_color, cv2.COLOR_RGB2BGR)
+        #             if self.config.o3d_vis_on and self.config.vis_in_cv2:
+        #                 cv2.imshow(cam_name + ": Rendered Depth Error", diff_depth_color)
 
-                    if not self.silence:
-                        print("Depth L1 (m) ↓ :", cur_depth_l1, ", Depth RMSE (m) ↓ :", cur_depth_rmse)
+        #             if not self.silence:
+        #                 print("Depth L1 (m) ↓ :", cur_depth_l1, ", Depth RMSE (m) ↓ :", cur_depth_rmse)
 
                 
-            T2_v = get_time()
-            if not self.silence:
-                print("GS evaluation time (ms):", (T2_v-T1_v)*1e3)
+        #     T2_v = get_time()
+        #     if not self.silence:
+        #         print("GS evaluation time (ms):", (T2_v-T1_v)*1e3)
 
         return 
 

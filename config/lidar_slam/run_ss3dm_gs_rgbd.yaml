@@ -6,26 +6,26 @@ setting:
   color_map_on: True
 process:
   min_range_m: 4.0
-  max_range_m: 60.0
-  vox_down_m: 0.08
+  max_range_m: 80.0
+  vox_down_m: 0.1
 sampler:
-  surface_sample_range_m: 0.4
+  surface_sample_range_m: 0.3
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
 neuralpoints:
-  voxel_size_m: 0.25 # 0.3
+  voxel_size_m: 0.3 # 0.3
   search_alpha: 0.8
   query_nn_k: 6
   feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 32 # 16
+  color_feature_dim: 16 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
-  sigma_sigmoid_m: 0.1
+  sigma_sigmoid_m: 0.05
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
@@ -45,9 +45,9 @@ continual:
 gs:
   eval_on: False
   invalid_check_on: False
-  exposure_correction_on: False # verified to be better than False
-  view_concat_on: False
-  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
+  exposure_correction_on: True # verified to be better than False
+  view_concat_on: True
+  dist_concat_on: True # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
@@ -57,18 +57,18 @@ gs:
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 0.5 # unit: m
-  # displacement_range_ratio: 2.0
-  # max_scale_ratio: 2.0
-  # unit_scale_ratio: 0.5
-  inverse_depth_loss: False
-  lambda_depth: 0.05 
+  displacement_range_ratio: 2.0
+  max_scale_ratio: 3.0
+  unit_scale_ratio: 0.5
+  # inverse_depth_loss: False
+  lambda_depth: 0.05
   lambda_opacity: 2e-3 # 1e-3 # increase to have more valid gaussians
   lambda_area: 2e-4 # 1e-3
   # consist_normal_fixed: True
-  # lambda_normal_depth: 0.01 # check this
+  lambda_normal_depth: 0.01 # check this
   lambda_sdf_cons: 0.05
   lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss
-  lambda_sdf: 0.2 # 0.1 # what should this value be like # I don't know # 1.0
+  lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
   iters: 15  # iterations per frame
@@ -78,6 +78,6 @@ optimizer: # mapper
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   # sensor_cad_path: ./cad/ipb_car_cheap.ply
-  mesh_freq_frame: 10 # reconstruct the mesh every x frames
+  mesh_freq_frame: 50 # reconstruct the mesh every x frames
   mesh_min_nn: 15
   visualizer_split_width_ratio: 0.6

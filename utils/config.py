@@ -290,7 +290,7 @@ class Config:
         self.lambda_normal_smooth: float = 0.0
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
         self.lambda_distort: float = 0.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections # [confirmed to be not very useful]
-        self.lambda_sky: float = 0.0 # bce loss, let the sky gaussians has small opacity
+        self.lambda_sky: float = 0.01 # bce loss, let the sky gaussians has small opacity
         self.lambda_sdf_cons: float = 0.0 # gaussian center's sdf should be close to 0
         self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction
         self.lambda_invalid_opacity: float = 0.0 # to let those part with not well constructed sdf to have a samller opacity
@@ -504,6 +504,8 @@ class Config:
 
         # neural point map
         if "neuralpoints" in config_args:
+            self.buffer_size = int(float(config_args["neuralpoints"].get("buffer_size", self.buffer_size)))
+
             self.voxel_size_m = config_args["neuralpoints"].get("voxel_size_m", self.vox_down_m * 5.0)
             self.query_nn_k = config_args["neuralpoints"].get("query_nn_k", self.query_nn_k)
             self.num_nei_cells = config_args["neuralpoints"].get("num_nei_cells", self.num_nei_cells)
