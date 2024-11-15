@@ -772,6 +772,7 @@ class SLAMDataset():
                 self.config.max_z,
                 self.config.min_range,
                 self.crop_max_range,
+                self.config.range_filter_2d,
             )
 
         self.cur_point_cloud_torch = self.cur_point_cloud_torch[filter_idx]
@@ -1193,6 +1194,7 @@ class SLAMDataset():
                 self.config.max_z,
                 self.config.min_range,
                 self.config.max_range,
+                self.config.range_filter_2d,
             )
 
             frame_down_torch = frame_down_torch[frame_crop_idx]
@@ -1853,8 +1855,13 @@ def crop_frame(
     max_z_th=100.0,
     min_range=2.75,
     max_range=100.0,
+    on_xy_plane: bool = True
 ):
-    dist = torch.norm(points[:, :3], dim=1)
+    if on_xy_plane:
+        dist = torch.norm(points[:, :2], dim=1) # 2d distance
+    else:
+        dist = torch.norm(points[:, :3], dim=1) # 3d distance
+
     filtered_idx = (
         (dist > min_range)
         & (dist < max_range)

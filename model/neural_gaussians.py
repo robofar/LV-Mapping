@@ -536,7 +536,11 @@ class NeuralPoints(nn.Module):
 
         # speed up by calulating distance only with the t filtered points
         masked_vec2sensor = self.neural_points[time_mask] - sensor_position
-        masked_dist2sensor = torch.sum(masked_vec2sensor**2, dim=-1)  # dist square
+
+        if self.config.range_filter_2d:
+            masked_dist2sensor = torch.sum(masked_vec2sensor[:,:2]**2, dim=-1)  # dist square
+        else:
+            masked_dist2sensor = torch.sum(masked_vec2sensor**2, dim=-1)  # dist square
 
         dist_mask = (masked_dist2sensor < self.config.local_map_radius**2)
         time_mask_idx = torch.nonzero(time_mask).squeeze() # True index

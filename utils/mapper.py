@@ -381,7 +381,11 @@ class Mapper:
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
             pool_relatve = self.global_coord_pool - frame_origin_torch
             # print(pool_relatve.shape)
-            pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+            if self.config.range_filter_2d:
+                pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
+            else:
+                pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+                
             dist_mask = pool_relative_dist < self.config.window_radius
 
             filter_mask = dist_mask

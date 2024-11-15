@@ -98,7 +98,6 @@ class SS3DMDataset:
         self.cam_widths = {}
         self.cam_heights = {}
 
-        # img_size: 2064x1024
         H, W = 1080, 1920 
         fx = fy = 672.19923668
         cx, cy = 960, 540
@@ -114,11 +113,21 @@ class SS3DMDataset:
         self.T_l_v = np.array([[0, 0, -1, 0],
                                 [1, 0, 0, 0],
                                 [0, -1, 0, 0],
-                                [0, 0, 0, 1]])
+                                [0, 0, 0, 1]]) # det is positive
+
+        # reference: https://github.com/carla-simulator/ros-bridge/issues/637
+        # left-hand to right-hand
+        self.flip_y = np.eye(4)
+        self.flip_y[1,1] = -1
 
         ego_car_data = (scenario_data["ego_car"])["data"]
-        self.T_w_v = ego_car_data["v2w"] # N,4,4
+        self.T_w_v = ego_car_data["v2w"] # N,4,4 # det =-1 
+
         self.gt_poses = np.matmul(self.T_w_v, np.linalg.inv(self.T_l_v)) # T_w_l
+
+        self.gt_poses = np.matmul(self.gt_poses, self.flip_y)  # now det is positive
+
+        # print(np.linalg.det(self.gt_poses[0,:3,:3]))
 
         lidar_name_full = "lidar_{}".format(self.main_lidar_name)
         lidar_meta_data = scenario_data[lidar_name_full]
@@ -144,9 +153,7 @@ class SS3DMDataset:
 
             cur_cam_T_v_c = ((cam_meta_data["data"])["c2v"])[0]
 
-            self.T_c_l_mats[cam_name] = np.linalg.inv(self.T_l_v @ cur_cam_T_v_c)  # still wrong # this might be wrong
-
-            # print(self.T_c_l_mats[cam_name])
+            self.T_c_l_mats[cam_name] = np.linalg.inv(self.T_l_v @ cur_cam_T_v_c)  # still wrong # this might be wrong # positive det
 
         for lidar_name in self.lidar_list:
             cur_lidar_dir = os.path.join(data_dir, "lidars", "lidar_{}/".format(lidar_name))

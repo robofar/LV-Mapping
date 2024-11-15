@@ -57,6 +57,7 @@ class Config:
         # distance filter
         self.min_range: float = 2.5 # filter too-close points (and 0 artifacts)
         self.max_range: float = 60.0 # filter far-away points
+        self.range_filter_2d: bool = True # do the range-based filter according to 2d (xy) distance or 3d (xyz) distance (important!!! FIXME, for rgbd dataset, better to use 3d version) 
         self.adaptive_range_on: bool = False # use an adpative range
 
         self.estimate_normal: bool = False
@@ -479,6 +480,7 @@ class Config:
         if "process" in config_args:
             self.min_range = config_args["process"].get("min_range_m", self.min_range)
             self.max_range = config_args["process"].get("max_range_m", self.max_range)
+            self.range_filter_2d = config_args["process"].get("range_filter_2d", self.range_filter_2d)
             self.min_z = config_args["process"].get("min_z_m", self.min_z)
             self.max_z = config_args["process"].get("max_z_m", self.max_z)
             self.rand_downsample = config_args["process"].get("rand_downsample", self.rand_downsample)
