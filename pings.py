@@ -592,7 +592,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         print("Begin rendering evaluation")
         # don't do visualization
         if config.gs_eval_on:
-            mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=True) # FIXME
+            mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on) # FIXME
             mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     

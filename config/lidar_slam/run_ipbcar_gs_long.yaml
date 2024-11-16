@@ -9,13 +9,14 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.1
-  dynamic_sdf_ratio_thre: 0.8
+  dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.3
-  surface_sample_n: 2
+  surface_sample_range_m: 0.4
+  surface_sample_n: 6
   free_sample_begin_ratio: 0.3
-  free_sample_end_dist_m: 1.0
   free_front_sample_n: 2
+  free_sample_end_dist_m: 1.0
+  free_behind_n: 1
 neuralpoints:
   voxel_size_m: 0.3 # 0.25
   search_alpha: 0.5 # 0.8
@@ -28,7 +29,7 @@ decoder:
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
-  sigma_sigmoid_m: 0.1
+  sigma_sigmoid_m: 0.05
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
@@ -53,25 +54,26 @@ gs:
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 1.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: True
   short_term_train_prob: 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  gs_keyframe_accu_dist: 1.0 # unit: m
+  long_term_train_down: False
+  gs_keyframe_accu_dist: 1.5 # unit: m
   inverse_depth_loss: False
-  lambda_depth: 0.02 # 20.0 # decrease this , it's not useful ... depth rendering
+  lambda_depth: 0.01 # 20.0 # decrease this , it's not useful ... depth rendering
   lambda_opacity: 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  lambda_invalid_opacity: 1e-2
-  lambda_area: 1e-3 # 1e-3
+  lambda_invalid_opacity: 2e-3
+  # lambda_area: 1e-3 # 1e-3
   lambda_normal_depth: 0.01
   # consist_normal_fixed: True
-  lambda_sdf_cons: 0.1
-  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss
-  lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
+  lambda_sdf_cons: 0.02
+  lambda_sdf_normal_cons: 0.02 # rendered normal seems to be better without this loss
+  lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
   iters: 15  # iterations per frame

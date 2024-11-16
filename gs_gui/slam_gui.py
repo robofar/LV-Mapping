@@ -1,3 +1,4 @@
+from typing import Dict, List, Tuple
 import pathlib
 import threading
 import time
@@ -108,6 +109,8 @@ class SLAM_GUI:
         self.gaussian_nums = []
 
         self.brisque_scorer = BRISQUE(url=False)
+
+        self.recorded_poses = []
 
         self.view_save_base_path = os.path.expanduser("~/.viewpoints")
         os.makedirs(self.view_save_base_path, 0o755, exist_ok=True)
@@ -284,13 +287,18 @@ class SLAM_GUI:
         
         # these are not button, but rather switch
         self.slider_slam = gui.ToggleSwitch("Resume / Pause SLAM")
-        self.slider_slam.is_on = True
+        self.slider_slam.is_on = True # default on
         self.slider_slam.set_on_clicked(self._on_slam_slider)
         slider_line.add_child(self.slider_slam)
 
         self.slider_render = gui.ToggleSwitch("Resume / Pause Rendering")
         self.slider_render.is_on = True # default on
         slider_line.add_child(self.slider_render)
+
+        self.slider_recording = gui.ToggleSwitch("Resume / Pause Recording")
+        self.slider_recording.is_on = False # default off
+        slider_line.add_child(self.slider_recording)
+
 
         self.panel.add_child(slider_line)
 
@@ -301,15 +309,6 @@ class SLAM_GUI:
         vp_subtile2 = gui.Vert(0.5 * em, gui.Margins(margin))
         vp_subtile3 = gui.Vert(0.5 * em, gui.Margins(margin))
         vp_subtile4 = gui.Vert(0.5 * em, gui.Margins(margin))
-        
-        # h = gui.Horiz(0.25 * em, gui.Margins(margin)) 
-        # self._arcball_button = gui.Button("Arcball")
-        # self._arcball_button.horizontal_padding_em = 0.5
-        # self._arcball_button.vertical_padding_em = 0
-        # self._arcball_button.set_on_clicked(self._set_mouse_mode_rotate)
-
-        # h.add_child(self._arcball_button)
-        # h.add_child(self._fly_button)
 
         # self.panel.add_child(h)
 
@@ -453,7 +452,6 @@ class SLAM_GUI:
 
         chbox_tile_3dobj_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
-        # TODO
         self.neural_point_chbox = gui.Checkbox("Neural Points")
         self.neural_point_chbox.checked = self.neural_point_default_on
         self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
@@ -610,12 +608,24 @@ class SLAM_GUI:
         slider_tile_down_rate.add_child(self.scaling_slider_downrate)
         self.panel.add_child(slider_tile_down_rate)
 
+
+        chbox_save_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+
         # screenshot buttom
         self.screenshot_btn = gui.Button("Screenshot")
         self.screenshot_btn.set_on_clicked(
             self._on_screenshot_btn
         )  # set the callback function
-        self.panel.add_child(self.screenshot_btn)
+        chbox_save_tile.add_child(self.screenshot_btn)
+
+        self.save_recording_btn = gui.Button("Save Recording")
+        self.save_recording_btn.set_on_clicked(
+            self._on_save_recording_btn
+        ) 
+        chbox_save_tile.add_child(self.save_recording_btn)
+        
+        self.panel.add_child(chbox_save_tile)
+
 
         ## Info Tab
         tab_margins = gui.Margins(0, int(np.round(0.5 * em)), 0, 0)
@@ -796,7 +806,7 @@ class SLAM_GUI:
     def _on_close(self):
         self.is_done = True
 
-        print("Received terminate signal")
+        print("[GUI] Received terminate signal")
         # clean up the pipe
         while not self.q_main2vis.empty():
             self.q_main2vis.get()
@@ -875,14 +885,14 @@ class SLAM_GUI:
     def _on_neural_point_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.neural_point_name)
-            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
         else:
             self.widget3d.scene.remove_geometry(self.neural_point_name)
 
     def _on_invalid_neural_point_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
-            self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render) 
         else:
             self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
 
@@ -890,7 +900,7 @@ class SLAM_GUI:
     def _on_mesh_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) # TODO: add pin-slam mesh
+            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) 
         else:
             self.widget3d.scene.remove_geometry(self.mesh_name)
 
@@ -1086,6 +1096,8 @@ class SLAM_GUI:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cv2.imwrite(f"{filename}.png", img)
 
+        print("[GUI] Screenshot save at {}.png".format(filename))
+
     def _on_reset_view_btn(self):
         self.center_bev()
         self.fly_chbox.checked = False
@@ -1095,13 +1107,27 @@ class SLAM_GUI:
         save_view_file_name = 'saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
         save_view_file_path = os.path.join(self.view_save_base_path, save_view_file_name)
         if self.save_view(save_view_file_path):
-            print("Camera view {} saved".format(self.combo_preset_cams.selected_text))
+            print("[GUI] Camera view {} saved".format(self.combo_preset_cams.selected_text))
     
     def _on_load_view_btn(self):
         load_view_file_name = 'saved_view_{}.pkl'.format(self.combo_preset_cams.selected_text)
         load_view_file_path = os.path.join(self.view_save_base_path, load_view_file_name)
         if self.load_view(load_view_file_path):
-            print("Camera view {} loaded".format(self.combo_preset_cams.selected_text))
+            print("[GUI] Camera view {} loaded".format(self.combo_preset_cams.selected_text))
+
+    def _on_save_recording_btn(self):
+        dt = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        save_dir = self.save_path / "recording" / dt
+        save_dir.mkdir(parents=True, exist_ok=True)
+        # create the filename
+        filename = save_dir / "recorded_pose"
+
+        if len(self.recorded_poses) > 0:
+            write_kitti_format_poses(filename, self.recorded_poses)
+            print("[GUI] Recorded poses save at {}".format(filename))
+
+        self.recorded_poses = [] # clear the poses
+
 
     def _set_mouse_mode(self, is_on):
         if is_on:
@@ -1137,7 +1163,7 @@ class SLAM_GUI:
                 dump(saved_view, pickle_file)
             return True
         except Exception as e:
-            print(e)
+            print("[GUI]", e)
             return False
 
     def load_view(self, fname=".saved_view.pkl"):
@@ -1148,7 +1174,7 @@ class SLAM_GUI:
             # Looks like the ground plane gets messed up, no idea how to fix
             return True
         except Exception as e:
-            print("Can't find file", e)
+            print("[GUI] Can't find file", e)
             return False
     
 
@@ -1156,7 +1182,6 @@ class SLAM_GUI:
         if q is None:
             return
 
-        # TODO: is this slow?
         gaussian_packet = get_latest_queue(q)
 
         if gaussian_packet is None:
@@ -1230,9 +1255,6 @@ class SLAM_GUI:
                     self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
                     self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
 
-                # FIXME
-
-                # show feature PCA color (TODO)
 
             if gaussian_packet.has_sorrounding_points:
                 cur_center_position = gaussian_packet.sorrounding_neural_points_data["center"]
@@ -1244,7 +1266,7 @@ class SLAM_GUI:
                     self.decoders, None, cur_center_position,
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
-                    scale_filter_on=True,
+                    scale_filter_on=False,  # for visualization, do not filter (TODO)
                     z_far=self.config.sorrounding_map_radius,
                     learn_color_residual=self.config.learn_color_residual,
                     gs_type=self.config.gs_type,
@@ -1296,8 +1318,6 @@ class SLAM_GUI:
                     frustum = self.add_keyframe(
                         cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=frustum_size
                     ) 
-
-            # TODO: add evaluation online, visualize the error map here
 
             if gaussian_packet.current_pointcloud_xyz is not None:
                 self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
@@ -1411,7 +1431,7 @@ class SLAM_GUI:
         self.init = True
 
         if gaussian_packet.finish:
-            print("Received terminate signal")
+            print("[GUI] Received terminate signal")
             # clean up the pipe
             while not self.q_main2vis.empty():
                 self.q_main2vis.get()
@@ -1684,7 +1704,7 @@ class SLAM_GUI:
                 .numpy()
             )
 
-        if self.step % 200 == 0:  # 2 second
+        if self.step % 300 == 0:  # 3 second
             cur_brisque_score = self.brisque_scorer.score(img=rgb)
             self.brisque_score_info.text = ("Current view BRISQUE score: {:.3f}".format(cur_brisque_score))
         
@@ -1760,9 +1780,7 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.elliopsoid_chbox.checked: # important # TODO: try this still
-
-            # return None # TODO: currently has some issue
+        elif self.elliopsoid_chbox.checked:
 
             if self.gaussian_cur is None:
                 return
@@ -1848,9 +1866,6 @@ class SLAM_GUI:
         return render_img
 
     def rasterise(self, current_cam):
-        
-        # TODO: subscribe to current camera, reset local map for rendering
-        # Why the memory of the gaussians are not released (you need to remove the cache)
 
         if self.gaussian_cur is None:
             return None
@@ -1870,7 +1885,7 @@ class SLAM_GUI:
                 self.gaussian_cur.neural_points_data, 
                 self.decoders, self.cur_base_gaussians, self.background, 
                 scaling_modifier=self.scaling_slider.double_value, 
-                down_rate=self.scaling_slider_downrate.int_value,  # TODO: better to add this to the slider
+                down_rate=self.scaling_slider_downrate.int_value, 
                 dist_concat_on=self.config.dist_concat_on, 
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=False,
@@ -1933,7 +1948,7 @@ class SLAM_GUI:
             self.step += 1
             if self.process_finished:
                 o3d.visualization.gui.Application.instance.quit()
-                print("Closing Visualization")
+                print("[GUI] Closing Visualization")
                 break
             
             # print(self.step)
@@ -1943,6 +1958,11 @@ class SLAM_GUI:
                     # print("UPDATE scene")
                     if self.step % 3 == 0: # per 0.03s # 30 Hz
                         self.render_gui() # stucked here
+
+                        if self.slider_recording.is_on:
+                            model_matrix = np.asarray(self.widget3d.scene.camera.get_model_matrix())
+                            cur_extrinsic = model_matrix_to_extrinsic_matrix(model_matrix)
+                            self.recorded_poses.append(cur_extrinsic)
 
                     if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis) # this is also slow
@@ -1993,6 +2013,13 @@ def create_camera_intrinsic_from_size(width=1024, height=768, hfov=60.0, vfov=60
         [[fx, 0, width / 2.0],
          [0, fy, height / 2.0],
          [0, 0,  1]])
+
+# copyright: Nacho et al. KISS-ICP
+def write_kitti_format_poses(filename: str, poses: List[np.ndarray]):
+    def _to_kitti_format(poses: np.ndarray) -> np.ndarray:
+        return np.array([np.concatenate((pose[0], pose[1], pose[2])) for pose in poses])
+
+    np.savetxt(fname=f"{filename}.txt", X=_to_kitti_format(poses))
 
 
 if __name__ == "__main__":

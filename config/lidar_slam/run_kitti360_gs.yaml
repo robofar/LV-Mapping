@@ -42,7 +42,7 @@ gs:
   gaussian_bs_ratio: 1.0
   gs_keyframe_interval: 2 # 2
   img_pool_size: 15 # 15
-  eval_on: False
+
   img_test_pool_size: 0
   gs_down_rate: 0
   gs_vis_down_rate: 0
@@ -80,4 +80,5 @@ optimizer: # mappers
 eval:
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 12
+  eval_on: False
   sensor_cad_path: ./cad/kitti_car.ply

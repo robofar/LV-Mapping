@@ -43,7 +43,6 @@ continual:
 #   pgo_freq_frame: 30
 #   virtual_side_count: 6
 gs:
-  eval_on: False
   invalid_check_on: False
   exposure_correction_on: False # verified to be better than False
   view_concat_on: False
@@ -80,4 +79,5 @@ eval:
   # sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
   mesh_min_nn: 10
+  eval_on: False
   visualizer_split_width_ratio: 0.6

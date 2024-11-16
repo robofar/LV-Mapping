@@ -57,7 +57,7 @@ parser.add_argument('--center_frame_id', '-f', type=int, default=0, help='PINGS 
 parser.add_argument('--vis_off', action='store_true', default=False, help='Turn off the visualizer')
 parser.add_argument('--log_on', '-l', action='store_true', default=False, help='Turn on the logs printing')
 parser.add_argument('--eval_seq', '-e', action='store_true', default=False, help='Do the evaluation on the input sequence')
-parser.add_argument('--render_video', '-s', action='store_true', default=False, help='Render and save video with pre-defined trajectory in the PINGS map')
+parser.add_argument('--render_video', '-v', action='store_true', default=False, help='Render and save video with pre-defined trajectory in the PINGS map')
 parser.add_argument('--recon_3d', '-r', action='store_true', default=False, help='Reconstruct 3D by rendering the PINGS map')
 parser.add_argument('--show_mesh', '-m', action='store_true', default=False, help='Show the PINGS mesh')
 parser.add_argument('--show_global', '-g', action='store_true', default=False, help='Show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
@@ -154,10 +154,11 @@ def inspect_pings_map():
     mlp_dict["gauss_color"] = gaussian_color_mlp
 
     # initialize the neural point features
-    neural_points = NeuralPoints(config)
+    # neural_points = NeuralPoints(config)
 
     loaded_model = torch.load(model_path)
     neural_points = loaded_model["neural_points"] # neural_points config are also loaded
+    neural_points.config = config
     neural_points.temporal_local_map_on = False
     neural_points.compute_feature_principle_components(down_rate=31)
 

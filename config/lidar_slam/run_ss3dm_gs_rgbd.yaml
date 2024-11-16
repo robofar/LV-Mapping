@@ -43,11 +43,10 @@ continual:
 #   pgo_freq_frame: 30
 #   virtual_side_count: 6
 gs:
-  eval_on: False
   invalid_check_on: False
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
-  dist_concat_on: True # not much improvement for test views ( abit improvement at train views)
+  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
   gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # TODO: decrease maybe
@@ -80,4 +79,5 @@ eval:
   # sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
   mesh_min_nn: 15
+  eval_on: False
   visualizer_split_width_ratio: 0.6

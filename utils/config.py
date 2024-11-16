@@ -154,8 +154,8 @@ class Config:
         self.decoder_freezed: bool = False # change to true after self.freeze_after_frame
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
 
-        # For GS MLPs (FIXME)
-        self.dist_concat_on: bool = True
+        # For GS MLPs
+        self.dist_concat_on: bool = False
         self.view_concat_on: bool = False
 
         # positional encoding related [not used]
@@ -231,7 +231,6 @@ class Config:
 
         self.gs_type: str = "gaussian_surfel" # now we support 3d_gs, 2d_gs and gaussian_surfel
 
-        self.gs_eval_on: bool = True
         self.monodepth_on: bool = False
         self.monodepth_gaussian_res: float = self.voxel_size_m * 2.0
 
@@ -415,6 +414,10 @@ class Config:
         self.save_map: bool = False # save the neural point map model and decoders or not
         self.save_merged_pc: bool = False # save the merged point cloud pc or not
         self.save_mesh: bool = False # save the reconstructed mesh map or not
+
+        # GS evaluation
+        self.gs_eval_on: bool = True 
+        self.rendered_pc_eval_on: bool = False
 
         # ROS related 
         self.run_with_ros: bool = False
@@ -652,8 +655,6 @@ class Config:
             self.gs_on = True
             self.gs_type = config_args["gs"].get("gs_type", self.gs_type)
 
-            self.gs_eval_on = config_args["gs"].get("eval_on", self.gs_eval_on)
-
             self.exposure_correction_on = config_args["gs"].get("exposure_correction_on", self.exposure_correction_on)
             
             self.gs_invalid_check_on = config_args["gs"].get("invalid_check_on", self.gs_invalid_check_on) 
@@ -751,6 +752,9 @@ class Config:
 
             # gs visualizer
             self.visualizer_split_width_ratio = config_args["eval"].get('visualizer_split_width_ratio', self.visualizer_split_width_ratio)
+            
+            self.gs_eval_on = config_args["eval"].get("gs_eval_on", self.gs_eval_on)
+            self.rendered_pc_eval_on = config_args["eval"].get('rendered_pc_eval_on', self.rendered_pc_eval_on)
 
         # associated parameters
         self.infer_bs = self.bs * 8
