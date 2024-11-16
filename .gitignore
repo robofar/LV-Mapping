@@ -184,6 +184,10 @@ screenshots/
 screenshots
 *png
 
+# recordings
+recording/
+recording
+
 # viewpoints
 *pkl
 
