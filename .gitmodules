@@ -7,18 +7,12 @@
 [submodule "submodules/diff-gaussian-rasterization"]
 	path = submodules/diff-gaussian-rasterization
 	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization
-[submodule "submodules/depth-diff-gaussian-rasterization"]
-	path = submodules/depth-diff-gaussian-rasterization
-	url = https://github.com/ingra14m/depth-diff-gaussian-rasterization
 [submodule "submodules/diff-gaussian-rasterization-w-pose"]
 	path = submodules/diff-gaussian-rasterization-w-pose
 	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose
 [submodule "submodules/fused-ssim"]
 	path = submodules/fused-ssim
 	url = https://github.com/rahul-goel/fused-ssim
-[submodule "submodules/diff-gaussian-rasterization_2d"]
-	path = submodules/diff-gaussian-rasterization_2d
-	url = https://github.com/liren-jin/diff-gaussian-rasterization_2d
 [submodule "submodules/stopthepop-rasterization"]
 	path = submodules/stopthepop-rasterization
 	url = https://github.com/r4dl/StopThePop-Rasterization/
