@@ -50,7 +50,7 @@ class Config:
 
         # motion undistortion
         self.deskew: bool = False
-        self.lidar_type_guess: str = "velodyne"
+        self.lidar_type_guess: str = "hesai" # velodyne
         self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
 
         # preprocess

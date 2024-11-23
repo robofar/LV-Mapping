@@ -86,6 +86,8 @@ class SLAM_GUI:
         self.kf_window = None
         self.render_img = None
 
+        self.brisque_score_on = False # turn this off for now
+
         if params_gui is not None:
             self.decoders = params_gui.decoders
             self.background = params_gui.background
@@ -990,6 +992,8 @@ class SLAM_GUI:
             self.d2n_chbox.checked = False
             self.opacity_chbox.checked = False
 
+            # self.cad_render.shader = "normals"
+
     def _on_d2n_chbox(self, is_checked):
         if is_checked:
             self.elliopsoid_chbox.checked = False
@@ -1124,7 +1128,7 @@ class SLAM_GUI:
 
         if len(self.recorded_poses) > 0:
             write_kitti_format_poses(filename, self.recorded_poses)
-            print("[GUI] Recorded poses save at {}".format(filename))
+            print("[GUI] Recorded poses save at {}.txt".format(filename))
 
         self.recorded_poses = [] # clear the poses
 
@@ -1662,7 +1666,7 @@ class SLAM_GUI:
         image_gui = torch.zeros(
             (1, int(self.window.size.height), int(self.widget3d_width))
         )
-        vfov_deg = self.widget3d.scene.camera.get_field_of_view() # Here there's problem
+        vfov_deg = self.widget3d.scene.camera.get_field_of_view() 
 
         hfov_deg = self.vfov_to_hfov(vfov_deg, image_gui.shape[1], image_gui.shape[2])
         FoVx = np.deg2rad(hfov_deg)
@@ -1704,7 +1708,7 @@ class SLAM_GUI:
                 .numpy()
             )
 
-        if self.step % 300 == 0:  # 3 second
+        if self.step % 300 == 0 and self.brisque_score_on:  # 3 second
             cur_brisque_score = self.brisque_scorer.score(img=rgb)
             self.brisque_score_info.text = ("Current view BRISQUE score: {:.3f}".format(cur_brisque_score))
         
@@ -1962,7 +1966,8 @@ class SLAM_GUI:
                         if self.slider_recording.is_on:
                             model_matrix = np.asarray(self.widget3d.scene.camera.get_model_matrix())
                             cur_extrinsic = model_matrix_to_extrinsic_matrix(model_matrix)
-                            self.recorded_poses.append(cur_extrinsic)
+                            cam_pose = np.linalg.inv(cur_extrinsic)
+                            self.recorded_poses.append(cam_pose)
 
                     if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis) # this is also slow

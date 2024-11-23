@@ -11,6 +11,7 @@ import time
 import yaml
 import csv
 import cv2
+from datetime import datetime
 
 from typing import Dict, List
 
@@ -35,6 +36,7 @@ from eval.eval_mesh_utils import eval_pair
 
 from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
+from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gaussian_splatting.utils.image_utils import psnr
 
 from fused_ssim import fused_ssim
@@ -57,10 +59,13 @@ parser.add_argument('--center_frame_id', '-f', type=int, default=0, help='PINGS 
 parser.add_argument('--vis_off', action='store_true', default=False, help='Turn off the visualizer')
 parser.add_argument('--log_on', '-l', action='store_true', default=False, help='Turn on the logs printing')
 parser.add_argument('--eval_seq', '-e', action='store_true', default=False, help='Do the evaluation on the input sequence')
+parser.add_argument('--use_free_view_camera', '-c', action='store_true', default=False, help='Render video with the recorded free view camera, input via -p')
 parser.add_argument('--render_video', '-v', action='store_true', default=False, help='Render and save video with pre-defined trajectory in the PINGS map')
 parser.add_argument('--recon_3d', '-r', action='store_true', default=False, help='Reconstruct 3D by rendering the PINGS map')
+parser.add_argument('--recon_3d_tsdf', '-t', action='store_true', default=False, help='Reconstruct 3D using TSDF fusion by rendering the PINGS map')
 parser.add_argument('--show_mesh', '-m', action='store_true', default=False, help='Show the PINGS mesh')
 parser.add_argument('--show_global', '-g', action='store_true', default=False, help='Show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
+parser.add_argument('--neural_point_color_mode', type=int, default=0, help='0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability')
 parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes resolution (in meter) for mesh reconstruction')
 parser.add_argument('--mesh_min_nn_k', type=int, default=-1, help='SDF querying min neighbor neural point count for mesh reconstruction')
 parser.add_argument('--sorrounding_map_r_m', type=float, default=-1, help='Radius of the sorrounding map in meter for far-away stuff rendering')
@@ -188,12 +193,12 @@ def inspect_pings_map():
             robot_default_on=False,
             neural_point_default_on=False,
             mesh_default_on=True,
-            neural_point_color_default_mode=3, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
+            neural_point_color_default_mode=args.neural_point_color_mode, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
         gui_process.start()
-
+        time.sleep(2) # second
 
     # default case, we use the pose file of the experiment run (then it would be the train & interpolation test views)
     if args.pose_path is None or (not os.path.exists(args.pose_path)):
@@ -241,7 +246,7 @@ def inspect_pings_map():
         if args.mesh_min_nn_k < 0:
             mesh_min_nn_k_used = config.mesh_min_nn # use the default value
         
-        neural_pcd = neural_points.get_neural_points_o3d(query_global=args.show_global, color_mode=2, random_down_ratio=down_rate)
+        neural_pcd = neural_points.get_neural_points_o3d(query_global=args.show_global, color_mode=args.neural_point_color_mode, random_down_ratio=down_rate)
         mesh_aabb = neural_pcd.get_axis_aligned_bounding_box()
         chunks_aabb = split_chunks(neural_pcd, mesh_aabb, mesh_vox_size_m*500) 
         print("Number of chunks for reconstruction:", len(chunks_aabb))
@@ -266,6 +271,10 @@ def inspect_pings_map():
             
             q_main2vis.put(packet_to_vis)
 
+    if args.use_free_view_camera: 
+        cam_names = ["free_cam"]
+    else:
+        cam_names = dataset.cam_names 
 
     # used_poses
     if args.render_video or args.recon_3d or args.eval_seq:
@@ -274,7 +283,8 @@ def inspect_pings_map():
             neural_points, 
             mlp_dict,
             poses_for_render, 
-            dataset.cam_names, 
+            cam_names, 
+            recon_3d_on=args.recon_3d, 
             recon_3d_tsdf_on=args.recon_3d, 
             eval_on=args.eval_seq,
             video_save_base_path=video_folder_path, 
@@ -304,7 +314,7 @@ def inspect_pings_map():
 def render_with_poses(config: Config, dataset: SLAMDataset,
                       neural_points: NeuralPoints, 
                       decoders: Dict[str, Decoder], 
-                      lidar_poses: Dict[str, np.array], 
+                      view_poses: Dict[str, np.array], 
                       cam_list: List[str],
                       video_save_base_path: str = None,
                       vis_on: bool = False,
@@ -327,7 +337,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         Inspection of the PINGS map, conduct rendering with given poses
     """
 
-    # lidar_poses as list of np array
+    # view_poses as list of np array
 
     background = torch.tensor(config.bg_color, dtype=config.dtype, device=config.device)
     bg_3d = background.view(3, 1, 1)
@@ -370,6 +380,22 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     cd_list = []
     f1_list = []
 
+
+    # free camera parameters
+    free_cam_W = 640
+    free_cam_H = 480
+    free_cam_hfov_deg = 60
+    free_cam_vfov_deg = 60
+
+    free_cam_fx = fov2focal(np.deg2rad(free_cam_hfov_deg), free_cam_W)
+    free_cam_fy = fov2focal(np.deg2rad(free_cam_vfov_deg), free_cam_H)
+
+    free_cam_K_mat = np.eye(3)
+    free_cam_K_mat[0,0] = free_cam_fx
+    free_cam_K_mat[1,1] = free_cam_fy
+    free_cam_K_mat[0,2] = free_cam_W // 2
+    free_cam_K_mat[1,2] = free_cam_H // 2
+
     for cur_cam_name in cam_list: 
         # initialize lists for video
         rendered_rgb_cam_dict[cur_cam_name] = []
@@ -380,34 +406,47 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         cur_intrinsic_o3d = o3d.camera.PinholeCameraIntrinsic()
 
-        cur_K_mat = dataset.K_mats[cur_cam_name]
+        if args.use_free_view_camera:
+
+            cur_K_mat = free_cam_K_mat
+            cur_H = free_cam_H
+            cur_W = free_cam_W
+            cur_extrinsic = np.eye(4)
+        
+        else:
+            cur_K_mat = dataset.K_mats[cur_cam_name]
+            cur_H = dataset.cam_heights[cur_cam_name]
+            cur_W = dataset.cam_widths[cur_cam_name]
+            cur_extrinsic = dataset.T_c_l_mats[cur_cam_name]
+
         # this is for eval_down_rate = 0, if not 1, then you need to change K_mat accordingly
         cur_intrinsic_o3d.set_intrinsics(
-                                    height=int(dataset.cam_heights[cur_cam_name]/eval_down_scale),
-                                    width=int(dataset.cam_widths[cur_cam_name]/eval_down_scale),
+                                    height=int(cur_H/eval_down_scale),
+                                    width=int(cur_W/eval_down_scale),
                                     fx=cur_K_mat[0,0]/eval_down_scale,
                                     fy=cur_K_mat[1,1]/eval_down_scale,
                                     cx=cur_K_mat[0,2]/eval_down_scale,
                                     cy=cur_K_mat[1,2]/eval_down_scale)
         
         intrinsic_o3d_cam_dict[cur_cam_name] = cur_intrinsic_o3d
-        extrinsic_o3d_cam_dict[cur_cam_name] = dataset.T_c_l_mats[cur_cam_name]
+        extrinsic_o3d_cam_dict[cur_cam_name] = cur_extrinsic
 
-    frame_count = len(lidar_poses)
 
-    # add to input args
-    frame_begin = 2400
-    frame_end = 3200
-    # frame_end = 20
-    frame_step = 2
+    frame_count = len(view_poses)
+
+    frame_begin = 0
+    frame_end = -1
+    frame_step = 1
 
     if args.range is not None:
         frame_begin, frame_end, frame_step = args.range
 
+    frame_end = min(frame_count, frame_end)
+
     for frame_id in tqdm(range(frame_begin, frame_end, frame_step), desc="Render views along the trajectory"):
         remove_gpu_cache()
 
-        T_w_l_np = lidar_poses[frame_id]
+        T_w_l_np = view_poses[frame_id] # for the usual case, we use LiDAR pose and a preset camera-LiDAR calibration
         T_w_l = torch.tensor(T_w_l_np, dtype=config.dtype, device=config.device)
         
         cur_frame_position_np = T_w_l_np[:3,3]
@@ -467,23 +506,34 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         if recon_3d_on:
             cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
+
+        rendered_rgb_list = []
+        rendered_depth_list = []
+        rendered_normal_list = []
+            
+
         for cur_cam_name in cam_list: 
 
-            rendered_rgb_list = []
-            rendered_depth_list = []
-            rendered_normal_list = []
+            if args.use_free_view_camera:
+                K_mat = free_cam_K_mat #  # as np.array
+                T_w_c = T_w_l # the input is tehn directly the camera poses
+                
+                cur_view_cam = CamImage(frame_id, None, K_mat, 
+                                        config.min_range*0.5, config.local_map_radius*1.1,
+                                        cur_cam_name, device=config.device, cam_pose = T_w_c, 
+                                        img_width = free_cam_W, img_height = free_cam_H)
 
-            K_mat = dataset.K_mats[cur_cam_name]
+            else:
+                K_mat = dataset.K_mats[cur_cam_name]
+                T_c_l = torch.tensor(dataset.T_c_l_mats[cur_cam_name], dtype=config.dtype, device=config.device) 
+                T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
 
-            T_c_l = torch.tensor(dataset.T_c_l_mats[cur_cam_name], dtype=config.dtype, device=config.device) 
+                # you need to also load the camera exposure coefficients here
+                cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
+                cur_view_cam.set_pose(T_w_c)
 
-            T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+                gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
 
-            # you need to also load the camera exposure coefficients here
-            cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
-            cur_view_cam.set_pose(T_w_c)
-
-            gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
 
             # current values
             render_pkg = render(cur_view_cam, None, neural_points_data, 
@@ -497,148 +547,151 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 gs_type=config.gs_type,
                 displacement_range_ratio=config.displacement_range_ratio,
                 max_scale_ratio=config.max_scale_ratio,
-                unit_scale_ratio=config.unit_scale_ratio)
+                unit_scale_ratio=config.unit_scale_ratio,
+                verbose=args.log_on)
             
             # rendered results
-            rendered_rgb_image, rendered_depth, rendered_normal, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
-            
-            # rgb 
-            rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
-            rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
-            if save_video_on:
-                rendered_rgb_cam_dict[cur_cam_name].append(rendered_rgb_np)
+            # TODO: add rendered Ellipsoid
+            if render_pkg is not None:
+                rendered_rgb_image, rendered_depth, rendered_normal, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
+                
+                # rgb 
+                rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
+                rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
+                if save_video_on:
+                    rendered_rgb_cam_dict[cur_cam_name].append(rendered_rgb_np)
 
-            alpha_mask = None
-            if rendered_alpha is not None:
-                alpha_mask = rendered_alpha > config.depth_min_accu_alpha
+                alpha_mask = None
+                if rendered_alpha is not None:
+                    alpha_mask = rendered_alpha > config.depth_min_accu_alpha
 
-            # depth
-            if rendered_depth is not None:
-                if alpha_mask is not None:
-                    rendered_depth[~alpha_mask] = 0.0
+                # depth
+                if rendered_depth is not None:
+                    if alpha_mask is not None:
+                        rendered_depth[~alpha_mask] = 0.0
+                        
+                    color_map_used = "inferno_r"
+                    rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
+                    rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+                    rendered_depth_color_np = np.ascontiguousarray(np.transpose(rendered_depth_color_np, (1, 2, 0))) # H, W, 3
+                    if save_video_on:
+                        rendered_depth_cam_dict[cur_cam_name].append(rendered_depth_color_np)
+                
+                if rendered_normal is not None:
+                    if normal_in_world_frame: 
+                        rendered_normal = -1.0 * (rendered_normal.permute(1,2,0) @ (cur_view_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+
+                    normal_norm = rendered_normal.norm(2, dim=0) 
+                    rendered_normal_show = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
+                    # rendered_normal_show = 0.5 * (1 - rendered_normal)
+                    rendered_normal_np = (rendered_normal_show.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
+                    rendered_normal_np = np.ascontiguousarray(rendered_normal_np)
+                    if save_video_on:
+                        rendered_normal_cam_dict[cur_cam_name].append(rendered_normal_np)
+
+                if rendered_depth is not None and recon_3d_on:
                     
-                color_map_used = "inferno_r"
-                rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
-                rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
-                rendered_depth_color_np = np.ascontiguousarray(np.transpose(rendered_depth_color_np, (1, 2, 0))) # H, W, 3
-                if save_video_on:
-                    rendered_depth_cam_dict[cur_cam_name].append(rendered_depth_color_np)
-            
-            if rendered_normal is not None:
-                if normal_in_world_frame: 
-                    rendered_normal = -1.0 * (rendered_normal.permute(1,2,0) @ (cur_view_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+                    if args.tsdf_fusion_max_range_m > 0:
+                        depth_trunc = args.tsdf_fusion_max_range_m     
+                    else:
+                        depth_trunc = config.max_range * 0.8 # default value
 
-                normal_norm = rendered_normal.norm(2, dim=0) 
-                rendered_normal_show = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
-                # rendered_normal_show = 0.5 * (1 - rendered_normal)
-                rendered_normal_np = (rendered_normal_show.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
-                rendered_normal_np = np.ascontiguousarray(rendered_normal_np)
-                if save_video_on:
-                    rendered_normal_cam_dict[cur_cam_name].append(rendered_normal_np)
+                    rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
 
-            if rendered_depth is not None and recon_3d_on:
-                
-                if args.tsdf_fusion_max_range_m > 0:
-                    depth_trunc = args.tsdf_fusion_max_range_m     
-                else:
-                    depth_trunc = config.max_range * 0.8 # default value
+                    rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
 
-                rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
+                    depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
 
-                rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
+                    cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
+                                                                            depth_img_o3d, 
+                                                                            depth_scale=1.0, 
+                                                                            depth_trunc=depth_trunc, 
+                                                                            convert_rgb_to_intensity=False)
 
-                depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
+                    cur_cam_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
+                                cur_rgbd_o3d, 
+                                intrinsic_o3d_cam_dict[cur_cam_name], 
+                                extrinsic_o3d_cam_dict[cur_cam_name])
 
-                cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
-                                                                        depth_img_o3d, 
-                                                                        depth_scale=1.0, 
-                                                                        depth_trunc=depth_trunc, 
-                                                                        convert_rgb_to_intensity=False)
+                    cur_frame_rendered_pcd_o3d += cur_cam_pcd_o3d # add visualizer # TODO
 
-                cur_cam_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
-                            cur_rgbd_o3d, 
-                            intrinsic_o3d_cam_dict[cur_cam_name], 
-                            extrinsic_o3d_cam_dict[cur_cam_name])
+                if eval_on:
+                    if cur_cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
+                        pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
+                    elif cur_cam_name == "front":
+                        pixel_h_used = int(990/1024*gt_rgb_img.shape[1])
+                    else:  
+                        pixel_h_used = -1
 
-                cur_frame_rendered_pcd_o3d += cur_cam_pcd_o3d # add visualizer # TODO
+                    rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
+                    gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
 
-            if eval_on:
-                if cur_cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
-                    pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
-                elif cur_cam_name == "front":
-                    pixel_h_used = int(990/1024*gt_rgb_img.shape[1])
-                else:  
-                    pixel_h_used = -1
+                    cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                    cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
 
-                rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
-                gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
+                    if lpips_eval_on:
+                        cur_lpips = lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
+                    else:
+                        cur_lpips = -1.0 # not available
 
-                cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
-                cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
-
-                if lpips_eval_on:
-                    cur_lpips = lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
-                else:
-                    cur_lpips = -1.0 # not available
-
-                psnr_list.append(cur_psnr)
-                ssim_list.append(cur_ssim)
-                lpips_list.append(cur_lpips)
-                
-                if args.log_on:
-                    print("Camera id: {}".format(cur_view_cam.uid))
-                    print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
-                    print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
-                    print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
-            
-                if cur_view_cam.depth_on and rendered_depth is not None: 
-                    eval_depth_max = config.max_range * 0.8
-                    eval_depth_min = config.min_range
-                    gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
-                    depth_valid_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
-                    diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
-                    # diff_depth[~depth_valid_mask] = 0.0
-                    diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
-                    cur_depth_l1 = np.mean(diff_depth_masked)
-                    cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
+                    psnr_list.append(cur_psnr)
+                    ssim_list.append(cur_ssim)
+                    lpips_list.append(cur_lpips)
+                    
                     if args.log_on:
-                        print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
-                        print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
-
-                    depthl1_list.append(cur_depth_l1)
-                    depth_rmse_list.append(cur_depth_rmse)
-
-                # TODO
-
-        if recon_3d_on:
-            
-            cur_frame_rendered_pcd_o3d.transform(T_w_l_np) # convert to world frame
-
-            # downsample a bit
-            cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(config.vox_down_m)
-
-            if pc_cd_eval_on: 
-                cd_metrics = eval_pair(cur_frame_rendered_pcd_o3d, cur_frame_measured_pcd_o3d, 
-                    down_sample_res=0.05, threshold=0.1, 
-                    truncation_acc=1.0, truncation_com=1.0) # FIXME
+                        print("Camera id: {}".format(cur_view_cam.uid))
+                        print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
+                        print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
+                        print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                 
-                cur_cd = cd_metrics['Chamfer_L1 (m)']
-                cur_f1 = cd_metrics['F-score (%)']
+                    if cur_view_cam.depth_on and rendered_depth is not None: 
+                        eval_depth_max = config.max_range * 0.8
+                        eval_depth_min = config.min_range
+                        gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
+                        depth_valid_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
+                        # diff_depth[~depth_valid_mask] = 0.0
+                        diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
+                        cur_depth_l1 = np.mean(diff_depth_masked)
+                        cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
+                        if args.log_on:
+                            print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
+                            print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
 
-                if args.log_on:
-                    print("Current eval frame Chamfer Distance L1 (m) ↓ :", f"{cur_cd:.3f}")
-                    print("Current eval frame F1-score (%) ↑ :", f"{cur_f1:.3f}")
+                        depthl1_list.append(cur_depth_l1)
+                        depth_rmse_list.append(cur_depth_rmse)
 
-                cd_list.append(cur_cd)
-                f1_list.append(cur_f1)
+                    # TODO
 
-            if recon_3d_tsdf_on:
-                # better do the downsampling first (TODO), too time consuming here
-                if args.log_on:
-                    print("Begin TSDF fusion")
-                vdb_volume.integrate(np.array(cur_frame_rendered_pcd_o3d.points), cur_frame_position_np)
-                if args.log_on:
-                    print("TSDF fusion done")
+            if recon_3d_on:
+                
+                cur_frame_rendered_pcd_o3d.transform(T_w_l_np) # convert to world frame
+
+                # downsample a bit
+                cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(config.vox_down_m)
+
+                if pc_cd_eval_on: 
+                    cd_metrics = eval_pair(cur_frame_rendered_pcd_o3d, cur_frame_measured_pcd_o3d, 
+                        down_sample_res=0.05, threshold=0.1, 
+                        truncation_acc=1.0, truncation_com=1.0) # FIXME
+                    
+                    cur_cd = cd_metrics['Chamfer_L1 (m)']
+                    cur_f1 = cd_metrics['F-score (%)']
+
+                    if args.log_on:
+                        print("Current eval frame Chamfer Distance L1 (m) ↓ :", f"{cur_cd:.3f}")
+                        print("Current eval frame F1-score (%) ↑ :", f"{cur_f1:.3f}")
+
+                    cd_list.append(cur_cd)
+                    f1_list.append(cur_f1)
+
+                if recon_3d_tsdf_on:
+                    # better do the downsampling first (TODO), too time consuming here
+                    if args.log_on:
+                        print("Begin TSDF fusion")
+                    vdb_volume.integrate(np.array(cur_frame_rendered_pcd_o3d.points), cur_frame_position_np)
+                    if args.log_on:
+                        print("TSDF fusion done")
 
         if vis_on:
             if q_main2vis is not None:
@@ -647,7 +700,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                         current_frames=dataset.cur_cam_img, 
                         img_down_rate=eval_down_rate)
                     
-                    packet_to_vis.add_neural_points_data(neural_points)
+                    packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
                     
                     # if cur_frame_rendered_pcd_o3d is not None:
                     #     packet_to_vis.add_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
@@ -762,20 +815,24 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         mesh_tsdf_fusion = None
 
     if save_video_on:
+
+        dt = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
         for cur_cam_name in cam_list: 
             cur_rendered_rgb_list = rendered_rgb_cam_dict[cur_cam_name]
             cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
             cur_rendered_normal_list = rendered_normal_cam_dict[cur_cam_name]
 
-            cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}.mp4".format(cur_cam_name))
-            save_video_np(cur_rendered_rgb_list, cur_rgb_video_save_path)
+            if len(cur_rendered_rgb_list) > 0:
+                cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}_{}.mp4".format(cur_cam_name, dt))
+                save_video_np(cur_rendered_rgb_list, cur_rgb_video_save_path)
 
             if len(cur_rendered_depth_list) > 0:
-                cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}.mp4".format(cur_cam_name))
+                cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}_{}.mp4".format(cur_cam_name, dt))
                 save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
 
             if len(cur_rendered_normal_list) > 0:    
-                cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}.mp4".format(cur_cam_name))
+                cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}_{}.mp4".format(cur_cam_name, dt))
                 save_video_np(cur_rendered_normal_list, cur_normal_video_save_path)
 
             # free the lists

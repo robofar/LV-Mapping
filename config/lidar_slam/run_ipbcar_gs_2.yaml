@@ -1,5 +1,5 @@
 setting:
-  name: "test_ipbcar_gs_ours_colormlp_smaller_std"
+  name: "test_ipbcar_gs_ours_small_k"
   output_root: "./pings_experiments"
   deskew: True
   deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
@@ -11,7 +11,7 @@ process:
   vox_down_m: 0.08
   dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.3
+  surface_sample_range_m: 0.4
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
@@ -19,15 +19,15 @@ neuralpoints:
   voxel_size_m: 0.25 # 0.25
   search_alpha: 0.8 # 0.8
   query_nn_k: 6 # 6 # changed
-  feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 32 # 16
+  feature_dim: 16 # 32 # not worth further improving this
+  color_feature_dim: 8 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30 # 30
   gs_mlp_level: 1 # 2?, not much improvement
-  gs_mlp_hidden_dim: 128
+  gs_mlp_hidden_dim: 64
 loss:
-  sigma_sigmoid_m: 0.03 # the smaller, we care more about the part very close to the surface # does not have good effect
+  sigma_sigmoid_m: 0.05 # the smaller, we care more about the part very close to the surface
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
@@ -50,22 +50,19 @@ gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
-  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
-  n_gaussian: 8 # not worth to increase it, a little improvement
+  n_gaussian: 2 # not worth to increase it, a little improvement #
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 4.0 # 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
   short_term_train_prob: 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
+  gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  # inverse_depth_loss: True
-  # lambda_depth: 1.0 # 10.0
-  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)

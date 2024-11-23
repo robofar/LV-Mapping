@@ -52,14 +52,14 @@ gs:
   view_concat_on: True
   dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
   n_gaussian: 8 # not worth to increase it, a little improvement
-  gs_iters: 100 # 50 # 100
+  gs_iters: 200 # 50 # 100
   gaussian_bs_ratio: 4.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
   short_term_train_prob: 0.6
   gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02

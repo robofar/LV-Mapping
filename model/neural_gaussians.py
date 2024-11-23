@@ -1616,6 +1616,9 @@ class NeuralPoints(nn.Module):
 
         neural_points_data = {}
         neural_points_data["position"] = self.local_neural_points
+
+        # print(neural_points_data["position"])
+
         neural_points_data["orientation"] = self.local_point_orientations
         neural_points_data["color"] = self.local_point_colors
         neural_points_data["geo_feature"] = self.local_geo_features

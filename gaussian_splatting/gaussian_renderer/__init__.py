@@ -198,6 +198,11 @@ def render(viewpoint_camera: CamImage,
         neural_point_count = visible_neural_point_mask.shape[0]
         visible_neural_point_count = torch.sum(visible_neural_point_mask).item()
 
+        if visible_neural_point_count == 0:
+            if verbose:
+                print("[Render] No visible neural points, skip this frame {}".format(viewpoint_camera.uid))
+            return None
+
         # print("# Local neural points: {:d}, # Visible: {:d}".format(neural_point_count, visible_neural_point_count))
 
         visible_neural_point_ratio = 1.0 * visible_neural_point_count / neural_point_count
@@ -207,7 +212,7 @@ def render(viewpoint_camera: CamImage,
 
         if visible_neural_point_ratio < min_visible_neural_point_ratio and replay_mode: # is 0.05 too small?
             if verbose:
-                print("Too small ratio of visible neural points, skip this frame {}".format(viewpoint_camera.uid))
+                print("[Render] Too small ratio of visible neural points, skip this frame {}".format(viewpoint_camera.uid))
                 # print(visible_neural_point_ratio)
 
             return None

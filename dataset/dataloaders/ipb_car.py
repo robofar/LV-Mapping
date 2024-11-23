@@ -43,7 +43,9 @@ class IPBCarDataset:
 
         self.use_only_colorized_points = False
         
-        self.use_only_lidar_h = True # use lidar_h or both (lidar_h + lidar_v)
+        self.use_only_lidar_h = True
+        if cam_name == "both_lidars":
+            self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
         self.min_lidar_radius_m = 0.5
 
@@ -126,13 +128,21 @@ class IPBCarDataset:
         self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
 
         # read reference poses (by Louis)
+
         # poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
         poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
         if os.path.exists(poses_file):
             self.gt_poses = self.read_kitti_format_poses(poses_file)
             # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
             # print("gt poses for {} frames".format(np.shape(self.gt_poses)[0]))
-        
+
+        # print(self.gt_poses) 
+        # NOTE: for the UTC coordinate, we need to substract the larger part from them (other wise float would have precision lose)
+        # we use a Bonn local reference coordinate : 3.65e5, 5.62e6, 1e2
+        # self.gt_poses = np.load(os.path.join(data_dir, "poses", "gt_poses.npy"))
+        # bonn_ref_xyz_utc = np.array([3.65e5, 5.62e6, 1e2])
+        # self.gt_poses[:,:3,3] -= bonn_ref_xyz_utc
+
         # main cam parameters
         self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
 
@@ -211,6 +221,7 @@ class IPBCarDataset:
             point_lidar_idx = np.concatenate((point_lidar_idx, lidar_v_point_lidar_idx), axis=0)
 
         if self.load_img:
+
             img_dict = {}
             depth_img_dict = {}
 
