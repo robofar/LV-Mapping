@@ -198,3 +198,4 @@ recording
 *train.sh
 *val.sh
 *run.sh
+run*.sh
