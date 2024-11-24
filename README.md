@@ -1,122 +1,6 @@
-<p align="center">
-
-  <h1 align="center">📍PIN-SLAM: LiDAR SLAM Using a Point-Based Implicit Neural Representation for Achieving Global Map Consistency</h1>
-
-  <p align="center">
-    <a href="https://github.com/PRBonn/PIN_SLAM/releases"><img src="https://img.shields.io/github/v/release/PRBonn/PIN_SLAM?label=version" /></a>
-    <a href="https://github.com/PRBonn/PIN_SLAM#run-pin-slam"><img src="https://img.shields.io/badge/python-3670A0?style=flat-square&logo=python&logoColor=ffdd54" /></a>
-    <a href="https://github.com/PRBonn/PIN_SLAM#installation"><img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" /></a>
-    <a href="https://www.ipb.uni-bonn.de/wp-content/papercite-data/pdf/pan2024tro.pdf"><img src="https://img.shields.io/badge/Paper-pdf-<COLOR>.svg?style=flat-square" /></a>
-    <a href="https://github.com/PRBonn/PIN_SLAM/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
-  </p>
-  
-  <p align="center">
-    <a href="https://www.ipb.uni-bonn.de/people/yue-pan/"><strong>Yue Pan</strong></a>
-    ·
-    <a href="https://www.ipb.uni-bonn.de/people/xingguang-zhong/"><strong>Xingguang Zhong</strong></a>
-    ·
-    <a href="https://www.ipb.uni-bonn.de/people/louis-wiesmann/"><strong>Louis Wiesmann</strong></a>
-    .
-    <a href=""><strong>Thorbjörn Posewsky</strong></a>
-    .
-    <a href="https://www.ipb.uni-bonn.de/people/jens-behley/"><strong>Jens Behley</strong></a>
-    ·
-    <a href="https://www.ipb.uni-bonn.de/people/cyrill-stachniss/"><strong>Cyrill Stachniss</strong></a>
-  </p>
-  <p align="center"><a href="https://www.ipb.uni-bonn.de"><strong>University of Bonn</strong></a>
-  <h3 align="center"><a href="https://www.ipb.uni-bonn.de/wp-content/papercite-data/pdf/pan2024tro.pdf">Paper</a> | <a href="https://doi.org/10.1109/TRO.2024.3422055/mm1">Video</a></h3>
-  <div align="center"></div>
-</p>
-
-**TL;DR: PIN-SLAM is a full-fledged implicit neural LiDAR SLAM system including odometry, loop closure detection, and globally consistent mapping**
-
-
-![pin_slam_teaser](https://github.com/PRBonn/PIN_SLAM/assets/34207278/b5ab4c89-cdbe-464e-afbe-eb432b42fccc)
-
-*Globally consistent point-based implicit neural (PIN) map built with PIN-SLAM in Bonn. The high-fidelity mesh can be reconstructed from the neural point map.*
-
-----
-
-![pin_slam_loop_compare](https://github.com/PRBonn/PIN_SLAM/assets/34207278/7dadd438-5a46-451a-9add-c9c08dcae277)
-
-*Comparison of (a) the inconsistent mesh with duplicated structures reconstructed by PIN LiDAR odometry, and (b) the globally consistent mesh reconstructed by PIN-SLAM.*
-
-
-----
-
-
-| Globally Consistent Mapping | Various Scenarios | RGB-D SLAM Extension |
-| :-: | :-: | :-: |
-| <video src='https://github.com/PRBonn/PIN_SLAM/assets/34207278/b157f24c-0220-4ac4-8cf3-2247aeedfc2e'> | <video src='https://github.com/PRBonn/PIN_SLAM/assets/34207278/0906f7cd-aebe-4fb7-9ad4-514d089329bd'> | <video src='https://github.com/PRBonn/PIN_SLAM/assets/34207278/4519f4a8-3f62-42a1-897e-d9feb66bfcd0'> |
-
-
-<!-- TABLE OF CONTENTS -->
-<details open="open" style='padding: 10px; border-radius:5px 30px 30px 5px; border-style: solid; border-width: 1px;'>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#abstract">Abstract</a>
-    </li>
-    <li>
-      <a href="#installation">Installation</a>
-    </li>
-    <li>
-      <a href="#run-pin-slam">How to run PIN-SLAM</a>
-    </li>
-    <li>
-      <a href="#visualizer-instructions">Visualizer instructions</a>
-    </li>
-    <li>
-      <a href="#citation">Citation</a>
-    </li>
-    <li>
-      <a href="#contact">Contact</a>
-    </li>
-    <li>
-      <a href="#related-projects">Related projects</a>
-    </li>
-  </ol>
-</details>
-
-
-## Abstract
-
-<details>
-  <summary>[Details (click to expand)]</summary>
-Accurate and robust localization and mapping are
-essential components for most autonomous robots. In this paper,
-we propose a SLAM system for building globally consistent maps,
-called PIN-SLAM, that is based on an elastic and compact
-point-based implicit neural map representation. Taking range
-measurements as input, our approach alternates between incremental learning of the local implicit signed distance field
-and the pose estimation given the current local map using a
-correspondence-free, point-to-implicit model registration. Our
-implicit map is based on sparse optimizable neural points,
-which are inherently elastic and deformable with the global pose
-adjustment when closing a loop. Loops are also detected using the
-neural point features. Extensive experiments validate that PIN-SLAM is robust to various environments and versatile to different
-range sensors such as LiDAR and RGB-D cameras. PIN-SLAM
-achieves pose estimation accuracy better or on par with the state-of-the-art LiDAR odometry or SLAM systems and outperforms
-the recent neural implicit SLAM approaches while maintaining
-a more consistent, and highly compact implicit map that can be
-reconstructed as accurate and complete meshes. Finally, thanks to
-the voxel hashing for efficient neural points indexing and the fast
-implicit map-based registration without closest point association,
-PIN-SLAM can run at the sensor frame rate on a moderate GPU.
-</details>
-
-
+# PINGS: Gaussian Splatting Meets Distance Field Within a Point-based Implicit Neural Map
 
 ## Installation
-
-### Platform requirement
-* Ubuntu OS (tested on 20.04)
-
-* With GPU (recommended) or CPU only (run much slower)
-
-* GPU memory requirement (> 6 GB recommended)
-
-* Windows/MacOS with CPU-only mode
 
 
 ### 1. Set up conda environment
@@ -163,13 +47,13 @@ pip3 install -r requirements.txt
 
 ----
 
-## Run PIN-SLAM
+## Run PINGS
 
 ### Clone the repository
 
 ```
-git clone git@github.com:PRBonn/PIN_SLAM.git
-cd PIN_SLAM
+git clone git@gitlab.ipb.uni-bonn.de:yue.pan/PINGS.git
+cd PINGS
 ```
 
 ### Sanity test
