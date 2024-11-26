@@ -16,3 +16,6 @@
 [submodule "submodules/stopthepop-rasterization"]
 	path = submodules/stopthepop-rasterization
 	url = https://github.com/r4dl/StopThePop-Rasterization/
+[submodule "submodules/diff-gaussian-surfel-rasterization-w-pose"]
+	path = submodules/diff-gaussian-surfel-rasterization-w-pose
+	url = https://gitlab.ipb.uni-bonn.de/yue.pan/diff-gaussian-surfel-rasterization-w-pose

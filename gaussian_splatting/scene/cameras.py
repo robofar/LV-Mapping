@@ -90,6 +90,14 @@ class CamImage:
         self.sky_mask_list = [None] * pyramid_level
         self.normal_img_list = [None] * pyramid_level
 
+        # camera pose optimization
+        self.cam_rot_delta = nn.Parameter(
+            torch.zeros(3, requires_grad=True, device=device)
+        )
+        self.cam_trans_delta = nn.Parameter(
+            torch.zeros(3, requires_grad=True, device=device)
+        )
+
         # exposure correction affine transformation parameters
         self.exposure_a = nn.Parameter(
             torch.tensor([0.0], requires_grad=True, device=device)

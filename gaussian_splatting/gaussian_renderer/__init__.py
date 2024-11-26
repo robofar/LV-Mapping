@@ -133,6 +133,7 @@ def render(viewpoint_camera: CamImage,
             scale_modifier=scaling_modifier,
             viewmatrix=viewpoint_camera.world_view_transform,
             projmatrix=viewpoint_camera.full_proj_transform,
+            projmatrix_raw=viewpoint_camera.projection_matrix,
             patch_bbox=viewpoint_camera.full_patch(down_rate), # just image size bbx, TODO: solve the stupid patchbbox issue
             prcppoint=viewpoint_camera.prcppoint, # principle point
             sh_degree=active_sh_degree,
@@ -300,13 +301,15 @@ def render(viewpoint_camera: CamImage,
         # Rasterize visible Gaussians to image, obtain their radii (on screen [unit: pixel]). 
         # rendered color, depth and normal are all calculated by alpha blending
         # depth and normal are normalized by rendered opacity
-        rendered_image, rendered_normal, rendered_depth, rendered_alpha, radii = rasterizer(
+        rendered_image, rendered_normal, rendered_depth, rendered_alpha, radii, contributions = rasterizer(
             means3D = means3D,
             means2D = means2D,
             colors_precomp = colors,
             opacities = opacity,
             scales = scales,
-            rotations = rotations)
+            rotations = rotations,
+            theta=viewpoint_camera.cam_rot_delta,
+            rho=viewpoint_camera.cam_trans_delta)
         
         # rendered_depth is normalized by (alpha_blending depth / rendered opacity 1-T)
         # but rendered_normal is not normalized ?
@@ -339,7 +342,9 @@ def render(viewpoint_camera: CamImage,
             'rend_dist': None,
             "viewspace_points": screenspace_points, 
             "visibility_filter": radii > 0, 
-            "radii": radii}) # > 1 or > 0
+            "radii": radii,
+            "contributions": contributions
+            }) # > 1 or > 0
 
     elif gs_type == "2d_gs":
         # does not work well
