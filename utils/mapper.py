@@ -1443,56 +1443,73 @@ class Mapper:
 
                     T4 = get_time()
 
+                    sampled_guassians_alpha = gaussian_alpha[sampled_indices]
                     
                     # Gaussian SDF consistency loss
                     if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
                         
-                        # no problem with the free mask here
-
                         sampled_guassians_xyz = gaussian_xyz[sampled_indices]
                         sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
 
-                        sampled_guassians_xyz.requires_grad_(True)
+                        sampled_count = sampled_guassians_xyz.shape[0]
+                        shift_sample_count = 1 # TODO: add to config
 
-                        sampled_guassians_alpha = gaussian_alpha[sampled_indices]
+                        shift_range = 0.5 * self.config.voxel_size_m # TODO: add to config
 
-                        sampled_guassians_sdf, _, valid_nnk_mask = self.sdf(sampled_guassians_xyz, min_nn_count=3) # self.config.query_nn_k sdf, sdf_std, valid_mask
-                        sampled_guassians_sdf_grad = get_gradient(sampled_guassians_xyz, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
+                        sampled_guassians_xyz_repeat = sampled_guassians_xyz.repeat(shift_sample_count, 1) # RK, 3
+                        sampled_guassians_normals_repeat = sampled_guassians_normals.repeat(shift_sample_count, 1) # RK, 3
+
+                        random_shift = (torch.randn(sampled_count * shift_sample_count, device=self.device)-0.5) * 2.0 * shift_range # -shift_range, +shift_range
+
+                        random_shift_vec = sampled_guassians_normals_repeat * random_shift[:, None]  # RK, 3
+                        
+                        sampled_guassians_shifted_xyz = sampled_guassians_xyz_repeat + random_shift_vec # RK, 3
+
+                        sampled_guassians_shifted_xyz_all = torch.cat((sampled_guassians_xyz, sampled_guassians_shifted_xyz), 0) # (1+R)K, 3
+
+                        sampled_guassians_normals_all = torch.cat((sampled_guassians_normals, sampled_guassians_normals_repeat), 0) # (1+R)K, 3
+
+                        sdf_label_all = torch.cat((torch.zeros(sampled_count, device=self.device), random_shift), 0) # (1+R)K, 3
+
+                        # sampled_guassians_xyz.requires_grad_(True)
+                        sampled_guassians_shifted_xyz_all.requires_grad_(True)
+
+                        sampled_guassians_sdf, _, valid_nnk_mask = self.sdf(sampled_guassians_shifted_xyz_all, min_nn_count=3) # self.config.query_nn_k sdf, sdf_std, valid_mask
+                        sampled_guassians_sdf_grad = get_gradient(sampled_guassians_shifted_xyz_all, sampled_guassians_sdf) # N, 3 # analytical one # how could the gradient to be zero (if it has no nearby neural points, then maybe)
                         grad_norm = sampled_guassians_sdf_grad.norm(dim=-1, keepdim=True).squeeze()  # unit: m # normalize 
                         
                         # print(grad_norm)
                         # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                         # maybe relax this a bit
-                        valid_grad_mask = (grad_norm < 1.4) & (grad_norm > 0.6) & (valid_nnk_mask)
-                        
+                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
+                        valid_grad_mask_no_shift = valid_grad_mask[:sampled_count] # the original gaussian samples (without shift)
+
                         # valid_grad_mask = valid_grad_mask.detach()
                         valid_grad_count = torch.sum(valid_grad_mask).item()
                         if not self.silence:
-                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", sample_bs)
+                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", valid_grad_mask.shape[0])
 
-                        valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask].mean()) 
-                        invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask].mean())
+                        valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
+                        invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask_no_shift].mean())
                         
                         if not self.silence:
                             print(" Invalid part opacity loss:", invalid_opacity_loss.item())
 
                         invalid_opacity_loss *= self.config.lambda_invalid_opacity
+
+                        # TODO: does this really work?
+                        # we let these part to be more transparent, but there's seems to have some problem with the poles
+                        # Or we'd better use the entropy loss
                         
                         # sampled_opacity_loss *= (10.0 * self.config.lambda_opacity)
                         # opacity_loss += sampled_opacity_loss
-                        
-                        # TODO: does this really work?
-                        # we let these part to be more transparent, but there's seems to have some problem with the poles
 
-                        sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask]).mean() # gaussians should better lie on the surface
 
+                        sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask] - sdf_label_all[valid_grad_mask]).mean() # gaussians should better lie on the surface
                         sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame # pointing out of the surface
-
-                        # print(sampled_guassians_sdf_grad)                
-
                         # gaussian normals should better align with the sdf gradient direction
-                        gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals[valid_grad_mask]).sum(dim=1))                           
+                        gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals_all[valid_grad_mask]).sum(dim=1))                           
                         sdf_normal_consistency_loss = gaussian_normal_error.mean()
 
                         if not self.silence:
@@ -1501,6 +1518,7 @@ class Mapper:
                         sdf_consistency_loss *= self.config.lambda_sdf_cons
                         sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
                 # ----------------
+                
 
                 T5 = get_time()
 

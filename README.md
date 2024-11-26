@@ -18,26 +18,6 @@ conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=
 
 The commands depend on your CUDA version (check it by `nvcc --version`). You may check the instructions [here](https://pytorch.org/get-started/previous-versions/).
 
-<details>
-  <summary>[latest version pytorch (click to expand)]</summary>
-Now you can also install the latest version (2.4.0) by:
-```
-conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
-```
-
-Then you can install xformers for faster and more memory-efficient inference.
-```
-conda install xformers -c xformers
-```
-
-You may encounter errors regarding the incompatibility of the opencv-python pacakge, you can then try to use the following codes to install mmcv:
-```
-pip install -U openmim
-mim install mmcv
-```
-
-
-</details>
 
 ### 3. Install other dependency
 
@@ -52,7 +32,7 @@ pip3 install -r requirements.txt
 ### Clone the repository
 
 ```
-git clone git@gitlab.ipb.uni-bonn.de:yue.pan/PINGS.git
+git clone git@gitlab.ipb.uni-bonn.de:yue.pan/PINGS.git --recursive
 cd PINGS
 ```
 
