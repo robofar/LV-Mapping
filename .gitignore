@@ -199,3 +199,12 @@ recording
 *val.sh
 *run.sh
 run*.sh
+
+
+q.log
+q.log/
+
+.[PINGS]*
+
+job_scripts/
+job_scripts

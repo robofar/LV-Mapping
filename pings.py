@@ -94,6 +94,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         config.silence = not args.log_on
         config.wandb_vis_on = args.wandb_on
         config.gs_vis_on = args.visualize
+        config.o3d_vis_on = args.visualize # TODO (then mesh recon is also disabled when visualization off)
         config.gs_on = args.gs_on # ADDED
         config.save_map = args.save_map
         config.save_mesh = args.save_mesh

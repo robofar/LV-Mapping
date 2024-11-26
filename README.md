@@ -36,6 +36,18 @@ git clone git@gitlab.ipb.uni-bonn.de:yue.pan/PINGS.git --recursive
 cd PINGS
 ```
 
+
+### Run on IPB Car 
+
+```
+# example ipb_car church 
+
+python pings.py ./config/lidar_slam/run_ipbcar_gs_new_test.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -lgs --range 2030 2180 1
+```
+
+
+
+
 ### Sanity test
 
 For a sanity test, do the following to download an example part (first 100 frames) of the KITTI dataset (seq 00):
