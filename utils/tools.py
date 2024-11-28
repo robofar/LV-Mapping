@@ -135,6 +135,7 @@ def seed_anything(seed):
     o3d.utility.random.seed(seed)
 
 
+# all in one
 def setup_optimizer(
     config: Config,
     neural_point_geo_feat=None,
@@ -149,6 +150,12 @@ def setup_optimizer(
     mlp_gs_color_param=None,
     cams=None,
     poses=None,
+    gs_xyz=None,
+    gs_features_dc=None,
+    gs_features_rest=None,
+    gs_opacity=None,
+    gs_scaling=None,
+    gs_rotation=None,
 ) -> Optimizer:
     
     """
@@ -231,6 +238,51 @@ def setup_optimizer(
                 "name": "gs_color_mlp_param",
             }
             opt_setting.append(mlp_gs_color_param_opt_dict)
+
+        
+        # original GS parameters
+        if gs_xyz is not None:
+            gs_xy_opt_dict = {
+                "params": gs_xyz,
+                "lr": config.lr_gs_position * config.max_range,
+                "name": "gs_xyz",
+            }
+            opt_setting.append(gs_xy_opt_dict)
+        if gs_features_dc is not None:
+            gs_features_dc_opt_dict = {
+                "params": gs_features_dc,
+                "lr": config.lr_gs_features,
+                "name": "gs_features_dc",
+            }
+            opt_setting.append(gs_features_dc_opt_dict)
+        if gs_features_rest is not None:
+            gs_features_rest_opt_dict = {
+                "params": gs_features_rest,
+                "lr": config.lr_gs_features / 20.0,
+                "name": "gs_features_rest",
+            }
+            opt_setting.append(gs_features_rest_opt_dict)
+        if gs_opacity is not None:
+            gs_opacity_opt_dict = {
+                "params": gs_opacity,
+                "lr": config.lr_gs_opacity,
+                "name": "gs_opacity",
+            }
+            opt_setting.append(gs_opacity_opt_dict)
+        if gs_scaling is not None:
+            gs_scaling_opt_dict = {
+                "params": gs_scaling,
+                "lr": config.lr_gs_scaling,
+                "name": "gs_scaling",
+            }
+            opt_setting.append(gs_scaling_opt_dict)
+        if gs_rotation is not None:
+            gs_rotation_opt_dict = {
+                "params": gs_rotation,
+                "lr": config.lr_gs_rotation,
+                "name": "gs_rotation",
+            }
+            opt_setting.append(gs_rotation_opt_dict)
         
     if poses is not None:
         poses_opt_dict = {"params": poses, "lr": config.lr_pose, "weight_decay": weight_decay}
@@ -238,6 +290,7 @@ def setup_optimizer(
 
     if cams is not None:
         for cam in cams:
+            # exposure
             opt_setting.append(
                 {
                     "params": [cam.exposure_a],
@@ -250,6 +303,20 @@ def setup_optimizer(
                     "params": [cam.exposure_b],
                     "lr": config.lr_exposure,
                     "name": "cam_{}_exposure_b".format(cam.uid),
+                }
+            )
+            opt_setting.append(
+                {
+                    "params": [cam.cam_rot_delta],
+                    "lr": config.lr_cam_dr,
+                    "name": "cam_{}_dr".format(cam.uid),
+                }
+            )
+            opt_setting.append(
+                {
+                    "params": [cam.cam_trans_delta],
+                    "lr": config.lr_cam_dt,
+                    "name": "cam_{}_dt".format(cam.uid),
                 }
             )
 
@@ -544,8 +611,9 @@ def feature_pca_torch(data, principal_components = None,
             # max_vals = data_pca.max(dim=0, keepdim=True).values
 
             # # deal with outliers
-            min_vals = torch.quantile(data_pca, 0.02, dim=0, keepdim=True)
-            max_vals = torch.quantile(data_pca, 0.98, dim=0, keepdim=True)
+            down_rate = 19
+            min_vals = torch.quantile(data_pca[::down_rate], 0.02, dim=0, keepdim=True)
+            max_vals = torch.quantile(data_pca[::down_rate], 0.98, dim=0, keepdim=True)
 
             # Normalize to range [0, 1]
             data_pca = (data_pca - min_vals) / (max_vals - min_vals)

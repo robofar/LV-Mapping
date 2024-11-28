@@ -19,16 +19,18 @@ wandb==0.17.0
 brisque
 opencv-python
 torchmetrics==1.4.1
+ninja
 submodules/diff-surfel-rasterization # 2D GS
 submodules/diff-gaussian-surfel-rasterization # Gaussian Surfels
 submodules/diff-gaussian-rasterization-w-pose # 3D GS with depth, opacity rendereding (used in MonoGS)
 #submodules/diff-gaussian-rasterization # editable install # original 3D GS
 #submodules/depth-diff-gaussian-rasterization # editable install # 3D GS with depth rendering
--e submodules/fused-ssim
+submodules/fused-ssim
 # for gs visualizer
 PyOpenGL
 glfw
 PyGLM==2.7.0
+brisque
 imageio[ffmpeg]
 # optional for metric3d
 mmcv

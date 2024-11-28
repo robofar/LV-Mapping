@@ -202,7 +202,9 @@ class Config:
         self.lr_geo: float = 0.01 # learning rate for the neural point geometric feature
         self.lr_color: float = 0.01 # learning rate for the neural point color feature
         self.lr_mlp_base: float = 0.01
-        self.lr_exposure: float = 0.001
+        self.lr_exposure: float = 0.001 # learning rate for camera exposure
+        self.lr_cam_dr: float = 0.0 # learning rate for camera rotation
+        self.lr_cam_dt: float = 0.0 # learning rate for camera translation
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
         self.lr_ba_map: float = 0.01 # learning rate for map during bundle adjustment
         
@@ -212,6 +214,13 @@ class Config:
         self.lr_mlp_gs_rot = 1e-3
         self.lr_mlp_gs_alpha = 1e-3
         self.lr_mlp_gs_color = 1e-2 # better to be larger, like 1e-2
+
+        # for directly optimizing the raw gaussian parameters # same as the original 3DGS
+        self.lr_gs_position: float = 1.6e-4
+        self.lr_gs_rotation: float = 1e-3
+        self.lr_gs_scaling: float = 5e-3
+        self.lr_gs_opacity: float = 5e-2
+        self.lr_gs_features: float = 2.5e-3
         
         self.weight_decay: float = 0.0 # weight_decay is only applied to the latent codes for the l2 regularization
         self.adam_eps: float = 1e-15

@@ -1482,21 +1482,17 @@ class Mapper:
                         # print("Mean SDF grad norm:", grad_norm.mean().item()) # why there are more and more 0 here
 
                         # maybe relax this a bit
+
                         valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
                         valid_grad_mask_no_shift = valid_grad_mask[:sampled_count] # the original gaussian samples (without shift)
 
-                        # valid_grad_mask = valid_grad_mask.detach()
-                        valid_grad_count = torch.sum(valid_grad_mask).item()
-                        if not self.silence:
-                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", valid_grad_mask.shape[0])
-
-                        valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
-                        invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask_no_shift].mean())
+                        # valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
+                        # invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask_no_shift].mean())
                         
-                        if not self.silence:
-                            print(" Invalid part opacity loss:", invalid_opacity_loss.item())
+                        # if not self.silence:
+                        #     print(" Invalid part opacity loss:", invalid_opacity_loss.item())
 
-                        invalid_opacity_loss *= self.config.lambda_invalid_opacity
+                        # invalid_opacity_loss *= self.config.lambda_invalid_opacity
 
                         # TODO: does this really work?
                         # we let these part to be more transparent, but there's seems to have some problem with the poles
@@ -1505,9 +1501,20 @@ class Mapper:
                         # sampled_opacity_loss *= (10.0 * self.config.lambda_opacity)
                         # opacity_loss += sampled_opacity_loss
 
+                        # valid_cons_mask = valid_grad_mask
+
+
+                        # valid_grad_mask = valid_grad_mask.detach()
+                        valid_grad_count = torch.sum(valid_grad_mask).item()
+                        if not self.silence:
+                            print(" SDF Valid gaussian count:", valid_grad_count, " from ", valid_grad_mask.shape[0])
 
                         sdf_consistency_loss = torch.abs(sampled_guassians_sdf[valid_grad_mask] - sdf_label_all[valid_grad_mask]).mean() # gaussians should better lie on the surface
+
                         sampled_guassians_sdf_grad = sampled_guassians_sdf_grad / (grad_norm.unsqueeze(-1) + 1e-7) # world frame # pointing out of the surface
+
+                        # print(sampled_guassians_sdf_grad)                
+
                         # gaussian normals should better align with the sdf gradient direction
                         gaussian_normal_error = (1.0 - (sampled_guassians_sdf_grad[valid_grad_mask] * sampled_guassians_normals_all[valid_grad_mask]).sum(dim=1))                           
                         sdf_normal_consistency_loss = gaussian_normal_error.mean()
@@ -1518,7 +1525,7 @@ class Mapper:
                         sdf_consistency_loss *= self.config.lambda_sdf_cons
                         sdf_normal_consistency_loss *= self.config.lambda_sdf_normal_cons
                 # ----------------
-                
+
 
                 T5 = get_time()
 

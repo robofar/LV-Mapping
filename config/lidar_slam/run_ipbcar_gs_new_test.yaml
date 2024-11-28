@@ -11,7 +11,7 @@ process:
   vox_down_m: 0.08
   dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.25
+  surface_sample_range_m: 0.3
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
@@ -20,7 +20,7 @@ neuralpoints:
   search_alpha: 0.8 # 0.8
   query_nn_k: 6 # 6 # changed
   feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 32 # 16
+  color_feature_dim: 16 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30 # 30
@@ -36,7 +36,7 @@ loss:
   weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
+  pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
   pool_filter_freq: 5
 # now test a mapping mode
 # tracker:
@@ -64,12 +64,12 @@ gs:
   lambda_depth: 0.01 # 0.02
   lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  lambda_invalid_opacity: 2e-3 # TODO
+  # lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   lambda_normal_depth: 0.01 #
-  lambda_sdf_cons: 0.01 # the weight do not need to be very large
-  lambda_sdf_normal_cons: 0.01 # the weight do not need to be very large # TODO
+  lambda_sdf_cons: 0.02 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper

@@ -600,7 +600,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map
     
     color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
-    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output, vis_free_gaussians=True)
+    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output, vis_free_gaussians=False)
     if config.save_map:
         neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud

@@ -35,6 +35,7 @@ from datetime import datetime
 from utils.tools import get_time
 
 # for the new test data
+# TODO: finish it tomorrow, urgent !!!
 
 class OxfordDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
@@ -42,10 +43,6 @@ class OxfordDataset:
         self.load_img = False # default
 
         self.use_only_colorized_points = False
-        
-        self.use_only_lidar_h = True
-        if cam_name == "both_lidars":
-            self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
 
         self.min_lidar_radius_m = 0.5
 
