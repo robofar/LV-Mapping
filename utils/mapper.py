@@ -1641,7 +1641,9 @@ class Mapper:
 
             if cams_param is not None:
                 for cam_param in cams_param:
-                    self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
+                    # self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
+
+                    self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_mat, cam_param.exposure_offset)
 
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)

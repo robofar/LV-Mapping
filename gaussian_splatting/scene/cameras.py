@@ -106,6 +106,13 @@ class CamImage:
             torch.tensor([0.0], requires_grad=True, device=device)
         )
 
+        self.exposure_mat = nn.Parameter(
+            torch.eye(3, requires_grad=True, device=device)
+        )
+        self.exposure_offset = nn.Parameter(
+            torch.zeros(3, requires_grad=True, device=device)
+        )
+
         if rgb_image is not None:
             rgb_image = rgb_image.to(self.device)
             
@@ -210,9 +217,13 @@ class CamImage:
             self.R = T_cw[:3, :3] # rotation part
             self.T = T_cw[:3, 3] # translation part
 
-    def set_exposure(self, exposure_a, exposure_b):
-        self.exposure_a = exposure_a
-        self.exposure_b = exposure_b
+    # def set_exposure(self, exposure_a, exposure_b):
+    #     self.exposure_a = exposure_a
+    #     self.exposure_b = exposure_b
+
+    def set_exposure(self, exposure_mat, exposure_offset):
+        self.exposure_mat = exposure_mat
+        self.exposure_offset = exposure_offset
 
     def set_depth_img(self, depth_img_torch):
         if depth_img_torch is not None:  # 1, H, W
