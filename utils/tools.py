@@ -307,6 +307,20 @@ def setup_optimizer(
             )
             opt_setting.append(
                 {
+                    "params": [cam.exposure_mat],
+                    "lr": config.lr_exposure,
+                    "name": "cam_{}_exposure_a".format(cam.uid),
+                }
+            )
+            opt_setting.append(
+                {
+                    "params": [cam.exposure_offset],
+                    "lr": config.lr_exposure,
+                    "name": "cam_{}_exposure_b".format(cam.uid),
+                }
+            )
+            opt_setting.append(
+                {
                     "params": [cam.cam_rot_delta],
                     "lr": config.lr_cam_dr,
                     "name": "cam_{}_dr".format(cam.uid),

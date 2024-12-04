@@ -41,6 +41,7 @@ def render(viewpoint_camera: CamImage,
            dist_concat_on: bool = False, 
            view_concat_on: bool = False, 
            correct_exposure: bool = True,
+           correct_exposure_affine: bool = True,
            learn_color_residual: bool = False,
            front_only_on: bool = True,
            d2n_on: bool = False,
@@ -480,8 +481,19 @@ def render(viewpoint_camera: CamImage,
             "radii": radii})        
 
     if correct_exposure:
-        rendered_image = (torch.exp(viewpoint_camera.exposure_a)) * rendered_image + viewpoint_camera.exposure_b # apply this for now
-        # but when evaluating, how to set the values for these parameters
+
+        if correct_exposure_affine:
+            img_shape = rendered_image.shape
+            # Reshape the image for matrix multiplication
+            reshaped_rendered_image = rendered_image.permute(1, 2, 0).view(-1, 3)  # Shape: (M*N, 3)
+            # Apply the correction matrix
+            corrected_reshaped_image = reshaped_rendered_image @ viewpoint_camera.exposure_mat.T + viewpoint_camera.exposure_offset # Shape: (M*N, 3)
+            # Reshape back to the original image shape
+            rendered_image = corrected_reshaped_image.view(img_shape[1], img_shape[2], 3).permute(2, 0, 1) 
+        else:
+            # correct a b
+            rendered_image = (torch.exp(viewpoint_camera.exposure_a)) * rendered_image + viewpoint_camera.exposure_b 
+            # but when evaluating, how to set the values for these parameters
 
     results.update({"render": rendered_image})
 

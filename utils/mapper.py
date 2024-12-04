@@ -1141,6 +1141,7 @@ class Mapper:
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
+                    correct_exposure_affine=self.config.affine_exposure_correction,
                     learn_color_residual=self.config.learn_color_residual,
                     front_only_on=self.config.train_front_only,
                     d2n_on=(self.config.lambda_normal_depth_consist > 0.0),
@@ -1641,8 +1642,10 @@ class Mapper:
 
             if cams_param is not None:
                 for cam_param in cams_param:
-                    self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
-
+                    if self.config.affine_exposure_correction:
+                        self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_mat, cam_param.exposure_offset)
+                    else:
+                        self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)
 
@@ -2048,7 +2051,10 @@ class Mapper:
                     if self.config.exposure_correction_on:
                         closest_train_frame_id = min(self.per_cam_exposure_ab[cur_cam_id].keys(), key=lambda k: (abs(k - cur_frame_id), k))
                         cur_exposure = (self.per_cam_exposure_ab[cur_cam_id])[closest_train_frame_id]
-                        cur_view_cam.set_exposure(cur_exposure[0], cur_exposure[1])
+                        if self.config.affine_exposure_correction:
+                            cur_view_cam.set_exposure_affine(cur_exposure[0], cur_exposure[1])
+                        else:
+                            cur_view_cam.set_exposure_ab(cur_exposure[0], cur_exposure[1])
                         
                         # print(cur_view_cam)
 
@@ -2061,6 +2067,7 @@ class Mapper:
                             dist_concat_on=self.config.dist_concat_on, 
                             view_concat_on=self.config.view_concat_on, 
                             correct_exposure=self.config.exposure_correction_on, 
+                            correct_exposure_affine=self.config.affine_exposure_correction,
                             learn_color_residual=self.config.learn_color_residual,
                             front_only_on=self.config.train_front_only,
                             gs_type=self.config.gs_type,
@@ -2372,6 +2379,7 @@ class Mapper:
                 dist_concat_on=self.config.dist_concat_on, 
                 view_concat_on=self.config.view_concat_on, 
                 correct_exposure=self.config.exposure_correction_on, 
+                correct_exposure_affine=self.config.affine_exposure_correction,
                 learn_color_residual=self.config.learn_color_residual,
                 front_only_on=self.config.train_front_only,
                 gs_type=self.config.gs_type,
