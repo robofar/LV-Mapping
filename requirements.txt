@@ -31,6 +31,7 @@ PyOpenGL
 glfw
 PyGLM==2.7.0
 brisque
+pytorch-fid
 imageio[ffmpeg]
 # optional for metric3d
 mmcv

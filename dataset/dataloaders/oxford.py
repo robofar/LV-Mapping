@@ -103,11 +103,13 @@ class OxfordDataset:
 
         # print(len(self.gt_poses))
 
-        pose_ts_associated, pose_associated_idx = associate_lidar_to_pose(lidar_ts, pose_ts)
+        pose_associated_idx, lidar_associated_idx = associate_lidar_to_pose(lidar_ts, pose_ts)
 
         gt_poses_associated = gt_poses[pose_associated_idx]
 
         self.gt_poses = gt_poses_associated
+
+        self.lidar_files = [self.lidar_files[i] for i in lidar_associated_idx]
 
 
         # # main cam parameters
@@ -218,19 +220,24 @@ def load_tum_format_poses(filename: str):
     
     return poses, timestamps
 
-def associate_lidar_to_pose(lidar_ts, pose_ts, max_dt=0.08):
+def associate_lidar_to_pose(lidar_ts, pose_ts, max_dt=0.05):
     # for each lidar ts, find the closest pose
-    pose_ts_associated = []
+    # pose_ts_associated = []
+
     pose_associated_idx = []
+    lidar_associated_idx = []
     for i in range(lidar_ts.shape[0]):
         cur_lidar_ts = lidar_ts[i]
         j = np.argmin(np.abs(pose_ts - cur_lidar_ts))
-        pose_ts_associated.append(pose_ts[j])
-        pose_associated_idx.append(j)
-    pose_ts_associated = np.array(pose_ts_associated)
+        # pose_ts_associated.append(pose_ts[j])
+        if np.abs(pose_ts[j] - cur_lidar_ts) < max_dt:
+            pose_associated_idx.append(j)
+            lidar_associated_idx.append(i)
+
     pose_associated_idx = np.array(pose_associated_idx, dtype=np.int32)
-    # print(img_associated_idx)
-    return pose_ts_associated, pose_associated_idx        
+    lidar_associated_idx = np.array(lidar_associated_idx, dtype=np.int32)
+
+    return pose_associated_idx, lidar_associated_idx        
 
 
 
