@@ -203,8 +203,10 @@ class Config:
         self.lr_color: float = 0.01 # learning rate for the neural point color feature
         self.lr_mlp_base: float = 0.01
         self.lr_exposure: float = 0.001 # learning rate for camera exposure
-        self.lr_cam_dr: float = 0.0 # learning rate for camera rotation
-        self.lr_cam_dt: float = 0.0 # learning rate for camera translation
+        # TODO: change
+        self.lr_cam_dr: float = 0.0 # 0.003 # learning rate for camera rotation
+        self.lr_cam_dt: float = 0.0 # 0.001 # learning rate for camera translation
+        # does not work well now
         self.lr_pose: float = 1e-4 # learning rate for poses during bundle adjustment
         self.lr_ba_map: float = 0.01 # learning rate for map during bundle adjustment
         

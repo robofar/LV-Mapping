@@ -451,7 +451,9 @@ def render(viewpoint_camera: CamImage,
             colors_precomp = colors,
             opacities = opacity,
             scales = scales,
-            rotations = rotations)
+            rotations = rotations,
+            theta=viewpoint_camera.cam_rot_delta,
+            rho=viewpoint_camera.cam_trans_delta)
 
 
         rendered_alpha_detached = rendered_alpha.detach()
