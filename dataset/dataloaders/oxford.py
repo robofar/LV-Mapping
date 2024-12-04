@@ -46,253 +46,96 @@ class OxfordDataset:
 
         self.min_lidar_radius_m = 0.5
 
-        self.lidar_h_topic_name = "horizontal" 
-        self.lidar_v_topic_name = "vertical" 
+        self.lidar_dir = os.path.join(data_dir, "processed", "vilens-slam", "undist-clouds/")
+        self.lidar_files = sorted(glob.glob(self.lidar_dir + "*.pcd"))
+
+        lidar_ts = extract_time_from_filenames(self.lidar_files)
+        lidar_ts = np.array(lidar_ts)
+
+        # print(lidar_ts)
+
+
+        # print(self.lidar_files)
+
+        # # img_size: 2064x1024
+        # H, W = 1024, 2064 
+
+        # self.img_already_undistorted = False
         
-        self.cam_left_topic_name = "left"  
-        self.cam_right_topic_name = "right" 
-        self.cam_front_topic_name = "front" 
-        self.cam_rear_topic_name = "rear"
-
-        # cameras are almost triggered at the same time
-        # h lidar 's timstamp is usually 0.05s later than camera's ts
-        # figure out why 0.3-0.35 is a good value for the deskew ref ratio
-
-        cam_list_all = [self.cam_front_topic_name, self.cam_left_topic_name, self.cam_rear_topic_name, self.cam_right_topic_name]
-
-        if cam_name in cam_list_all: 
-            self.main_cam_only = True
-            self.main_cam_name = cam_name
-            self.cam_list = [self.main_cam_name]
-            print("Use {} camera only".format(cam_name))
-        else: 
-            # use all the cameras
-            self.main_cam_only = False
-            self.main_cam_name = self.cam_front_topic_name
-            self.cam_list = cam_list_all
-            print("Use all the cameras")
-
-        self.img_files = {}
-        self.img_ts = {}
-        self.K_mats = {}
-        self.dist_coeffs = {}
-        self.T_c_l_mats = {}
-        self.T_l_lm_mats = [] # inter-lidar transformation, from the main LiDAR (horizontal) to other LiDARs (vertical)
-        self.ts_ref_ratio_diffs = [0.0]
-
-        self.cam_widths = {}
-        self.cam_heights = {}
-
-        # horizontal lidar
-        self.lidar_horizontal_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "data/")
-        self.lidar_horizontal_files = sorted(glob.glob(self.lidar_horizontal_dir + "*.ply")) # we use bin here, can not be directly visualized but would be much smaller
-        self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
-
-        # vertical lidar
-        self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
-        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
-        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
-
-        # img_size: 2064x1024
-        H, W = 1024, 2064 
-
-        self.img_already_undistorted = False
-        
-        for cam_name in self.cam_list:
-            cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
-            cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
+        # for cam_name in self.cam_list:
+        #     cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
+        #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
             
-            # create folder if not yet there
-            cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
-            os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
+        #     # create folder if not yet there
+        #     cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
+        #     os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
 
-            # skip the first frame here (not needed actually)
-            # we just use from the first frame
-            # better to add the association function
-            # cur_img_files = cur_img_files[1:]
-            # cur_img_ts = cur_img_ts[1:]
+        #     # skip the first frame here (not needed actually)
+        #     # we just use from the first frame
+        #     # better to add the association function
+        #     # cur_img_files = cur_img_files[1:]
+        #     # cur_img_ts = cur_img_ts[1:]
 
-            self.img_files[cam_name] = cur_img_files
+        #     self.img_files[cam_name] = cur_img_files
 
-            cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
-            self.img_ts[cam_name] = cur_img_ts
+        #     cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
+        #     self.img_ts[cam_name] = cur_img_ts
             
-            self.cam_widths[cam_name] = W
-            self.cam_heights[cam_name] = H
+        #     self.cam_widths[cam_name] = W
+        #     self.cam_heights[cam_name] = H
 
 
-        # read calib
-        self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
+        # # read calib
+        # self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
 
         # read reference poses (by Louis)
 
         # poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
-        poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
-        if os.path.exists(poses_file):
-            self.gt_poses = self.read_kitti_format_poses(poses_file)
-            # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
-            # print("gt poses for {} frames".format(np.shape(self.gt_poses)[0]))
+        # poses_file = os.path.join(data_dir, "processed", "trajectory", "vilens-slam-tum.txt")
+        poses_file = os.path.join(data_dir, "processed", "trajectory", "gt-tum.txt")
 
-        # print(self.gt_poses) 
-        # NOTE: for the UTC coordinate, we need to substract the larger part from them (other wise float would have precision lose)
-        # we use a Bonn local reference coordinate : 3.65e5, 5.62e6, 1e2
-        # self.gt_poses = np.load(os.path.join(data_dir, "poses", "gt_poses.npy"))
-        # bonn_ref_xyz_utc = np.array([3.65e5, 5.62e6, 1e2])
-        # self.gt_poses[:,:3,3] -= bonn_ref_xyz_utc
+        gt_poses, pose_ts = load_tum_format_poses(poses_file)
 
-        # main cam parameters
-        self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        gt_poses = np.array(gt_poses)
+        pose_ts = np.array(pose_ts)
 
-        # NOTE for the rear camera, from about h=920 is the ego car's tail
+        # print(poses_timestamps)
 
-        self.intrinsic.set_intrinsics(
-                                    height=H,
-                                    width=W,
-                                    fx=self.K_mats[self.main_cam_name][0,0],
-                                    fy=self.K_mats[self.main_cam_name][1,1],
-                                    cx=self.K_mats[self.main_cam_name][0,2],
-                                    cy=self.K_mats[self.main_cam_name][1,2])
+        # print(len(self.gt_poses))
 
-        self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
+        pose_ts_associated, pose_associated_idx = associate_lidar_to_pose(lidar_ts, pose_ts)
 
-        self.mono_depth_for_high_z: bool = False # complete the low Z part 
+        gt_poses_associated = gt_poses[pose_associated_idx]
+
+        self.gt_poses = gt_poses_associated
+
+
+        # # main cam parameters
+        # self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+
+        # # NOTE for the rear camera, from about h=920 is the ego car's tail
+
+        # self.intrinsic.set_intrinsics(
+        #                             height=H,
+        #                             width=W,
+        #                             fx=self.K_mats[self.main_cam_name][0,0],
+        #                             fy=self.K_mats[self.main_cam_name][1,1],
+        #                             cx=self.K_mats[self.main_cam_name][0,2],
+        #                             cy=self.K_mats[self.main_cam_name][1,2])
+
+        # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
+
+        # self.mono_depth_for_high_z: bool = False # complete the low Z part 
 
 
     def __getitem__(self, idx):
-        
-        # tic_read_pc = get_time()
-
-        h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
-        # print("H Lidar ts: {}".format(h_lidar_ref_ts))
-
-        # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
-        # read bin is very fast
-        points, point_ts = self.read_point_cloud_ply(self.lidar_horizontal_files[idx]) # lidar_h_points
-
-        # toc_read_pc = get_time()
-        # print("pc reading time (ms):" , (toc_read_pc -tic_read_pc)*1e3)
-
-        valid_mask = ~np.all(np.abs(points[:,:3]) < self.min_lidar_radius_m, axis=1) 
-        points = points[valid_mask]
-        point_ts = point_ts[valid_mask] # unit: s
-
-        # print(point_ts)
-        
-        point_lidar_idx = np.zeros_like(point_ts) # all zero
-
-        lidar_h_point_count = np.shape(points)[0]
-        # from 0 to lidar_h_point_count-1: lidar_h
-        # from lidar_h_point_count to end: lidar_v
-
-        # TODO: it's not correct to firstly combine the two point clouds are then apply undistortion
-        # FIXME: you need to apply a T_lv_lh to the points from the vertical liadr during the undistortion
-        # For multiple-LiDAR cases, you still have something to deal with
-        if not self.use_only_lidar_h:
-            
-            v_lidar_ref_ts = self.lidar_vertical_ts[idx]
-            # print("V Lidar ts: {}".format(v_lidar_ref_ts))
-
-            lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
-            # print(np.shape(lidar_v_points)[0])
-
-            lidar_v_points_homo = np.hstack((lidar_v_points[:,:3], np.ones((np.shape(lidar_v_points)[0], 1))))
-
-            lidar_v_points_h_frame = lidar_v_points_homo @ self.T_lv_lh.T
-            lidar_v_points[:,:3] = lidar_v_points_h_frame[:,:3]
-
-            valid_mask = ~np.all(np.abs(lidar_v_points[:,:3]) < self.min_lidar_radius_m, axis=1) 
-            lidar_v_points = lidar_v_points[valid_mask]
-            lidar_v_points_ts = lidar_v_points_ts[valid_mask]
-
-            # this is actually not a very big number, consider it later FIXME
-            # lidar_v_points_ts += (v_lidar_ref_ts - h_lidar_ref_ts) # convert to the same reference time of the horizontal lidar
-
-            added_ref_ts_ratio = (h_lidar_ref_ts - v_lidar_ref_ts) / 0.1
-            self.ts_ref_ratio_diffs[0] = added_ref_ts_ratio
-            # print(added_ref_ts_ratio)
-
-            lidar_v_point_lidar_idx = np.ones_like(lidar_v_points_ts)
-
-            points = np.concatenate((points, lidar_v_points), axis=0) # K, 4
-            point_ts = np.concatenate((point_ts, lidar_v_points_ts), axis=0)
-            point_lidar_idx = np.concatenate((point_lidar_idx, lidar_v_point_lidar_idx), axis=0)
-
-        if self.load_img:
-
-            img_dict = {}
-            depth_img_dict = {}
-
-            points_rgb = np.ones_like(points) # N,4, last channel for the mask
-
-            for cam_name in self.cam_list:
-                
-                # tic_0 = get_time()
-                # slow, but would be hard to speed up
-
-                # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
-
-                cur_img_file = self.img_files[cam_name][idx]
-
-                img_file_split = cur_img_file.split("/")
-                img_file_split[-2] = "data_undistorted" # data --> data_undistorted
-                cur_img_file_distorted = "/".join(img_file_split)
-
-                if os.path.exists(cur_img_file_distorted):
-                    undistort_on = False # if already exists the undistorted file, then use it
-                    cur_img_file = cur_img_file_distorted
-                else:
-                    undistort_on = True # otherwise, do the distortion and save the file
-
-                # print(cur_img_file)
-
-                img_cam = self.read_img(cur_img_file, undistort_on, self.K_mats[cam_name], self.dist_coeffs[cam_name]) 
-                
-                # toc_1 = get_time()
-                
-                # TODO: a bit slow, try to speed it up
-                # we do not to do this here anymore
-                # FIXME: not used now
-                # points_rgb, depth_map = self.project_points_to_cam(points, points_rgb, img_cam, self.T_c_l_mats[cam_name], self.K_mats[cam_name])
-
-                # toc_1 = get_time()
-
-                # depth_img_dict[cam_name] = depth_map # H, W, 1
-                
-                img_dict[cam_name] = img_cam # H, W, 3
-                
-                # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
-                # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
-
-            # FIXME
-            # if self.use_only_colorized_points:
-            #     with_rgb_mask = (points_rgb[:, 3] == 0)
-            #     points = points[with_rgb_mask]
-            #     points_rgb = points_rgb[with_rgb_mask]
-            #     point_ts = point_ts[with_rgb_mask]
-            #     point_lidar_idx = point_lidar_idx[with_rgb_mask]
-
-            # we skip the intensity here for now (and also the color mask)
-            points = np.hstack((points[:,:3], points_rgb[:,:3]))
-
-            # print(point_ts) # correct
-
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict}
-            # frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict, "depth": depth_img_dict}
-        else:
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx}
-
+        points = self.read_point_cloud(self.lidar_files[idx])
+        frame_data = {"points": points}
         return frame_data
-
+    
     def __len__(self):
-        return len(self.lidar_horizontal_files)
-    
-    # ouster-128 lidar (point-wise timestamp)
-    # this does not work well
-    # @staticmethod
-    # def get_timestamps(v_beam=128, h_beam=2048):
-    #     timestamps = np.expand_dims(np.floor(np.arange(v_beam * h_beam) / v_beam) / h_beam, axis=1)
-    #     return timestamps
-    
+        return len(self.lidar_files)    
+
     # frame timestamp
     def read_timestamps(self, file_path):
         timestamps = []
@@ -310,184 +153,246 @@ class OxfordDataset:
         timestamps = np.array(timestamps)   
         return timestamps
     
-    def associate_img_to_lidar(self, lidar_ts, img_ts):
-        # for each lidar ts, find the closest img_ts
-        img_ts_associated = []
-        img_associated_idx = []
-        for i in range(lidar_ts.shape[0]):
-            cur_lidar_ts = lidar_ts[i]
-            j = np.argmin(np.abs(img_ts - cur_lidar_ts))
-            img_ts_associated.append(img_ts[j])
-            img_associated_idx.append(j)
-        img_ts_associated = np.array(img_ts_associated)
-        img_associated_idx = np.array(img_associated_idx, dtype=np.int32)
-        # print(img_associated_idx)
-        return img_ts_associated, img_associated_idx        
-
     # # read bin format
-    # def read_point_cloud(self, scan_file: str):
-    #     points = np.fromfile(scan_file, dtype=np.float32).reshape((-1, 4)).astype(np.float64)
-    #     return points[:, :4] # N, 4
+    def read_point_cloud(self, scan_file: str):
+        pcd_o3d = o3d.io.read_point_cloud(scan_file)
+        out_points = np.asarray(pcd_o3d.points, dtype=np.float64)
+        
+        return out_points # N, 3
+
+def extract_time_from_filenames(filenames):
+
+    ts_list = []
+    for filename in filenames:
+
+        filename = filename.replace(".pcd", "")
+        
+        # Split the filename by underscores and take the last two parts
+        _, secs, nsecs = filename.split("_")
+        
+        # Convert to integer
+        secs = int(secs)
+        nsecs = int(nsecs)
+        
+        # Convert ROS timestamp to seconds
+        total_time_seconds = secs + nsecs * 1e-9
+        ts_list.append(total_time_seconds)
+
+    return ts_list
+
+def load_tum_format_poses(filename: str):
+    """
+    read pose file (with the tum format), support txt file
+    # count sec nsec tx ty tz qx qy qz qw
+    returns -> list, transformation before calibration transformation
+    """
+    from pyquaternion import Quaternion
+
+    poses = []
+    timestamps = []
+    # timestamps_sec = []
+    # timestamps_nsec = []
+    with open(filename, 'r') as file:
+        first_line = file.readline().strip()
+        
+        # check if the first line contains any numeric characters
+        # if contain, then skip the first line # timestamp tx ty tz qx qy qz qw
+        if any(char.isdigit() for char in first_line):
+            file.seek(0)
+        
+        for line in file: # read each line in the file 
+            values = line.strip().split() # split with space
+            # some tum format pose file also contain the idx before timestamp
+            values = [float(value) for value in values]
+            timestamps.append(values[0])
+            # timestamps_sec.append(values[1])
+            # timestamps_nsec.append(values[2])
+            trans = np.array(values[1:4])
+            quat = Quaternion(np.array([values[7], values[4], values[5], values[6]])) # w, i, j, k
+            rot = quat.rotation_matrix
+            # Build numpy transform matrix
+            odom_tf = np.eye(4)
+            odom_tf[0:3, 3] = trans
+            odom_tf[0:3, 0:3] = rot
+            poses.append(odom_tf)
     
-    # read ply format
-    def read_point_cloud_ply(self, scan_file: str):
+    return poses, timestamps
 
-        # tic_read_pc = get_time()
+def associate_lidar_to_pose(lidar_ts, pose_ts, max_dt=0.08):
+    # for each lidar ts, find the closest pose
+    pose_ts_associated = []
+    pose_associated_idx = []
+    for i in range(lidar_ts.shape[0]):
+        cur_lidar_ts = lidar_ts[i]
+        j = np.argmin(np.abs(pose_ts - cur_lidar_ts))
+        pose_ts_associated.append(pose_ts[j])
+        pose_associated_idx.append(j)
+    pose_ts_associated = np.array(pose_ts_associated)
+    pose_associated_idx = np.array(pose_associated_idx, dtype=np.int32)
+    # print(img_associated_idx)
+    return pose_ts_associated, pose_associated_idx        
 
-        pc_load = o3d.t.io.read_point_cloud(scan_file)
-        pc_load = {k: v.numpy() for k, v in pc_load.point.items()}
 
-        keys = list(pc_load.keys())
-        # print("available attributes:", keys)
+
+    # # read ply format
+    # def read_point_cloud_ply(self, scan_file: str):
+
+    #     # tic_read_pc = get_time()
+
+    #     pc_load = o3d.t.io.read_point_cloud(scan_file)
+    #     pc_load = {k: v.numpy() for k, v in pc_load.point.items()}
+
+    #     keys = list(pc_load.keys())
+    #     # print("available attributes:", keys)
         
-        points = pc_load["positions"]
+    #     points = pc_load["positions"]
 
-        assert "t" in keys, "The point cloud ply file must have the t field for point wise timestamp"
+    #     assert "t" in keys, "The point cloud ply file must have the t field for point wise timestamp"
 
-        ts = pc_load["t"] # already in seconds
+    #     ts = pc_load["t"] # already in seconds
 
-        point_count = np.shape(points)[0]
-        points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
+    #     point_count = np.shape(points)[0]
+    #     points = np.concatenate((points, np.ones((point_count, 1))), axis=1) # N, 4
         
-        # toc_read_pc = get_time()
-        # print("pc reading time ply (ms): {:.2f}".format((toc_read_pc -tic_read_pc)*1e3))
+    #     # toc_read_pc = get_time()
+    #     # print("pc reading time ply (ms): {:.2f}".format((toc_read_pc -tic_read_pc)*1e3))
 
-        return points, ts
+    #     return points, ts
 
-    def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
+    # def read_img(self, img_file: str, undistort_on: bool = False, K_mat = None, dist_coeffs = None):
         
-        tic_0 = get_time()
-        img = cv2.imread(img_file)
-        toc_0 = get_time()
+    #     tic_0 = get_time()
+    #     img = cv2.imread(img_file)
+    #     toc_0 = get_time()
 
-        # print("img reading time (ms):" , (toc_0 -tic_0)*1e3)
+    #     # print("img reading time (ms):" , (toc_0 -tic_0)*1e3)
 
-        # apply undistortion:
-        # tic_undistort = get_time()
-        if undistort_on and K_mat is not None and dist_coeffs is not None:
-            img = cv2.undistort(img, K_mat, dist_coeffs)
-            img_file_split = img_file.split("/")
-            img_file_split[-2] = "data_undistorted" # data --> data_undistorted # ugly fix here
-            out_img_file = "/".join(img_file_split)
-            # print(out_img_file)
+    #     # apply undistortion:
+    #     # tic_undistort = get_time()
+    #     if undistort_on and K_mat is not None and dist_coeffs is not None:
+    #         img = cv2.undistort(img, K_mat, dist_coeffs)
+    #         img_file_split = img_file.split("/")
+    #         img_file_split[-2] = "data_undistorted" # data --> data_undistorted # ugly fix here
+    #         out_img_file = "/".join(img_file_split)
+    #         # print(out_img_file)
 
-            cv2.imwrite(out_img_file, img)
+    #         cv2.imwrite(out_img_file, img)
 
-        # toc_undistort = get_time() 
+    #     # toc_undistort = get_time() 
 
-        # print("Image undistortion time (ms):", (toc_undistort-tic_undistort)*1e3) # 12 ms / each 
-        # for 4 imgs, takes about 50ms, better to do this offline
+    #     # print("Image undistortion time (ms):", (toc_undistort-tic_undistort)*1e3) # 12 ms / each 
+    #     # for 4 imgs, takes about 50ms, better to do this offline
         
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        return img
+    #     return img
 
-    def read_calib_file(self, yaml_file_path: str) -> dict:
+    # def read_calib_file(self, yaml_file_path: str) -> dict:
 
-        calib_dict = {}
-        with open(yaml_file_path, 'r') as file:
-            calib_dict = yaml.safe_load(file)
+    #     calib_dict = {}
+    #     with open(yaml_file_path, 'r') as file:
+    #         calib_dict = yaml.safe_load(file)
 
-            lidar_h_calib = calib_dict["lidarhorizontalpoints"]
-            lidar_v_calib = calib_dict["lidarverticalpoints"]
-            T_cf_lh = np.array(lidar_h_calib["extrinsics"])
-            T_cf_lv = np.array(lidar_v_calib["extrinsics"])
-            self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
-            self.T_l_lm_mats.append(self.T_lv_lh)
+    #         lidar_h_calib = calib_dict["lidarhorizontalpoints"]
+    #         lidar_v_calib = calib_dict["lidarverticalpoints"]
+    #         T_cf_lh = np.array(lidar_h_calib["extrinsics"])
+    #         T_cf_lv = np.array(lidar_v_calib["extrinsics"])
+    #         self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
+    #         self.T_l_lm_mats.append(self.T_lv_lh)
 
-            for cam_name in self.cam_list:
-                cur_cam_calib_name = "camera{}image_raw".format(cam_name)
-                cur_camera_calib = calib_dict[cur_cam_calib_name]
-                self.K_mats[cam_name] = np.array(cur_camera_calib["K"])
-                self.dist_coeffs[cam_name] = np.array(cur_camera_calib["distortion_coeff"])
-                self.T_c_l_mats[cam_name] = np.linalg.inv(np.array(cur_camera_calib["extrinsics"])) @ T_cf_lh 
+    #         for cam_name in self.cam_list:
+    #             cur_cam_calib_name = "camera{}image_raw".format(cam_name)
+    #             cur_camera_calib = calib_dict[cur_cam_calib_name]
+    #             self.K_mats[cam_name] = np.array(cur_camera_calib["K"])
+    #             self.dist_coeffs[cam_name] = np.array(cur_camera_calib["distortion_coeff"])
+    #             self.T_c_l_mats[cam_name] = np.linalg.inv(np.array(cur_camera_calib["extrinsics"])) @ T_cf_lh 
 
-        return calib_dict
+    #     return calib_dict
     
-    def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
+    # def project_points_to_cam(self, points, points_rgb, img, T_c_l, K_mat):
         
-        tic_0 = get_time()
+    #     tic_0 = get_time()
 
-        # points as np.numpy (N,4)
-        points[:,3] = 1 # homo coordinate
+    #     # points as np.numpy (N,4)
+    #     points[:,3] = 1 # homo coordinate
 
-        # transfrom velodyne points to camera coordinate
-        points_cam = np.matmul(T_c_l, points.T).T # N, 4
-        points_cam = points_cam[:,:3] # N, 3
+    #     # transfrom velodyne points to camera coordinate
+    #     points_cam = np.matmul(T_c_l, points.T).T # N, 4
+    #     points_cam = points_cam[:,:3] # N, 3
 
-        toc_0 = get_time() # fast
+    #     toc_0 = get_time() # fast
 
-        # project to image space
-        u, v, depth = self.persepective_cam2image(points_cam.T, K_mat) 
-        u = u.astype(np.int32)
-        v = v.astype(np.int32)
+    #     # project to image space
+    #     u, v, depth = self.persepective_cam2image(points_cam.T, K_mat) 
+    #     u = u.astype(np.int32)
+    #     v = v.astype(np.int32)
 
-        img_height, img_width, _ = np.shape(img)
+    #     img_height, img_width, _ = np.shape(img)
 
-        toc_1 = get_time() # relatively fast
+    #     toc_1 = get_time() # relatively fast
 
-        # prepare depth map for visualization
-        depth_map = np.zeros((img_height, img_width, 1)) # H, W, 1
-        mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
+    #     # prepare depth map for visualization
+    #     depth_map = np.zeros((img_height, img_width, 1)) # H, W, 1
+    #     mask = np.logical_and(np.logical_and(np.logical_and(u>=0, u<img_width), v>=0), v<img_height)
         
-        # visualize points within 30 meters
-        min_depth = 1.0
-        max_depth = 100.0
-        mask = np.logical_and(np.logical_and(mask, depth>min_depth), depth<max_depth)
+    #     # visualize points within 30 meters
+    #     min_depth = 1.0
+    #     max_depth = 100.0
+    #     mask = np.logical_and(np.logical_and(mask, depth>min_depth), depth<max_depth)
         
-        v_valid = v[mask]
-        u_valid = u[mask]
+    #     v_valid = v[mask]
+    #     u_valid = u[mask]
 
-        depth_map[v_valid,u_valid, 0] = depth[mask]
+    #     depth_map[v_valid,u_valid, 0] = depth[mask]
 
-        # print(np.shape(points_rgb))
+    #     # print(np.shape(points_rgb))
 
-        points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
-        points_rgb[mask, 3] = 0 # has color
+    #     points_rgb[mask, :3] = img[v_valid,u_valid].astype(np.float64)/255.0 # 0-1
+    #     points_rgb[mask, 3] = 0 # has color
 
-        toc_2 = get_time() # slow
+    #     toc_2 = get_time() # slow
 
-        # print("colorize time 1 (ms):" , (toc_0 -tic_0)*1e3)
-        # print("colorize time 2 (ms):" , (toc_1 -toc_0)*1e3)
-        # print("colorize time 3 (ms):" , (toc_2 -toc_1)*1e3)
+    #     # print("colorize time 1 (ms):" , (toc_0 -tic_0)*1e3)
+    #     # print("colorize time 2 (ms):" , (toc_1 -toc_0)*1e3)
+    #     # print("colorize time 3 (ms):" , (toc_2 -toc_1)*1e3)
 
-        return points_rgb, depth_map
+    #     return points_rgb, depth_map
     
-    def persepective_cam2image(self, points, K_mat):
-        ndim = points.ndim
-        if ndim == 2:
-            points = np.expand_dims(points, 0)
-        points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
-        depth = points_proj[:,2,:]
-        depth[depth==0] = -1e-6
-        u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(int)
-        v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(int)
+    # def persepective_cam2image(self, points, K_mat):
+    #     ndim = points.ndim
+    #     if ndim == 2:
+    #         points = np.expand_dims(points, 0)
+    #     points_proj = np.matmul(K_mat[:3,:3].reshape([1,3,3]), points)
+    #     depth = points_proj[:,2,:]
+    #     depth[depth==0] = -1e-6
+    #     u = np.round(points_proj[:,0,:]/np.abs(depth)).astype(int)
+    #     v = np.round(points_proj[:,1,:]/np.abs(depth)).astype(int)
 
-        if ndim==2:
-            u = u[0]; v=v[0]; depth=depth[0]
-        return u, v, depth
+    #     if ndim==2:
+    #         u = u[0]; v=v[0]; depth=depth[0]
+    #     return u, v, depth
 
 
-    def read_kitti_format_poses(self, filename: str):
-        """
-        read pose file (with the kitti format)
-        returns -> np.array, transformation before calibration transformation
-        if the format is incorrect, return None
-        """
-        poses = []
-        with open(filename, 'r') as file:            
-            for line in file:
-                values = line.strip().split()
-                if len(values) < 12: # FIXME: > 12 means maybe it's a 4x4 matrix
-                    print('Not a kitti format pose file')
-                    return None
+    # def read_kitti_format_poses(self, filename: str):
+    #     """
+    #     read pose file (with the kitti format)
+    #     returns -> np.array, transformation before calibration transformation
+    #     if the format is incorrect, return None
+    #     """
+    #     poses = []
+    #     with open(filename, 'r') as file:            
+    #         for line in file:
+    #             values = line.strip().split()
+    #             if len(values) < 12: # FIXME: > 12 means maybe it's a 4x4 matrix
+    #                 print('Not a kitti format pose file')
+    #                 return None
 
-                values = [float(value) for value in values]
-                pose = np.zeros((4, 4))
-                pose[0, 0:4] = values[0:4]
-                pose[1, 0:4] = values[4:8]
-                pose[2, 0:4] = values[8:12]
-                pose[3, 3] = 1.0
-                poses.append(pose)
+    #             values = [float(value) for value in values]
+    #             pose = np.zeros((4, 4))
+    #             pose[0, 0:4] = values[0:4]
+    #             pose[1, 0:4] = values[4:8]
+    #             pose[2, 0:4] = values[8:12]
+    #             pose[3, 3] = 1.0
+    #             poses.append(pose)
         
-        return np.array(poses)
+    #     return np.array(poses)

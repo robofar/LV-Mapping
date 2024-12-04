@@ -93,6 +93,9 @@ class SLAMDataset():
             if hasattr(self.loader, 'gt_poses'):
                 self.gt_poses = self.loader.gt_poses[config.begin_frame:config.end_frame:config.step_frame]
                 self.gt_pose_provided = True
+
+                # write_kitti_format_poses(os.path.join(self.run_path, "gt_poses"), self.gt_poses)
+                # write_traj_as_o3d(self.gt_poses, os.path.join(self.run_path, "gt_poses.ply"))
             else:
                 self.gt_pose_provided = False
             if hasattr(self.loader, 'calibration'):

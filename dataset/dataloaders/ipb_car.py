@@ -129,8 +129,8 @@ class IPBCarDataset:
 
         # read reference poses (by Louis)
 
-        # poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
-        poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
+        poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
+        # poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
         if os.path.exists(poses_file):
             self.gt_poses = self.read_kitti_format_poses(poses_file)
             # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
@@ -139,7 +139,7 @@ class IPBCarDataset:
         # print(self.gt_poses) 
         # NOTE: for the UTC coordinate, we need to substract the larger part from them (other wise float would have precision lose)
         # we use a Bonn local reference coordinate : 3.65e5, 5.62e6, 1e2
-        # self.gt_poses = np.load(os.path.join(data_dir, "poses", "gt_poses.npy"))
+        # self.gt_poses = np.load(os.path.join(data_dir, "poses", "gt_poses_joint.npy"))
         # bonn_ref_xyz_utc = np.array([3.65e5, 5.62e6, 1e2])
         # self.gt_poses[:,:3,3] -= bonn_ref_xyz_utc
 
