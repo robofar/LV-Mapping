@@ -244,6 +244,7 @@ class Config:
         self.monodepth_gaussian_res: float = self.voxel_size_m * 2.0
 
         self.exposure_correction_on: bool = False
+        self.affine_exposure_correction: bool = True
 
         self.gs_invalid_check_on: bool = True
 
@@ -665,7 +666,8 @@ class Config:
             self.gs_type = config_args["gs"].get("gs_type", self.gs_type)
 
             self.exposure_correction_on = config_args["gs"].get("exposure_correction_on", self.exposure_correction_on)
-            
+            self.affine_exposure_correction = config_args["gs"].get("affine_exposure_correction", self.affine_exposure_correction)
+
             self.gs_invalid_check_on = config_args["gs"].get("invalid_check_on", self.gs_invalid_check_on) 
 
             self.monodepth_on = config_args["gs"].get("monodepth_on", self.monodepth_on)
