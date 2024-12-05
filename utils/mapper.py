@@ -139,6 +139,9 @@ class Mapper:
         self.cam_img_test_pool = []
         self.test_cam_uid = [] 
 
+        self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
+        self.sdf_train_frame_count: int = 0
+
         # used training views in this frame # for visualization
         self.cur_frame_train_views = None
 
@@ -220,8 +223,6 @@ class Mapper:
         if frame_normal_torch is not None: # not used yet
             frame_normal_torch = frame_normal_torch[self.static_mask]  
 
-        # TODO
-
         self.dataset.static_mask = self.static_mask
 
         T1 = get_time()
@@ -237,6 +238,9 @@ class Mapper:
         ) = self.sampler.sample(
             frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch
         )
+
+        self.sdf_train_frame_count += 1 # sample points from point cloud for sdf training
+
         # coord is in sensor local frame
 
         time_repeat = torch.tensor(
@@ -608,7 +612,6 @@ class Mapper:
             cur_view_cam.set_pose(T_w_c) # set camera pose
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
-        # maybe also consider the accumulated rotation (TODO)
         keyframe_on = (frame_id == 0) or \
             (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist) or \
             (self.dataset.accu_travel_degree_for_keyframe > self.config.gs_keyframe_accu_travel_degree)
@@ -616,7 +619,7 @@ class Mapper:
         # training views
         if keyframe_on and frame_id % self.config.gs_keyframe_interval==0:
             
-            self.dataset.gs_train_frame_count += 1
+            self.gs_train_frame_count += 1
             self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
             self.dataset.accu_travel_degree_for_keyframe = 0.0 # set back to zero
 
@@ -994,7 +997,8 @@ class Mapper:
         
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
-        cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
+        cams_param = self.cam_short_term_train_pool
+        # cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
         opt = setup_optimizer(
             self.config,
@@ -2112,7 +2116,7 @@ class Mapper:
                             print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
-                            if self.config.exposure_correction_on:
+                            if self.config.exposure_correction_on and not self.config.affine_exposure_correction:
                                 print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
 
                         if cur_view_cam.depth_on and rendered_depth is not None: 

@@ -652,6 +652,8 @@ class Config:
             self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
 
             self.lr_pose = float(config_args["optimizer"].get("lr_pose_ba", self.lr_pose))
+            self.lr_cam_dr = float(config_args["optimizer"].get("lr_cam_dr", self.lr_cam_dr)) # 0.003 # learning rate for camera rotation
+            self.lr_cam_dt = float(config_args["optimizer"].get("lr_cam_dt", self.lr_cam_dt))# 0.001 # learning rate for camera translation
 
             # bundle adjustment
             self.ba_freq_frame = config_args["optimizer"].get("ba_freq_frame", 0) # default off

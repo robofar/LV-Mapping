@@ -185,8 +185,6 @@ class SLAMDataset():
         self.travel_dist = np.zeros(max_frame_number) 
         self.accu_travel_dist_for_keyframe: float = 0.0
         self.accu_travel_degree_for_keyframe: float = 0.0
-
-        self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
         
         self.time_table = []
 
@@ -612,7 +610,8 @@ class SLAMDataset():
         toc_0 = get_time()
         # print("Time for preprocessing input data to camera {:.2f} (ms)".format((toc_0-tic_0)*1e3))
 
-        self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
+        if points is not None:
+            self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
 
         if self.config.deskew: 
             self.get_point_ts(point_ts)
@@ -677,7 +676,7 @@ class SLAMDataset():
         proprocessing main function: all the preprocessing steps for a input point cloud
         """  
         # T1 = get_time()
-        
+
         # setup poses
         valid_frame_flag = self.initialize_pose()
         if not valid_frame_flag:   
@@ -744,14 +743,17 @@ class SLAMDataset():
                 cur_pose_init_guess, dtype=torch.float64, device=self.device
             )   
 
-        original_count = self.cur_point_cloud_torch.shape[0]
-        if original_count < 10:  # deal with missing data (invalid frame)
-            print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
-            if self.config.track_on:
-                self.odom_poses[frame_id] = cur_pose_init_guess
-            if self.config.pgo_on:
-                self.pgo_poses[frame_id] = cur_pose_init_guess
-            return False # indicating invalid frame
+        if self.cur_point_cloud_torch is not None:
+            original_count = self.cur_point_cloud_torch.shape[0]
+            if original_count < 10:  # deal with missing data (invalid frame)
+                print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
+                if self.config.track_on:
+                    self.odom_poses[frame_id] = cur_pose_init_guess
+                if self.config.pgo_on:
+                    self.pgo_poses[frame_id] = cur_pose_init_guess
+                return False # indicating invalid frame
+        else:
+            return False
         
         return True
 
@@ -1032,11 +1034,12 @@ class SLAMDataset():
         # self.cur_point_cloud_torch is in current lidar frame
 
         frame_o3d = o3d.geometry.PointCloud()
-        frame_points_np = (
-            frame_down_torch[:, :3].detach().cpu().numpy().astype(np.float64)
-        )
+        if frame_down_torch is not None:
+            frame_points_np = (
+                frame_down_torch[:, :3].detach().cpu().numpy().astype(np.float64)
+            )
 
-        frame_o3d.points = o3d.utility.Vector3dVector(frame_points_np)
+            frame_o3d.points = o3d.utility.Vector3dVector(frame_points_np)
 
         # visualize or not
         # uncomment to visualize the dynamic mask
