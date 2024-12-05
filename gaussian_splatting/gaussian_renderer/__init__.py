@@ -520,7 +520,9 @@ def spawn_gaussians(neural_points_data: Dict,
 
     neural_point_position = neural_points_data["position"]
     neural_point_orientation = neural_points_data["orientation"] # as quat
-    neural_point_color = neural_points_data["color"]
+    neural_point_color = None
+    if "color" in list(neural_points_data.keys()):
+        neural_point_color = neural_points_data["color"]
     neural_point_geo_features = neural_points_data["geo_feature"]
     neural_point_color_features = neural_points_data["color_feature"]
     neural_point_resolution = neural_points_data["resolution"]
@@ -545,7 +547,8 @@ def spawn_gaussians(neural_points_data: Dict,
     if spawn_mask is not None:
         neural_point_position = neural_point_position[spawn_mask]
         neural_point_orientation = neural_point_orientation[spawn_mask]
-        neural_point_color = neural_point_color[spawn_mask]
+        if neural_point_color is not None:
+            neural_point_color = neural_point_color[spawn_mask]
 
         if neural_point_free_mask is not None:
             neural_point_free_mask = neural_point_free_mask[spawn_mask]
@@ -696,7 +699,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
     ## learn residual now
     # (disabled for now)
-    if learn_color_residual:
+    if learn_color_residual and neural_point_color is not None:
         # by doing so, we can somehow restrict the color to not diverge much from the initial guess, so that the view-dependent color would not give very random results
         residual_range = 0.1
         gaussian_rgb_residual = residual_range * torch.tanh(gaussian_color_mlp.mlp_batch(color_feature_in)) # N, 3K [-residual_range, residual_range]

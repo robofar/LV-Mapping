@@ -993,8 +993,15 @@ class SLAMDataset():
         point_count = self.cur_point_cloud_torch.shape[0]
         points_rgb_torch = torch.ones((point_count, 4)).to(self.cur_point_cloud_torch)
 
-        for cam_name in self.cam_names:
+        if self.cur_cam_img is None:
+            return
+
+        cur_cam_names = list(self.cur_cam_img.keys())
+        for cam_name in cur_cam_names:
             cam_img: CamImage = self.cur_cam_img[cam_name]
+
+            if cam_img is None:
+                continue
 
             cam_rgb_torch = cam_img.rgb_image_list[0] # without downsampling
 

@@ -292,6 +292,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         
         # Re-generate colorized point cloud and correct depth map after point cloud deskewing
         # if config.deskew: # only needed for LiDAR datasets
+        # TODO: turn on
         if config.gs_on and (not dataset.is_rgbd):
             dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
         
@@ -405,7 +406,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
             # reconstruction by marching cubes
             if config.mesh_freq_frame > 0:
-                if (sdf_train_frame_id == 0 or sdf_train_frame_id == last_frame or (sdf_train_frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
+                if (sdf_train_frame_id == 0 or frame_id == last_frame or (sdf_train_frame_id+1) % config.mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):              
                     # update map bbx
                     global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=31) # prime number
                     dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
@@ -427,7 +428,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
             
             if config.sdfslice_freq_frame > 0:
-                if o3d_vis.render_sdf and (sdf_train_frame_id == 0 or sdf_train_frame_id == last_frame or (sdf_train_frame_id + 1) % config.sdfslice_freq_frame == 0):
+                if o3d_vis.render_sdf and (sdf_train_frame_id == 0 or frame_id == last_frame or (sdf_train_frame_id + 1) % config.sdfslice_freq_frame == 0):
                     slice_res_m = config.voxel_size_m * 0.6 # better be larger (to save time) # TODO: add to config
                     sdf_bound = config.surface_sample_range_m * 4.0
                     query_sdf_locally = True

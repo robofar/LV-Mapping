@@ -121,7 +121,7 @@ class KITTIOdometryDataset:
         point_ts = self.get_timestamps(points)
 
         if self.load_img and self.image_available:
-            img = self.read_img(self.img2_files[idx]) # just for vis here
+            img = self.read_img(self.img2_files[idx])
         
             points_rgb = np.ones_like(points)
 

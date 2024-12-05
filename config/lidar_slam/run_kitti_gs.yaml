@@ -37,10 +37,11 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 gs:
+  gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   monodepth_on: True # True
-  exposure_correction_on: False
+  exposure_correction_on: True
   view_concat_on: True
-  dist_concat_on: True
+  dist_concat_on: False
   gs_iters: 50 # 100 has good results
   gaussian_bs_ratio: 2.0
   img_pool_size: 20 # 15

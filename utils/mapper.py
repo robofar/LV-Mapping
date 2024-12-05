@@ -604,6 +604,10 @@ class Mapper:
 
     def update_cam_pool(self, frame_id: int):
         # set camera poses
+
+        if self.dataset.cur_cam_img is None:
+            return
+
         for cam_name in self.dataset.cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
             T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
@@ -656,20 +660,22 @@ class Mapper:
 
         # also add some testing views (all the others are then testing views), now it's deprecated, we do not do online evaluation
         else:
-            for cam_name in self.dataset.cam_names:
+            
+            if self.config.img_test_pool_size > 0:
+                for cam_name in self.dataset.cam_names:
+                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    self.test_cam_uid.append(cur_view_cam.uid)
+
+                if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
+                    self.cam_img_test_pool.pop(0) # pop the oldest cam
+                    
+                cam_name = self.dataset.loader.main_cam_name
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                self.test_cam_uid.append(cur_view_cam.uid)
+                cur_view_cam.train_view = False
 
-            if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
-                self.cam_img_test_pool.pop(0) # pop the oldest cam
-                
-            cam_name = self.dataset.loader.main_cam_name
-            cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-            cur_view_cam.train_view = False
+                self.cam_img_test_pool.append(cur_view_cam)
 
-            self.cam_img_test_pool.append(cur_view_cam)
-
-            # print(self.cam_short_term_train_pool_id)
+                # print(self.cam_short_term_train_pool_id)
 
 
     # get a batch of training samples and labels for map optimization
@@ -1000,12 +1006,14 @@ class Mapper:
         cams_param = self.cam_short_term_train_pool
         # cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
+        mlp_color_param = list(self.color_mlp.parameters()) if self.color_mlp is not None else None
+
         opt = setup_optimizer(
             self.config,
             self.neural_points.local_geo_features,
             self.neural_points.local_color_features,
             mlp_sdf_param=list(self.sdf_mlp.parameters()),
-            mlp_color_param=list(self.color_mlp.parameters()),
+            mlp_color_param=mlp_color_param,
             mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
             mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
             mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
@@ -1049,7 +1057,10 @@ class Mapper:
         # better to also include the global map
         # then render them in a more efficient way (their features are not optimizable)
         
-        if iter_count > 0:
+        short_term_img_pool_size = len(self.cam_short_term_train_pool)
+        long_term_img_pool_size = len(self.cam_long_term_train_pool)
+
+        if iter_count > 0 and short_term_img_pool_size > 0:
 
             # print("GS fitting on ")
         
@@ -1072,9 +1083,6 @@ class Mapper:
 
             eval_depth_max = self.config.max_range
             eval_depth_min = self.config.min_range
-
-            short_term_img_pool_size = len(self.cam_short_term_train_pool)
-            long_term_img_pool_size = len(self.cam_long_term_train_pool)
 
             assert short_term_img_pool_size > 0, "At least one frame for training is required"
 
