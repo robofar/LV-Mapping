@@ -54,7 +54,8 @@ class OxfordDataset:
 
         self.poses_count = len(gt_poses)
 
-        self.gt_poses = np.array(gt_poses)
+        self.gt_poses = np.array(gt_poses) # in base frame # convert to lidar frame
+
         pose_ts = np.array(pose_ts)
 
         self.lidar_files = [None] * self.poses_count
@@ -128,30 +129,7 @@ class OxfordDataset:
         calib_file = os.path.join(dataset_parent_path, "calibration", "cam-lidar-imu.yaml")
         self.read_calib_file(calib_file)
 
-
-        # gt_poses_associated = gt_poses[pose_associated_idx]
-
-        # self.gt_poses = gt_poses_associated
-
-        # self.lidar_files = [self.lidar_files[i] for i in lidar_associated_idx]
-
-
-        # # main cam parameters
-        # self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
-
-        # # NOTE for the rear camera, from about h=920 is the ego car's tail
-
-        # self.intrinsic.set_intrinsics(
-        #                             height=H,
-        #                             width=W,
-        #                             fx=self.K_mats[self.main_cam_name][0,0],
-        #                             fy=self.K_mats[self.main_cam_name][1,1],
-        #                             cx=self.K_mats[self.main_cam_name][0,2],
-        #                             cy=self.K_mats[self.main_cam_name][1,2])
-
-        # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
-
-        # self.mono_depth_for_high_z: bool = False # complete the low Z part 
+        self.gt_poses = apply_poses_calib(self.gt_poses, self.T_b_l_mat) # convert base frame poses to lidar frame poses
 
 
     def __getitem__(self, idx):
@@ -248,6 +226,14 @@ class OxfordDataset:
             self.T_b_l_mat = tran_quat_to_mat(t_b_l, quat_rot_b_l)
             self.T_l_b_mat = np.linalg.inv(self.T_b_l_mat)
 
+
+def apply_poses_calib(poses_np, calib_T):
+    """Converts from Lidar to Body Frame in batch"""
+    poses_calib_np = poses_np.copy()
+    for i in range(poses_np.shape[0]):
+        poses_calib_np[i, :, :] = calib_T @ poses_np[i, :, :] @ np.linalg.inv(calib_T)
+
+    return poses_calib_np
 
 def extract_time_from_lidar_filenames(filenames):
 

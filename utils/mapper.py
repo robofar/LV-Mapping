@@ -1970,8 +1970,6 @@ class Mapper:
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
         # For PSNR, it may have a difference of 0.1-0.2 PSNR
 
-        # TODO: the memory bank may still have some problem
-
         assert self.config.use_dataloader, "Only data loader version is supported currently"
 
         eval_cam_name = self.dataset.cam_names # use all the cams

@@ -96,9 +96,10 @@ class IPBCarDataset:
         self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
 
         # vertical lidar
-        self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
-        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
-        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
+        if not self.use_only_lidar_h:
+            self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
+            self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
+            self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
 
         # img_size: 2064x1024
         H, W = 1024, 2064 
@@ -113,12 +114,11 @@ class IPBCarDataset:
             cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
             os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
 
-            # skip the first frame here (not needed actually)
-            # we just use from the first frame
-            # better to add the association function
-            # cur_img_files = cur_img_files[1:]
-            # cur_img_ts = cur_img_ts[1:]
-
+            if len(cur_img_files) == 0:
+                cur_img_files = sorted(glob.glob(cur_cam_undistorted_dir + "*.png"))
+            
+            assert len(cur_img_files) > 0, "No image data in data or data_undistorted folder."
+                
             self.img_files[cam_name] = cur_img_files
 
             cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
