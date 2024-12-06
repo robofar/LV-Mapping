@@ -100,6 +100,7 @@ class SLAM_GUI:
             self.neural_point_default_on = params_gui.neural_point_default_on
             self.mesh_default_on = params_gui.mesh_default_on
             self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
+            self.is_rgbd = params_gui.is_rgbd
         
         if self.config is not None:
             seed_anything(self.config.seed)
@@ -180,13 +181,13 @@ class SLAM_GUI:
         # scan
         self.scan_render = rendering.MaterialRecord()
         self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
-        self.scan_render.point_size = 3 * self.window.scaling
+        self.scan_render.point_size = 4 * self.window.scaling
         self.scan_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # neural points
         self.neural_points_render = rendering.MaterialRecord()
         self.neural_points_render.shader = "defaultLit"
-        self.neural_points_render.point_size = 3 * self.window.scaling
+        self.neural_points_render.point_size = 4 * self.window.scaling
         self.neural_points_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # sdf slice
@@ -1456,6 +1457,9 @@ class SLAM_GUI:
                         online_eval_on: bool = True, 
                         show_depth_error: bool = False):
 
+        if self.gaussian_cur.current_frames is None:
+            return 
+
         if cam_name in list(self.gaussian_cur.gtcolor.keys()):
             selected_gtcolor = self.gaussian_cur.gtcolor[cam_name]
             selected_gtdepth = self.gaussian_cur.gtdepth[cam_name]
@@ -1471,11 +1475,30 @@ class SLAM_GUI:
 
         if selected_gtdepth is not None:
             depth_np = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8)
+            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8)
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
-            if selected_gtcolor is not None:
-                depth_color_np = self.overlaid_img(depth_color_np, rgb_np)     
+            if self.is_rgbd:
+                depth_color_np = self.overlaid_img(depth_color_np, rgb_np) 
+            
+            else:
+                # find valid u,v
+                valid_indices = np.argwhere(depth_np[0] > 0.1)
+                v_coords, u_coords = valid_indices[:, 0], valid_indices[:, 1]
+            
+                uv_coords = np.stack((u_coords, v_coords), axis=1)
+
+                if selected_gtcolor is not None:  
+
+                    overlay_image = rgb_np.copy()
+                    
+                    for point in uv_coords:
+                        u, v = point.astype(int)  # Convert coordinates to integer
+                        depth_color = depth_color_np[v, u]
+                        depth_color_tuple = (int(depth_color[0]), int(depth_color[1]), int(depth_color[2]))
+                        cv2.circle(overlay_image, (u, v), radius=3, color=depth_color_tuple, thickness=-1)
+
+                depth_color_np = np.array(overlay_image)
             
             depth_color_np = np.ascontiguousarray(depth_color_np)
             depth_color_o3d = o3d.geometry.Image(depth_color_np)
@@ -1493,7 +1516,10 @@ class SLAM_GUI:
         cur_depthl1 = None
 
         if from_cur_frame:
-            cur_frame_cam: CamImage = self.gaussian_cur.current_frames[cam_name]
+            if cam_name in list(self.gaussian_cur.current_frames.keys()):
+                cur_frame_cam: CamImage = self.gaussian_cur.current_frames[cam_name]
+            else:
+                return
         else:
             cur_frame_cam: CamImage = self.gaussian_cur.keyframes[cam_name]
 
@@ -1569,7 +1595,7 @@ class SLAM_GUI:
                         diff_depth[~depth_valid_mask] = 0.0
                         diff_depth_np = diff_depth.detach().cpu().numpy()
                         
-                        diff_depth_color_np = (colorize_depth_maps(diff_depth_np, 0.0, diff_depth_max_show, cmap="inferno_r")[0]*255.0).astype(np.uint8)
+                        diff_depth_color_np = (colorize_depth_maps(diff_depth_np, 0.0, diff_depth_max_show)[0]*255.0).astype(np.uint8)
                         diff_depth_color_np = np.transpose(diff_depth_color_np, (1, 2, 0)) # H, W, 3
                         diff_depth_color_np = np.ascontiguousarray(diff_depth_color_np)
 
@@ -1724,7 +1750,7 @@ class SLAM_GUI:
 
             depth = depth.detach().cpu().numpy()
             # max_depth = np.max(depth)
-            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range, cmap="inferno_r")[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
             depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
             depth_color = np.ascontiguousarray(depth_color)
             render_img = o3d.geometry.Image(depth_color)

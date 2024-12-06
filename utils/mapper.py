@@ -608,7 +608,8 @@ class Mapper:
         if self.dataset.cur_cam_img is None:
             return
 
-        for cam_name in self.dataset.cam_names: # for each cam in this frame
+        cur_cam_names = list(self.dataset.cur_cam_img.keys())
+        for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
             T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
@@ -616,7 +617,7 @@ class Mapper:
             cur_view_cam.set_pose(T_w_c) # set camera pose
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
-        keyframe_on = (frame_id == 0) or \
+        keyframe_on = (self.gs_train_frame_count == 0) or \
             (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist) or \
             (self.dataset.accu_travel_degree_for_keyframe > self.config.gs_keyframe_accu_travel_degree)
 
@@ -641,7 +642,7 @@ class Mapper:
                 self.cam_short_term_train_pool.pop(0) # pop the oldest cam
 
             # add new observations to short-term memory
-            for cam_name in self.dataset.cam_names:
+            for cam_name in cur_cam_names:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.train_view = True
                 self.cam_short_term_train_pool.append(cur_view_cam)
@@ -662,7 +663,7 @@ class Mapper:
         else:
             
             if self.config.img_test_pool_size > 0:
-                for cam_name in self.dataset.cam_names:
+                for cam_name in cur_cam_names:
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     self.test_cam_uid.append(cur_view_cam.uid)
 
@@ -1086,12 +1087,12 @@ class Mapper:
 
             assert short_term_img_pool_size > 0, "At least one frame for training is required"
 
+            cam_count = len(self.dataset.cam_names) # TODO
+
             for iter in tqdm(range(iter_count), disable=self.silence):    
 
                 # camera poses already set
                 T1 = get_time()
-
-                cam_count = len(self.dataset.cam_names)
                 
                 cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
@@ -2030,7 +2031,8 @@ class Mapper:
 
                     cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
-                for cam_name in self.dataset.cam_names:
+                cur_cam_names = list(self.dataset.cur_cam_img.keys())
+                for cam_name in cur_cam_names:
 
                     K_mat = self.dataset.K_mats[cam_name]
                     T_c_l_np = self.dataset.T_c_l_mats[cam_name]
@@ -2245,6 +2247,7 @@ class Mapper:
         train_psnr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
 
         cam_count = len(self.dataset.cam_names) # better to also compute for each cam
+        # TODO: fix 
 
         train_frame_count = len(self.train_psnr_list) 
 

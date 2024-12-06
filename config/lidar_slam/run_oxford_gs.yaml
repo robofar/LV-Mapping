@@ -19,7 +19,7 @@ sampler:
   free_front_sample_n: 3 
   free_behind_n: 1
 neuralpoints:
-  voxel_size_m: 0.3
+  voxel_size_m: 0.25
   search_alpha: 0.8
   query_nn_k: 6 # 6 # changed
   feature_dim: 32 # 32 # not worth further improving this
@@ -31,9 +31,10 @@ decoder:
 loss:
   sigma_sigmoid_m: 0.05
   weight_color: 0.0
-  loss_weight_on: True
-  dist_weight_scale: 0.8
+  # loss_weight_on: True
+  # dist_weight_scale: 0.8
   ekional_loss_on: True
+  numerical_grad: False # FIXME
   weight_e: 0.5
 continual:
   batch_size_new_sample: 1000
@@ -46,10 +47,10 @@ continual:
 #   pgo_freq_frame: 30
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
-  exposure_correction_on: True # verified to be better than False
+  exposure_correction_on: False # verified to be better than False
   view_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 100 # 50 # 100
+  gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -60,14 +61,14 @@ gs:
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 5e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   # lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   lambda_normal_depth: 0.01 #
-  lambda_sdf_cons: 0.01 # the weight do not need to be very large
-  lambda_sdf_normal_cons: 0.01 # the weight do not need to be very large # TODO
+  lambda_sdf_cons: 0.02 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper

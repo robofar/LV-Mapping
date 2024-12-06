@@ -166,30 +166,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # initialize the neural point features
     neural_points = NeuralPoints(config)
 
-    # non-blocking visualizer
-    o3d_vis = None
-    if config.o3d_vis_on:
-        o3d_vis = MapVisualizer(config) 
-        
-    
-    q_main2vis = q_vis2main = None
-    if config.gs_vis_on:
-        # communicator between the processes
-        q_main2vis = mp.Queue() 
-        q_vis2main = mp.Queue()
-
-        params_gui = ParamsGUI(
-            decoders=mlp_dict,
-            background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
-            q_main2vis=q_main2vis,
-            q_vis2main=q_vis2main,
-            config=config,
-        )
-
-        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
-        gui_process.start()
-        time.sleep(2) # second
-
     # dataset
     dataset = SLAMDataset(config)
 
@@ -225,6 +201,32 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     # tsdf_mesh_path = os.path.join(run_path, "mesh", "tsdf_fusion_mesh.ply")
     # tsdf_mesh = dataset.o3d_tsdf_fusion(frame_step=20, output_path=tsdf_mesh_path)
     # return 
+
+
+    # Visualizers
+    # non-blocking visualizer
+    o3d_vis = None
+    if config.o3d_vis_on:
+        o3d_vis = MapVisualizer(config) 
+        
+    q_main2vis = q_vis2main = None
+    if config.gs_vis_on:
+        # communicator between the processes
+        q_main2vis = mp.Queue() 
+        q_vis2main = mp.Queue()
+
+        params_gui = ParamsGUI(
+            decoders=mlp_dict,
+            background=torch.tensor(config.bg_color, dtype=config.dtype, device=config.device),
+            q_main2vis=q_main2vis,
+            q_vis2main=q_vis2main,
+            config=config,
+            is_rgbd=dataset.is_rgbd
+        )
+        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
+        gui_process.start()
+        time.sleep(2) # second
+
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader

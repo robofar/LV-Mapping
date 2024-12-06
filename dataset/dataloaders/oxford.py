@@ -83,7 +83,7 @@ class OxfordDataset:
         cam2_ts = extract_time_from_cam_filenames(cam2_files)
 
         # lidar - pose association
-        lidar_pose_associated_idx, lidar_associated_idx = associate_sensor_to_pose(lidar_ts, pose_ts, max_dt=0.01)
+        lidar_pose_associated_idx, lidar_associated_idx = associate_sensor_to_pose(lidar_ts, pose_ts)
 
         lidar_associated_count = np.shape(lidar_pose_associated_idx)[0]
 
@@ -91,7 +91,7 @@ class OxfordDataset:
             self.lidar_files[lidar_pose_associated_idx[i]] = lidar_files[lidar_associated_idx[i]]
 
         # camera 0 - pose association
-        cam0_pose_associated_idx, cam0_associated_idx = associate_sensor_to_pose(cam0_ts, pose_ts, max_dt=0.01)
+        cam0_pose_associated_idx, cam0_associated_idx = associate_sensor_to_pose(cam0_ts, pose_ts)
 
         cam0_associated_count = np.shape(cam0_pose_associated_idx)[0]
 
@@ -99,7 +99,7 @@ class OxfordDataset:
             self.cam0_files[cam0_pose_associated_idx[i]] = cam0_files[cam0_associated_idx[i]]
 
         # camera 1 - pose association
-        cam1_pose_associated_idx, cam1_associated_idx = associate_sensor_to_pose(cam1_ts, pose_ts, max_dt=0.01)
+        cam1_pose_associated_idx, cam1_associated_idx = associate_sensor_to_pose(cam1_ts, pose_ts)
 
         cam1_associated_count = np.shape(cam1_pose_associated_idx)[0]
 
@@ -107,7 +107,7 @@ class OxfordDataset:
             self.cam1_files[cam1_pose_associated_idx[i]] = cam1_files[cam1_associated_idx[i]]
 
         # camera 2 - pose association
-        cam2_pose_associated_idx, cam2_associated_idx = associate_sensor_to_pose(cam2_ts, pose_ts, max_dt=0.01)
+        cam2_pose_associated_idx, cam2_associated_idx = associate_sensor_to_pose(cam2_ts, pose_ts)
 
         cam2_associated_count = np.shape(cam2_pose_associated_idx)[0]
 
@@ -185,7 +185,7 @@ class OxfordDataset:
     
             if len(img_dict.keys())>0: # at least one img got associated to this timestamp
                 
-                print("Img loaded: ", len(img_dict.keys()))
+                # print("Img loaded: ", len(img_dict.keys()))
                 
                 frame_data["img"] = img_dict
         
@@ -217,22 +217,19 @@ class OxfordDataset:
                 cur_camera_calib = calib_dict[cam_name]
                 self.K_mats[cam_name] = np.array(cur_camera_calib["K_rect"])
 
-                T_c_l_7dof = np.array(cur_camera_calib["T_cam_lidar_t_xyz_q_xyzw_overwrite"])
-                t_c_l = T_c_l_7dof[:3]
-                quat_rot_c_l = np.array([T_c_l_7dof[6], T_c_l_7dof[3], T_c_l_7dof[4], T_c_l_7dof[5]]) 
+                # load extrinsics version 1
+                # T_c_l_mat = np.array(cur_camera_calib["T_cam_lidar"])
+
+                # load extrinsics version 2
+                T_c_l_t_q = np.array(cur_camera_calib["T_cam_lidar_t_xyz_q_xyzw_overwrite"])
+                t_c_l = T_c_l_t_q[:3]
+                quat_rot_c_l = np.array([T_c_l_t_q[6], T_c_l_t_q[3], T_c_l_t_q[4], T_c_l_t_q[5]]) 
                 T_c_l_mat = tran_quat_to_mat(t_c_l, quat_rot_c_l)
 
-                T_c_l_mat = np.array(cur_camera_calib["T_cam_lidar"])
-
+                # rotate around z axis by 180 degree
                 flip_mat = np.eye(4)
                 flip_mat[0,0] = flip_mat[1,1] = -1
-
                 T_c_l_mat = T_c_l_mat @ flip_mat
-
-                # z_opp_mat = np.eye(4)
-                # z_opp_mat[2,2] = -1
-
-                # T_c_l_mat = z_opp_mat @ T_c_l_mat
 
                 self.T_c_l_mats[cam_name] = T_c_l_mat
 
@@ -325,7 +322,7 @@ def tran_quat_to_mat(trans, quat_rot):
 
     return tran_mat
 
-def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.05):
+def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.025):
     # for each lidar ts, find the closest pose
     # pose_ts_associated = []
 
