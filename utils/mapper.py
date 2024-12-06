@@ -613,16 +613,16 @@ class Mapper:
         for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
 
-            T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
+            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose
 
-            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
+            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
 
             diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
 
             # relative transformation between the lidar reference timestamp and the camera triggering timestamp
-            if cur_view_cam.frame_id > 0:
-                T_last_cur_lidar = torch.linalg.inv(self.used_poses[cur_view_cam.frame_id-1]) @ T_w_l            
-                diff_pose_l_c_ts = slerp_pose(T_last_cur_lidar, 0.5, self.config.deskew_ref_ratio).to(T_w_l)
+            if frame_id > 0 and self.dataset.cur_sensor_ts is not None:
+                cur_cam_ref_ts_ratio = self.dataset.get_cur_cam_ref_ts_ratio(cam_name)
+                diff_pose_l_c_ts = slerp_pose(self.dataset.last_odom_tran_torch, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
 
             T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
             T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
@@ -2024,7 +2024,7 @@ class Mapper:
                 # deskew and reset depth map
                 tran_in_frame = None
                 if self.config.deskew and frame_id > 0:
-                    tran_in_frame = self.dataset.get_tran_in_frame(frame_id, use_gt_pose)
+                    tran_in_frame = self.dataset.get_tran_in_frame(frame_id)
                     self.dataset.deskew_at_frame(tran_in_frame)
                 
                 if not self.dataset.is_rgbd:
@@ -2064,8 +2064,16 @@ class Mapper:
                                     cx=K_mat[0,2]/eval_down_scale,
                                     cy=K_mat[1,2]/eval_down_scale)
 
+                    diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
 
-                    T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+                    # relative transformation between the lidar reference timestamp and the camera triggering timestamp
+                    if frame_id > 0 and self.dataset.cur_sensor_ts is not None:
+                        T_last_cur_lidar = torch.linalg.inv(self.used_poses[frame_id-1]) @ T_w_l   
+                        cur_cam_ref_ts_ratio = self.dataset.get_cur_cam_ref_ts_ratio(cam_name)
+                        diff_pose_l_c_ts = slerp_pose(T_last_cur_lidar, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+
+                    T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
+                    T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
 
                     # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]

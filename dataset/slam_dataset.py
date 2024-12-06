@@ -208,6 +208,7 @@ class SLAMDataset():
                 self.config.max_range * 1e-2
             )  # inital guess for booting on x aixs
             self.color_scale = 1.0
+            self.config.deskew_ref_ratio = 0.5
 
         self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)
 
@@ -264,6 +265,9 @@ class SLAMDataset():
 
         # imu data
         self.cur_frame_imus = None
+
+        # sensor timestamp
+        self.cur_sensor_ts = None
 
 
     def read_frame_ros(self, msg):
@@ -334,6 +338,8 @@ class SLAMDataset():
                 point_lidar_idx = frame_data["point_lidar_idx"]
             if "imus" in dict_keys: # TODO: add from Pinochio
                 self.cur_frame_imus = frame_data["imus"]
+            if "sensor_ts" in dict_keys:
+                self.cur_sensor_ts = frame_data["sensor_ts"]
             if "img" in dict_keys and use_image: # support multiple cameras
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
@@ -990,6 +996,20 @@ class SLAMDataset():
             self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
             self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
 
+    # get the relative timestamp shift from the reference lidar frame as a ratio
+    def get_cur_cam_ref_ts_ratio(self, cam_name, lidar_t_interval: float = 0.1):
+        
+        # FIXME (lidar_t_interval), deal with other cases, use last frame lidar ts
+
+        if self.cur_sensor_ts is None:
+            return None
+
+        cur_cam_ts = self.cur_sensor_ts[cam_name]
+        cur_main_lidar_ts = self.cur_sensor_ts[self.loader.main_lidar_name]
+
+        cur_cam_ref_ts_ratio = (cur_cam_ts - (cur_main_lidar_ts - lidar_t_interval)) / lidar_t_interval
+
+        return cur_cam_ref_ts_ratio
 
     def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, tran_in_frame = None):
         # done after deskewing
@@ -1014,8 +1034,12 @@ class SLAMDataset():
             cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)
             
             # relative transformation between the lidar reference timestamp and the camera triggering timestamp
-            if tran_in_frame is not None:
-                diff_pose_l_c_ts = slerp_pose(tran_in_frame, 0.5, self.config.deskew_ref_ratio).to(cur_T_c_l)
+            if tran_in_frame is not None and self.cur_sensor_ts is not None:
+                
+                cur_cam_ref_ts_ratio = self.get_cur_cam_ref_ts_ratio(cam_name)
+                # print(cur_cam_ref_ts_ratio)
+
+                diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(cur_T_c_l)
                 cur_T_c_l = cur_T_c_l @ torch.linalg.inv(diff_pose_l_c_ts)
             
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)

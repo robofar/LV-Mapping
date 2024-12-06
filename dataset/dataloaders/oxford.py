@@ -62,6 +62,7 @@ class OxfordDataset:
         self.cam1_files = [None] * self.poses_count
         self.cam2_files = [None] * self.poses_count
 
+        # note these lidar point clouds are in base frame
         lidar_dir = os.path.join(data_dir, "processed", "vilens-slam", "undist-clouds/")
         lidar_files = sorted(glob.glob(lidar_dir + "*.pcd"))
 
@@ -160,6 +161,11 @@ class OxfordDataset:
         if cur_lidar_file is not None:
             points = self.read_point_cloud(cur_lidar_file)
 
+            # transform from base frame to lidar frame
+            points_homo = np.hstack((points[:,:3], np.ones((np.shape(points)[0], 1))))
+
+            points = (points_homo @ self.T_l_b_mat.T)[:,:3]
+
             points_rgb = np.ones_like(points) # only for further processing
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
@@ -227,14 +233,20 @@ class OxfordDataset:
                 T_c_l_mat = tran_quat_to_mat(t_c_l, quat_rot_c_l)
 
                 # rotate around z axis by 180 degree
-                flip_mat = np.eye(4)
-                flip_mat[0,0] = flip_mat[1,1] = -1
-                T_c_l_mat = T_c_l_mat @ flip_mat
+                # flip_mat = np.eye(4)
+                # flip_mat[0,0] = flip_mat[1,1] = -1
+                # T_c_l_mat = T_c_l_mat @ flip_mat
 
                 self.T_c_l_mats[cam_name] = T_c_l_mat
 
                 self.cam_widths[cam_name] = int(cur_camera_calib["width"])
                 self.cam_heights[cam_name] = int(cur_camera_calib["height"])
+
+            T_b_l_t_q = np.array(calib_dict["T_base_lidar_t_xyz_q_xyzw"])
+            t_b_l = T_b_l_t_q[:3]
+            quat_rot_b_l = np.array([T_b_l_t_q[6], T_b_l_t_q[3], T_b_l_t_q[4], T_b_l_t_q[5]]) 
+            self.T_b_l_mat = tran_quat_to_mat(t_b_l, quat_rot_b_l)
+            self.T_l_b_mat = np.linalg.inv(self.T_b_l_mat)
 
 
 def extract_time_from_lidar_filenames(filenames):

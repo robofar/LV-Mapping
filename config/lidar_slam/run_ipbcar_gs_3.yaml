@@ -3,7 +3,6 @@ setting:
   # this actually have worse rendering quality !!!
   output_root: "./pings_experiments"
   deskew: True
-  deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
   color_channel: 3
   color_map_on: True
 process:

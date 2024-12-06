@@ -477,12 +477,13 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         # print("Data loading done")
 
         cur_frame_measured_pcd_o3d = None
+
+        tran_in_frame = None
+
         if eval_on:
             dataset.filter_and_correct()
 
             # deskew and reset depth map
-            tran_in_frame = None
-            
             if config.deskew and frame_id > 0:
                 tran_in_frame = self.get_tran_in_frame(frame_id)
                 dataset.deskew_at_frame(frame_id)
@@ -519,7 +520,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             if args.use_free_view_camera:
                 K_mat = free_cam_K_mat #  # as np.array
-                T_w_c = T_w_l # the input is tehn directly the camera poses
+                T_w_c = T_w_l # the input is then directly the camera poses
                 
                 cur_view_cam = CamImage(frame_id, None, K_mat, 
                                         config.min_range*0.5, config.local_map_radius*1.1,
@@ -529,7 +530,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             else:
                 K_mat = dataset.K_mats[cur_cam_name]
                 T_c_l = torch.tensor(dataset.T_c_l_mats[cur_cam_name], dtype=config.dtype, device=config.device) 
-                T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+                
+                diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
+                if tran_in_frame is not None and dataset.cur_sensor_ts is not None:
+                    cur_cam_ref_ts_ratio = dataset.get_cur_cam_ref_ts_ratio(cur_cam_name)
+                    diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+
+                T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
+                T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
 
                 # you need to also load the camera exposure coefficients here
                 cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]

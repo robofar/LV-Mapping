@@ -2,7 +2,6 @@ setting:
   name: "test_ipbcar_gs_ours_new_test"
   output_root: "./pings_experiments"
   deskew: True
-  deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
   color_channel: 3
   color_map_on: True
 process:
@@ -20,7 +19,7 @@ neuralpoints:
   search_alpha: 0.8 # 0.8
   query_nn_k: 6 # 6 # changed
   feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 16 # 16
+  color_feature_dim: 32 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30 # 30
@@ -51,7 +50,7 @@ gs:
   exposure_correction_on: True # verified to be better than False
   view_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 100 # 50 # 100
+  gs_iters: 10 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
@@ -76,7 +75,7 @@ optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
-  learning_rate_color: 0.002 # neural point color feature lr
+  learning_rate_color: 0.02 # neural point color feature lr
   learning_rate_exposure: 1e-3 # or 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
