@@ -15,7 +15,7 @@ class DataSampler:
         self.config = config
         self.dev = config.device
 
-    def sample(self, points_torch, normal_torch, sem_label_torch, color_torch):
+    def sample(self, points_torch, normal_torch, sem_label_torch, color_torch, color_valid_mask = None):
         """
         Sample training sample points for current scan, get the labels for online training
         input and output are all torch tensors
@@ -63,6 +63,8 @@ class DataSampler:
         if color_torch is not None:
             color_channel = color_torch.shape[1]
             surface_color_tensor = color_torch.repeat(surface_sample_n, 1)
+        
+        # TODO: use color valid mask
 
         # Part 2. free space (in front of surface) uniform sampling
         # if you want to reconstruct the thin objects (like poles, tree branches) well, you need more freespace samples to have
@@ -83,7 +85,7 @@ class DataSampler:
         if sem_label_torch is not None:
             free_sem_label_front = torch.zeros_like(repeated_dist)
         if color_torch is not None:
-            free_color_front = torch.zeros(
+            free_color_front = torch.ones(
                 point_num * freespace_front_sample_n, color_channel, device=dev
             )
 
@@ -105,7 +107,7 @@ class DataSampler:
         if sem_label_torch is not None:
             free_sem_label_behind = torch.zeros_like(repeated_dist)
         if color_torch is not None:
-            free_color_behind = torch.zeros(
+            free_color_behind = torch.ones(
                 point_num * freespace_behind_sample_n, color_channel, device=dev
             )
 

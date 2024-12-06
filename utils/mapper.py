@@ -35,6 +35,7 @@ from utils.tools import (
     transform_torch,
     voxel_down_sample_torch,
     remove_gpu_cache,
+    slerp_pose,
 )
 
 from eval.eval_mesh_utils import eval_pair
@@ -611,9 +612,20 @@ class Mapper:
         cur_cam_names = list(self.dataset.cur_cam_img.keys())
         for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+
             T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
+
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
-            T_w_c = T_w_l @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
+
+            diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
+
+            # relative transformation between the lidar reference timestamp and the camera triggering timestamp
+            if cur_view_cam.frame_id > 0:
+                T_last_cur_lidar = torch.linalg.inv(self.used_poses[cur_view_cam.frame_id-1]) @ T_w_l            
+                diff_pose_l_c_ts = slerp_pose(T_last_cur_lidar, 0.5, self.config.deskew_ref_ratio).to(T_w_l)
+
+            T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
+            T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
             cur_view_cam.set_pose(T_w_c) # set camera pose
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
@@ -2010,11 +2022,13 @@ class Mapper:
                 self.dataset.filter_and_correct()
 
                 # deskew and reset depth map
+                tran_in_frame = None
                 if self.config.deskew and frame_id > 0:
-                    self.dataset.deskew_at_frame(frame_id)
+                    tran_in_frame = self.dataset.get_tran_in_frame(frame_id, use_gt_pose)
+                    self.dataset.deskew_at_frame(tran_in_frame)
                 
                 if not self.dataset.is_rgbd:
-                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
+                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) # self.config.learn_color_residual)
 
                 if pc_cd_eval_on:
                     cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()

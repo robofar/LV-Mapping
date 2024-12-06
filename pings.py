@@ -225,7 +225,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         )
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
         gui_process.start()
-        time.sleep(2) # second
+        time.sleep(3) # second
 
         
     # for each frame
@@ -296,7 +296,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # if config.deskew: # only needed for LiDAR datasets
         # TODO: turn on
         if config.gs_on and (not dataset.is_rgbd):
-            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual) # True # config.learn_color_residual
+            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual, tran_in_frame=dataset.last_odom_tran_torch) # True # config.learn_color_residual
         
         # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
         # if the robot stop, also don't process this frame, since there's no new oberservations

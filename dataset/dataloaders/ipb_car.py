@@ -166,7 +166,7 @@ class IPBCarDataset:
         # tic_read_pc = get_time()
 
         h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
-        # print("H Lidar ts: {}".format(h_lidar_ref_ts))
+        print("H Lidar ts: {}".format(h_lidar_ref_ts))
 
         # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
         # read bin is very fast
@@ -232,7 +232,7 @@ class IPBCarDataset:
                 # tic_0 = get_time()
                 # slow, but would be hard to speed up
 
-                # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
+                print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
 
                 cur_img_file = self.img_files[cam_name][idx]
 

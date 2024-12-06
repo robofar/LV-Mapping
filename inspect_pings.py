@@ -481,11 +481,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             dataset.filter_and_correct()
 
             # deskew and reset depth map
+            tran_in_frame = None
+            
             if config.deskew and frame_id > 0:
+                tran_in_frame = self.get_tran_in_frame(frame_id)
                 dataset.deskew_at_frame(frame_id)
 
             if not dataset.is_rgbd:
-                dataset.project_pointcloud_to_cams(use_only_colorized_points=True) 
+                dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) 
     
             if pc_cd_eval_on:
                 cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()

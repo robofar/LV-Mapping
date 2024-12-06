@@ -1455,7 +1455,8 @@ class SLAM_GUI:
     def update_img_show(self, cam_name, 
                         from_cur_frame: bool = True,
                         online_eval_on: bool = True, 
-                        show_depth_error: bool = False):
+                        show_depth_error: bool = False,
+                        alpha_foreground: float = 0.7):
 
         if self.gaussian_cur.current_frames is None:
             return 
@@ -1479,7 +1480,7 @@ class SLAM_GUI:
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
             if self.is_rgbd:
-                depth_color_np = self.overlaid_img(depth_color_np, rgb_np) 
+                depth_color_np = self.overlaid_img(depth_color_np, rgb_np, alpha_foreground) 
             
             else:
                 # find valid u,v
@@ -1488,15 +1489,15 @@ class SLAM_GUI:
             
                 uv_coords = np.stack((u_coords, v_coords), axis=1)
 
-                if selected_gtcolor is not None:  
+                overlay_image = rgb_np.copy()
+                
+                for point in uv_coords:
+                    u, v = point.astype(int)  # Convert coordinates to integer
+                    depth_color = depth_color_np[v, u]
+                    depth_color_tuple = (int(depth_color[0]), int(depth_color[1]), int(depth_color[2]))
+                    cv2.circle(overlay_image, (u, v), radius=3, color=depth_color_tuple, thickness=-1)
 
-                    overlay_image = rgb_np.copy()
-                    
-                    for point in uv_coords:
-                        u, v = point.astype(int)  # Convert coordinates to integer
-                        depth_color = depth_color_np[v, u]
-                        depth_color_tuple = (int(depth_color[0]), int(depth_color[1]), int(depth_color[2]))
-                        cv2.circle(overlay_image, (u, v), radius=3, color=depth_color_tuple, thickness=-1)
+                overlay_image = cv2.addWeighted(overlay_image, alpha_foreground, rgb_np, 1 - alpha_foreground, 0)
 
                 depth_color_np = np.array(overlay_image)
             
