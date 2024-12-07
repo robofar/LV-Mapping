@@ -612,7 +612,7 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o
                 pgm.loop_edges_vis.append(np.array([loop_id, cur_loop_vis_id],dtype=np.uint32)) # only for vis
                 pgm.loop_edges.append(np.array([loop_id, frame_id],dtype=np.uint32))
                 pgm.loop_trans.append(loop_transform)
-                # update the neural points and poses
+                # update the neural points and poses after pgo
                 pose_diff_torch = torch.tensor(pgm.get_pose_diff(), device=config.device, dtype=config.dtype)
                 dataset.cur_pose_torch = torch.tensor(pgm.cur_pose, device=config.device, dtype=config.dtype)
                 neural_points.adjust_map(pose_diff_torch) # transform neural points (position and orientation) along with associated frame poses # time consuming part

@@ -604,11 +604,12 @@ class Mapper:
             )
 
     def update_cam_pool(self, frame_id: int):
-        # set camera poses
+
 
         if self.dataset.cur_cam_img is None:
             return
 
+        # set camera poses
         cur_cam_names = list(self.dataset.cur_cam_img.keys())
         for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
@@ -1478,9 +1479,9 @@ class Mapper:
                         sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
 
                         sampled_count = sampled_guassians_xyz.shape[0]
-                        shift_sample_count = self.config.gs_consist_shift_count # TODO: add to config
+                        shift_sample_count = self.config.gs_consist_shift_count
 
-                        shift_range = 0.5 * self.config.voxel_size_m # TODO: add to config
+                        shift_range = self.config.gs_consist_shift_range_m # TODO: add to config
 
                         sampled_guassians_xyz_repeat = sampled_guassians_xyz.repeat(shift_sample_count, 1) # RK, 3
                         sampled_guassians_normals_repeat = sampled_guassians_normals.repeat(shift_sample_count, 1) # RK, 3

@@ -309,6 +309,7 @@ class Config:
         self.lambda_sdf: float = 0.0 # pin map sdf fitting loss 
 
         self.gs_consist_shift_count: int = 1
+        self.gs_consist_shift_range_m: float = 0.5 * self.voxel_size_m
 
         # consistency loss supervision direction (FIXME)
         # cannot be all true
@@ -726,6 +727,7 @@ class Config:
             self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
 
             self.gs_consist_shift_count = int(config_args["gs"].get("consist_shift_count", self.gs_consist_normal_fixed))
+            self.gs_consist_shift_range_m = float(config_args["gs"].get("consist_shift_range_m", self.gs_consist_shift_range_m))
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
