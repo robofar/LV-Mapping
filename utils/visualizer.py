@@ -438,7 +438,7 @@ class MapVisualizer:
     def _toggle_neural_point_vis_mode(self, vis):
         self.neural_points_vis_mode = (
             self.neural_points_vis_mode + 1
-        ) % 2  # 0,1,2,3,4 # switch between different vis mode
+        ) % 4  # 0,1,2,3,4 # switch between different vis mode
         # self.neural_points_vis_mode = (
         #     self.neural_points_vis_mode + 1
         # ) % 5  # 0,1,2,3,4 # switch between different vis mode

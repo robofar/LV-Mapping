@@ -147,6 +147,14 @@ The light across different cameras seem to be not identical, figure out a way to
 
 **pass**
 
+## Run on Oxford-Spires dataset
+
+```
+python pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-Spires-Dataset/2024-03-12-keble-college-04/ -dvmg
+```
+
+**pass**
+
 ## Run on SS3DM dataset
 
 ```

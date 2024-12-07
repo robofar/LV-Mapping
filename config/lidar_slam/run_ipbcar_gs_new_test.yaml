@@ -2,7 +2,6 @@ setting:
   name: "test_ipbcar_gs_ours_new_test"
   output_root: "./pings_experiments"
   deskew: True
-  deskew_ref_ratio: 0.33 # according to the camera/lidar timestamp # FIXME
   color_channel: 3
   color_map_on: True
 process:
@@ -20,7 +19,7 @@ neuralpoints:
   search_alpha: 0.8 # 0.8
   query_nn_k: 6 # 6 # changed
   feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 16 # 16
+  color_feature_dim: 32 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 30 # 30
@@ -63,12 +62,13 @@ gs:
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   # lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   lambda_normal_depth: 0.01 #
+  gs_consist_shift_count: 0
   lambda_sdf_cons: 0.02 # the weight do not need to be very large
   lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
@@ -76,12 +76,12 @@ gs:
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
-  learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
-  learning_rate_color: 0.002 # neural point color feature lr
-  learning_rate_exposure: 1e-3 # or 1e-3 # TODO
+  learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
+  learning_rate_color: 0.002 # neural point color feature lr # 0.2
+  learning_rate_exposure: 1e-3 # or 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
+  mesh_min_nn: 15
   visualizer_split_width_ratio: 0.6

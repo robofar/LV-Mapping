@@ -79,6 +79,11 @@ class NeuralPoints(nn.Module):
         self.sorrounding_map_radius = config.sorrounding_map_radius
 
         self.temporal_local_map_on = True
+
+        if not self.config.track_on:
+            # print("Not using temporal local map")
+            self.temporal_local_map_on = False
+
         self.diff_travel_dist_local = (
             self.config.local_map_radius * self.config.local_map_travel_dist_ratio
         )
@@ -302,7 +307,6 @@ class NeuralPoints(nn.Module):
             update_mask = (hash_idx == -1) | (dist2 > 3 * cur_resolution**2)
 
             if sample_colors is not None:
-                # FIXME (we do not need valid_color_mask any more)
                 # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
                 sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
                 # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)

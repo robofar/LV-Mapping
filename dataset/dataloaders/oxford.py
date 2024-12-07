@@ -31,11 +31,12 @@ import numpy as np
 import yaml
 
 from datetime import datetime
+from pathlib import Path
+
+from pyquaternion import Quaternion
 
 from utils.tools import get_time
 
-# for the new test data
-# TODO: finish it tomorrow, urgent !!!
 
 class OxfordDataset:
     def __init__(self, data_dir, cam_name: str, *_, **__):
@@ -46,123 +47,195 @@ class OxfordDataset:
 
         self.min_lidar_radius_m = 0.5
 
-        self.lidar_dir = os.path.join(data_dir, "processed", "vilens-slam", "undist-clouds/")
-        self.lidar_files = sorted(glob.glob(self.lidar_dir + "*.pcd"))
-
-        lidar_ts = extract_time_from_filenames(self.lidar_files)
-        lidar_ts = np.array(lidar_ts)
-
-        # print(lidar_ts)
-
-
-        # print(self.lidar_files)
-
-        # # img_size: 2064x1024
-        # H, W = 1024, 2064 
-
-        # self.img_already_undistorted = False
-        
-        # for cam_name in self.cam_list:
-        #     cur_cam_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data/")
-        #     cur_img_files = sorted(glob.glob(cur_cam_dir + "*.png"))
-            
-        #     # create folder if not yet there
-        #     cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
-        #     os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
-
-        #     # skip the first frame here (not needed actually)
-        #     # we just use from the first frame
-        #     # better to add the association function
-        #     # cur_img_files = cur_img_files[1:]
-        #     # cur_img_ts = cur_img_ts[1:]
-
-        #     self.img_files[cam_name] = cur_img_files
-
-        #     cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
-        #     self.img_ts[cam_name] = cur_img_ts
-            
-        #     self.cam_widths[cam_name] = W
-        #     self.cam_heights[cam_name] = H
-
-
-        # # read calib
-        # self.calibration_dict = self.read_calib_file(os.path.join(data_dir, "calibration", "results.yaml"))
-
-        # read reference poses (by Louis)
-
-        # poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
         # poses_file = os.path.join(data_dir, "processed", "trajectory", "vilens-slam-tum.txt")
         poses_file = os.path.join(data_dir, "processed", "trajectory", "gt-tum.txt")
 
         gt_poses, pose_ts = load_tum_format_poses(poses_file)
 
-        gt_poses = np.array(gt_poses)
+        self.poses_count = len(gt_poses)
+
+        self.gt_poses = np.array(gt_poses) # in base frame # convert to lidar frame
+
         pose_ts = np.array(pose_ts)
 
-        # print(poses_timestamps)
+        self.lidar_files = [None] * self.poses_count
+        self.cam0_files = [None] * self.poses_count
+        self.cam1_files = [None] * self.poses_count
+        self.cam2_files = [None] * self.poses_count
 
-        # print(len(self.gt_poses))
+        # note these lidar point clouds are in base frame
+        lidar_dir = os.path.join(data_dir, "processed", "vilens-slam", "undist-clouds/")
+        lidar_files = sorted(glob.glob(lidar_dir + "*.pcd"))
 
-        pose_associated_idx, lidar_associated_idx = associate_lidar_to_pose(lidar_ts, pose_ts)
+        lidar_ts = extract_time_from_lidar_filenames(lidar_files)
 
-        gt_poses_associated = gt_poses[pose_associated_idx]
+        img_dir_base = os.path.join(data_dir, "processed", "colmap", "images_rectified")
 
-        self.gt_poses = gt_poses_associated
+        cam0_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam0_debayered_image_compressed/")
+        cam1_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam1_debayered_image_compressed/")
+        cam2_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam2_debayered_image_compressed/")
 
-        self.lidar_files = [self.lidar_files[i] for i in lidar_associated_idx]
+        cam0_files = sorted(glob.glob(cam0_dir + "*.jpg"))
+        cam0_ts = extract_time_from_cam_filenames(cam0_files)
 
+        cam1_files = sorted(glob.glob(cam1_dir + "*.jpg"))
+        cam1_ts = extract_time_from_cam_filenames(cam1_files)
 
-        # # main cam parameters
-        # self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        cam2_files = sorted(glob.glob(cam2_dir + "*.jpg"))
+        cam2_ts = extract_time_from_cam_filenames(cam2_files)
 
-        # # NOTE for the rear camera, from about h=920 is the ego car's tail
+        # lidar - pose association
+        lidar_pose_associated_idx, lidar_associated_idx = associate_sensor_to_pose(lidar_ts, pose_ts)
 
-        # self.intrinsic.set_intrinsics(
-        #                             height=H,
-        #                             width=W,
-        #                             fx=self.K_mats[self.main_cam_name][0,0],
-        #                             fy=self.K_mats[self.main_cam_name][1,1],
-        #                             cx=self.K_mats[self.main_cam_name][0,2],
-        #                             cy=self.K_mats[self.main_cam_name][1,2])
+        lidar_associated_count = np.shape(lidar_pose_associated_idx)[0]
 
-        # self.extrinsic = self.T_c_l_mats[self.main_cam_name] # T_c_l
+        for i in range(lidar_associated_count):
+            self.lidar_files[lidar_pose_associated_idx[i]] = lidar_files[lidar_associated_idx[i]]
 
-        # self.mono_depth_for_high_z: bool = False # complete the low Z part 
+        # camera 0 - pose association
+        cam0_pose_associated_idx, cam0_associated_idx = associate_sensor_to_pose(cam0_ts, pose_ts)
+
+        cam0_associated_count = np.shape(cam0_pose_associated_idx)[0]
+
+        for i in range(cam0_associated_count):
+            self.cam0_files[cam0_pose_associated_idx[i]] = cam0_files[cam0_associated_idx[i]]
+
+        # camera 1 - pose association
+        cam1_pose_associated_idx, cam1_associated_idx = associate_sensor_to_pose(cam1_ts, pose_ts)
+
+        cam1_associated_count = np.shape(cam1_pose_associated_idx)[0]
+
+        for i in range(cam1_associated_count):
+            self.cam1_files[cam1_pose_associated_idx[i]] = cam1_files[cam1_associated_idx[i]]
+
+        # camera 2 - pose association
+        cam2_pose_associated_idx, cam2_associated_idx = associate_sensor_to_pose(cam2_ts, pose_ts)
+
+        cam2_associated_count = np.shape(cam2_pose_associated_idx)[0]
+
+        for i in range(cam2_associated_count):
+            self.cam2_files[cam2_pose_associated_idx[i]] = cam2_files[cam2_associated_idx[i]]
+        
+        dataset_parent_path = Path(data_dir).parent
+
+        self.K_mats = {}
+        self.T_c_l_mats = {}
+        self.cam_widths = {}
+        self.cam_heights = {}
+
+        self.cam_list = ["cam0", "cam1", "cam2"] # front, left, right
+        self.main_cam_name = "cam0"
+        
+        calib_file = os.path.join(dataset_parent_path, "calibration", "cam-lidar-imu.yaml")
+        self.read_calib_file(calib_file)
+
+        self.gt_poses = apply_poses_calib(self.gt_poses, self.T_b_l_mat) # convert base frame poses to lidar frame poses
 
 
     def __getitem__(self, idx):
-        points = self.read_point_cloud(self.lidar_files[idx])
-        frame_data = {"points": points}
+
+        frame_data = {}
+        cur_lidar_file = self.lidar_files[idx]
+        if cur_lidar_file is not None:
+            points = self.read_point_cloud(cur_lidar_file)
+
+            # transform from base frame to lidar frame
+            points_homo = np.hstack((points[:,:3], np.ones((np.shape(points)[0], 1))))
+
+            points = (points_homo @ self.T_l_b_mat.T)[:,:3]
+
+            points_rgb = np.ones_like(points) # only for further processing
+            points = np.hstack((points[:,:3], points_rgb[:,:3]))
+
+            frame_data["points"] = points
+
+        if self.load_img:
+            
+            img_dict = {}
+            cur_cam0_file = self.cam0_files[idx]
+            if cur_cam0_file is not None:
+                img_cam0 = self.read_img(cur_cam0_file)                 
+                img_dict["cam0"] = img_cam0
+
+            cur_cam1_file = self.cam1_files[idx]
+            if cur_cam1_file is not None:
+                img_cam1 = self.read_img(cur_cam1_file)                 
+                img_dict["cam1"] = img_cam1
+            
+            cur_cam2_file = self.cam2_files[idx]
+            if cur_cam2_file is not None:
+                img_cam2 = self.read_img(cur_cam2_file)                 
+                img_dict["cam2"] = img_cam2
+    
+            if len(img_dict.keys())>0: # at least one img got associated to this timestamp
+                
+                # print("Img loaded: ", len(img_dict.keys()))
+                
+                frame_data["img"] = img_dict
+        
         return frame_data
     
     def __len__(self):
-        return len(self.lidar_files)    
-
-    # frame timestamp
-    def read_timestamps(self, file_path):
-        timestamps = []
-        # pip install datetime
-        with open(file_path, 'r') as file:
-            for line in file:
-                time_part = line.split("T")[1]
-                # print(time_part)
-                # Parse the time string into a datetime object
-                time_obj = datetime.strptime(time_part[:-4], "%H:%M:%S.%f") # we ignore the nanosecond digits and count for the microsecond part 
-                # Calculate the total number of seconds since 00:00:00
-                time_seconds = (time_obj.hour * 3600) + (time_obj.minute * 60) + time_obj.second + (time_obj.microsecond / 1_000_000)
-                timestamps.append(time_seconds)
-                # print(time_seconds)
-        timestamps = np.array(timestamps)   
-        return timestamps
+        return self.poses_count
     
-    # # read bin format
+    # read pcd format
     def read_point_cloud(self, scan_file: str):
         pcd_o3d = o3d.io.read_point_cloud(scan_file)
         out_points = np.asarray(pcd_o3d.points, dtype=np.float64)
         
         return out_points # N, 3
 
-def extract_time_from_filenames(filenames):
+    def read_img(self, img_file: str):
+        img = cv2.imread(img_file)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        return img
+
+    def read_calib_file(self, yaml_file_path: str):
+
+        calib_dict = {}
+        with open(yaml_file_path, 'r') as file:
+            calib_dict = yaml.safe_load(file)
+
+            for cam_name in self.cam_list:
+                cur_camera_calib = calib_dict[cam_name]
+                self.K_mats[cam_name] = np.array(cur_camera_calib["K_rect"])
+
+                # load extrinsics version 1
+                # T_c_l_mat = np.array(cur_camera_calib["T_cam_lidar"])
+
+                # load extrinsics version 2
+                T_c_l_t_q = np.array(cur_camera_calib["T_cam_lidar_t_xyz_q_xyzw_overwrite"])
+                t_c_l = T_c_l_t_q[:3]
+                quat_rot_c_l = np.array([T_c_l_t_q[6], T_c_l_t_q[3], T_c_l_t_q[4], T_c_l_t_q[5]]) 
+                T_c_l_mat = tran_quat_to_mat(t_c_l, quat_rot_c_l)
+
+                # rotate around z axis by 180 degree
+                # flip_mat = np.eye(4)
+                # flip_mat[0,0] = flip_mat[1,1] = -1
+                # T_c_l_mat = T_c_l_mat @ flip_mat
+
+                self.T_c_l_mats[cam_name] = T_c_l_mat
+
+                self.cam_widths[cam_name] = int(cur_camera_calib["width"])
+                self.cam_heights[cam_name] = int(cur_camera_calib["height"])
+
+            T_b_l_t_q = np.array(calib_dict["T_base_lidar_t_xyz_q_xyzw"])
+            t_b_l = T_b_l_t_q[:3]
+            quat_rot_b_l = np.array([T_b_l_t_q[6], T_b_l_t_q[3], T_b_l_t_q[4], T_b_l_t_q[5]]) 
+            self.T_b_l_mat = tran_quat_to_mat(t_b_l, quat_rot_b_l)
+            self.T_l_b_mat = np.linalg.inv(self.T_b_l_mat)
+
+
+def apply_poses_calib(poses_np, calib_T):
+    """Converts from Lidar to Body Frame in batch"""
+    poses_calib_np = poses_np.copy()
+    for i in range(poses_np.shape[0]):
+        poses_calib_np[i, :, :] = calib_T @ poses_np[i, :, :] @ np.linalg.inv(calib_T)
+
+    return poses_calib_np
+
+def extract_time_from_lidar_filenames(filenames):
 
     ts_list = []
     for filename in filenames:
@@ -179,8 +252,30 @@ def extract_time_from_filenames(filenames):
         # Convert ROS timestamp to seconds
         total_time_seconds = secs + nsecs * 1e-9
         ts_list.append(total_time_seconds)
+    
+    ts_np = np.array(ts_list)
 
-    return ts_list
+    return ts_np
+
+def extract_time_from_cam_filenames(filenames):
+
+    ts_list = []
+    for filename in filenames:
+        
+        filename = filename.split("/")[-1]
+        secs, nsecs, _ = filename.split(".")
+        
+        # Convert to integer
+        secs = int(secs)
+        nsecs = int(nsecs)
+        
+        # Convert ROS timestamp to seconds
+        total_time_seconds = secs + nsecs * 1e-9
+        ts_list.append(total_time_seconds)
+
+    ts_np = np.array(ts_list)
+
+    return ts_np
 
 def load_tum_format_poses(filename: str):
     """
@@ -188,7 +283,6 @@ def load_tum_format_poses(filename: str):
     # count sec nsec tx ty tz qx qy qz qw
     returns -> list, transformation before calibration transformation
     """
-    from pyquaternion import Quaternion
 
     poses = []
     timestamps = []
@@ -210,34 +304,40 @@ def load_tum_format_poses(filename: str):
             # timestamps_sec.append(values[1])
             # timestamps_nsec.append(values[2])
             trans = np.array(values[1:4])
-            quat = Quaternion(np.array([values[7], values[4], values[5], values[6]])) # w, i, j, k
-            rot = quat.rotation_matrix
-            # Build numpy transform matrix
-            odom_tf = np.eye(4)
-            odom_tf[0:3, 3] = trans
-            odom_tf[0:3, 0:3] = rot
+            quat_rot = np.array([values[7], values[4], values[5], values[6]]) # w, i, j, k
+            
+            odom_tf = tran_quat_to_mat(trans, quat_rot)
             poses.append(odom_tf)
     
     return poses, timestamps
 
-def associate_lidar_to_pose(lidar_ts, pose_ts, max_dt=0.05):
+def tran_quat_to_mat(trans, quat_rot):
+
+    tran_mat = np.eye(4)
+    quats = Quaternion(quat_rot)
+    tran_mat[0:3, 3] = trans
+    tran_mat[0:3, 0:3] = quats.rotation_matrix
+
+    return tran_mat
+
+def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.025):
     # for each lidar ts, find the closest pose
     # pose_ts_associated = []
 
     pose_associated_idx = []
-    lidar_associated_idx = []
-    for i in range(lidar_ts.shape[0]):
-        cur_lidar_ts = lidar_ts[i]
-        j = np.argmin(np.abs(pose_ts - cur_lidar_ts))
+    sensor_associated_idx = []
+    for i in range(sensor_ts.shape[0]):
+        cur_sensor_ts = sensor_ts[i]
+        j = np.argmin(np.abs(pose_ts - cur_sensor_ts))
         # pose_ts_associated.append(pose_ts[j])
-        if np.abs(pose_ts[j] - cur_lidar_ts) < max_dt:
+        if np.abs(pose_ts[j] - cur_sensor_ts) < max_dt:
             pose_associated_idx.append(j)
-            lidar_associated_idx.append(i)
+            sensor_associated_idx.append(i)
 
     pose_associated_idx = np.array(pose_associated_idx, dtype=np.int32)
-    lidar_associated_idx = np.array(lidar_associated_idx, dtype=np.int32)
+    sensor_associated_idx = np.array(sensor_associated_idx, dtype=np.int32)
 
-    return pose_associated_idx, lidar_associated_idx        
+    return pose_associated_idx, sensor_associated_idx        
 
 
 

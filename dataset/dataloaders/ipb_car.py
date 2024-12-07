@@ -44,8 +44,12 @@ class IPBCarDataset:
         self.use_only_colorized_points = False
         
         self.use_only_lidar_h = True
+        self.lidar_list = ["lidar_h"] 
+        self.main_lidar_name = self.lidar_list[0]
+
         if cam_name == "both_lidars":
             self.use_only_lidar_h = False # use lidar_h or both (lidar_h + lidar_v)
+            self.lidar_list.append("lidar_v") 
 
         self.min_lidar_radius_m = 0.5
 
@@ -92,9 +96,10 @@ class IPBCarDataset:
         self.lidar_horizontal_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_h_topic_name), "timestamps.txt"))
 
         # vertical lidar
-        self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
-        self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
-        self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
+        if not self.use_only_lidar_h:
+            self.lidar_vertical_dir = os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "data/")
+            self.lidar_vertical_files = sorted(glob.glob(self.lidar_vertical_dir + "*.ply"))
+            self.lidar_vertical_ts = self.read_timestamps(os.path.join(data_dir, "lidar_{}_points".format(self.lidar_v_topic_name), "timestamps.txt"))
 
         # img_size: 2064x1024
         H, W = 1024, 2064 
@@ -109,12 +114,11 @@ class IPBCarDataset:
             cur_cam_undistorted_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "data_undistorted/")
             os.makedirs(cur_cam_undistorted_dir, 0o755, exist_ok=True)
 
-            # skip the first frame here (not needed actually)
-            # we just use from the first frame
-            # better to add the association function
-            # cur_img_files = cur_img_files[1:]
-            # cur_img_ts = cur_img_ts[1:]
-
+            if len(cur_img_files) == 0:
+                cur_img_files = sorted(glob.glob(cur_cam_undistorted_dir + "*.png"))
+            
+            assert len(cur_img_files) > 0, "No image data in data or data_undistorted folder."
+                
             self.img_files[cam_name] = cur_img_files
 
             cur_img_ts = self.read_timestamps(os.path.join(data_dir, "camera_{}".format(cam_name), "timestamps.txt"))
@@ -163,9 +167,13 @@ class IPBCarDataset:
 
     def __getitem__(self, idx):
         
+        frame_data = {}
+
         # tic_read_pc = get_time()
+        sensor_ts_dict = {}
 
         h_lidar_ref_ts = self.lidar_horizontal_ts[idx] # unit: s
+        sensor_ts_dict["lidar_h"] = h_lidar_ref_ts
         # print("H Lidar ts: {}".format(h_lidar_ref_ts))
 
         # TODO: read ply is a bot too slow, try to use *.bin (done), but for *.bin, there some problem of the timestamp loading
@@ -193,6 +201,7 @@ class IPBCarDataset:
         if not self.use_only_lidar_h:
             
             v_lidar_ref_ts = self.lidar_vertical_ts[idx]
+            sensor_ts_dict["lidar_v"] = v_lidar_ref_ts
             # print("V Lidar ts: {}".format(v_lidar_ref_ts))
 
             lidar_v_points, lidar_v_points_ts = self.read_point_cloud_ply(self.lidar_vertical_files[idx])
@@ -232,6 +241,7 @@ class IPBCarDataset:
                 # tic_0 = get_time()
                 # slow, but would be hard to speed up
 
+                sensor_ts_dict[cam_name] = self.img_ts[cam_name][idx]
                 # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
 
                 cur_img_file = self.img_files[cam_name][idx]
@@ -278,11 +288,10 @@ class IPBCarDataset:
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             # print(point_ts) # correct
+            frame_data["img"] = img_dict 
+            # frame_data["depth"] = depth_img_dict  
 
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict}
-            # frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "img": img_dict, "depth": depth_img_dict}
-        else:
-            frame_data = {"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx}
+        frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "sensor_ts": sensor_ts_dict})
 
         return frame_data
 

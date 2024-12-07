@@ -416,6 +416,7 @@ class ParamsGUI:
         q_main2vis=None,
         q_vis2main=None,
         config=None, # PINGS configs
+        is_rgbd: bool = False,
         gs_default_on: bool = False,
         robot_default_on: bool = True,
         neural_point_default_on: bool = False,
@@ -429,6 +430,7 @@ class ParamsGUI:
         self.q_vis2main = q_vis2main
         self.config = config
 
+        self.is_rgbd = is_rgbd
         self.gs_default_on = gs_default_on
         self.robot_default_on = robot_default_on
         self.neural_point_default_on = neural_point_default_on

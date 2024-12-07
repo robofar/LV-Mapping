@@ -35,6 +35,7 @@ from utils.tools import (
     transform_torch,
     voxel_down_sample_torch,
     remove_gpu_cache,
+    slerp_pose,
 )
 
 from eval.eval_mesh_utils import eval_pair
@@ -139,6 +140,9 @@ class Mapper:
         self.cam_img_test_pool = []
         self.test_cam_uid = [] 
 
+        self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
+        self.sdf_train_frame_count: int = 0
+
         # used training views in this frame # for visualization
         self.cur_frame_train_views = None
 
@@ -220,8 +224,6 @@ class Mapper:
         if frame_normal_torch is not None: # not used yet
             frame_normal_torch = frame_normal_torch[self.static_mask]  
 
-        # TODO
-
         self.dataset.static_mask = self.static_mask
 
         T1 = get_time()
@@ -237,6 +239,9 @@ class Mapper:
         ) = self.sampler.sample(
             frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch
         )
+
+        self.sdf_train_frame_count += 1 # sample points from point cloud for sdf training
+
         # coord is in sensor local frame
 
         time_repeat = torch.tensor(
@@ -600,23 +605,38 @@ class Mapper:
 
     def update_cam_pool(self, frame_id: int):
         # set camera poses
-        for cam_name in self.dataset.cam_names: # for each cam in this frame
+
+        if self.dataset.cur_cam_img is None:
+            return
+
+        cur_cam_names = list(self.dataset.cur_cam_img.keys())
+        for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-            T_w_l = self.used_poses[cur_view_cam.frame_id] # already in torch tensor, lidar pose
-            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cur_view_cam.cam_id], device=self.device) 
-            T_w_c = T_w_l @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
+
+            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose
+
+            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
+
+            diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
+
+            # relative transformation between the lidar reference timestamp and the camera triggering timestamp
+            if frame_id > 0 and self.dataset.cur_sensor_ts is not None:
+                cur_cam_ref_ts_ratio = self.dataset.get_cur_cam_ref_ts_ratio(cam_name)
+                diff_pose_l_c_ts = slerp_pose(self.dataset.last_odom_tran_torch, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+
+            T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
+            T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
             cur_view_cam.set_pose(T_w_c) # set camera pose
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
-        # maybe also consider the accumulated rotation (TODO)
-        keyframe_on = (frame_id == 0) or \
+        keyframe_on = (self.gs_train_frame_count == 0) or \
             (self.dataset.accu_travel_dist_for_keyframe > self.config.gs_keyframe_accu_travel_dist) or \
             (self.dataset.accu_travel_degree_for_keyframe > self.config.gs_keyframe_accu_travel_degree)
 
         # training views
         if keyframe_on and frame_id % self.config.gs_keyframe_interval==0:
             
-            self.dataset.gs_train_frame_count += 1
+            self.gs_train_frame_count += 1
             self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
             self.dataset.accu_travel_degree_for_keyframe = 0.0 # set back to zero
 
@@ -634,7 +654,7 @@ class Mapper:
                 self.cam_short_term_train_pool.pop(0) # pop the oldest cam
 
             # add new observations to short-term memory
-            for cam_name in self.dataset.cam_names:
+            for cam_name in cur_cam_names:
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                 cur_view_cam.train_view = True
                 self.cam_short_term_train_pool.append(cur_view_cam)
@@ -653,20 +673,22 @@ class Mapper:
 
         # also add some testing views (all the others are then testing views), now it's deprecated, we do not do online evaluation
         else:
-            for cam_name in self.dataset.cam_names:
+            
+            if self.config.img_test_pool_size > 0:
+                for cam_name in cur_cam_names:
+                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    self.test_cam_uid.append(cur_view_cam.uid)
+
+                if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
+                    self.cam_img_test_pool.pop(0) # pop the oldest cam
+                    
+                cam_name = self.dataset.loader.main_cam_name
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-                self.test_cam_uid.append(cur_view_cam.uid)
+                cur_view_cam.train_view = False
 
-            if len(self.cam_img_test_pool) > self.config.img_test_pool_size:
-                self.cam_img_test_pool.pop(0) # pop the oldest cam
-                
-            cam_name = self.dataset.loader.main_cam_name
-            cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
-            cur_view_cam.train_view = False
+                self.cam_img_test_pool.append(cur_view_cam)
 
-            self.cam_img_test_pool.append(cur_view_cam)
-
-            # print(self.cam_short_term_train_pool_id)
+                # print(self.cam_short_term_train_pool_id)
 
 
     # get a batch of training samples and labels for map optimization
@@ -994,14 +1016,17 @@ class Mapper:
         
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
-        cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
+        cams_param = self.cam_short_term_train_pool
+        # cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
+
+        mlp_color_param = list(self.color_mlp.parameters()) if self.color_mlp is not None else None
 
         opt = setup_optimizer(
             self.config,
             self.neural_points.local_geo_features,
             self.neural_points.local_color_features,
             mlp_sdf_param=list(self.sdf_mlp.parameters()),
-            mlp_color_param=list(self.color_mlp.parameters()),
+            mlp_color_param=mlp_color_param,
             mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
             mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
             mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
@@ -1045,7 +1070,10 @@ class Mapper:
         # better to also include the global map
         # then render them in a more efficient way (their features are not optimizable)
         
-        if iter_count > 0:
+        short_term_img_pool_size = len(self.cam_short_term_train_pool)
+        long_term_img_pool_size = len(self.cam_long_term_train_pool)
+
+        if iter_count > 0 and short_term_img_pool_size > 0:
 
             # print("GS fitting on ")
         
@@ -1069,17 +1097,14 @@ class Mapper:
             eval_depth_max = self.config.max_range
             eval_depth_min = self.config.min_range
 
-            short_term_img_pool_size = len(self.cam_short_term_train_pool)
-            long_term_img_pool_size = len(self.cam_long_term_train_pool)
-
             assert short_term_img_pool_size > 0, "At least one frame for training is required"
+
+            cam_count = len(self.dataset.cam_names) # TODO
 
             for iter in tqdm(range(iter_count), disable=self.silence):    
 
                 # camera poses already set
                 T1 = get_time()
-
-                cam_count = len(self.dataset.cam_names)
                 
                 cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
@@ -1453,7 +1478,7 @@ class Mapper:
                         sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
 
                         sampled_count = sampled_guassians_xyz.shape[0]
-                        shift_sample_count = 1 # TODO: add to config
+                        shift_sample_count = self.config.gs_consist_shift_count # TODO: add to config
 
                         shift_range = 0.5 * self.config.voxel_size_m # TODO: add to config
 
@@ -1874,34 +1899,35 @@ class Mapper:
             render_min_nn_count: int = 5, 
             max_z_thre = None):
 
-        local_neural_points = self.neural_points.local_neural_points
-        stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
+        with torch.no_grad():  # eval step
+            local_neural_points = self.neural_points.local_neural_points
+            stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
 
-        # print("Begin to check the validity")
-        # print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
-        #     self.neural_points.local_count()))
+            # print("Begin to check the validity")
+            # print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
+            #     self.neural_points.local_count()))
 
-        stable_neural_points = local_neural_points[stable_neural_points_mask]
+            stable_neural_points = local_neural_points[stable_neural_points_mask]
 
-        # this is a bit too much large, better to do it in batch
-        stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=render_min_nn_count) # self.config.query_nn_k
+            # this is a bit too much large, better to do it in batch
+            stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=render_min_nn_count) # self.config.query_nn_k
 
-        static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+            static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
 
-        valid_stable_mask = static_mask & valid_nnk_mask
+            valid_stable_mask = static_mask & valid_nnk_mask
 
-        # a little heuristic
-        if max_z_thre is not None:
-            stable_neural_points_local_frame = transform_torch(stable_neural_points, torch.inverse(self.used_poses[-1]))
+            # a little heuristic
+            if max_z_thre is not None:
+                stable_neural_points_local_frame = transform_torch(stable_neural_points, torch.inverse(self.used_poses[-1]))
 
-            large_z_mask = stable_neural_points_local_frame[:,2] > max_z_thre # nein, should be current frame
-            valid_stable_mask = valid_stable_mask | large_z_mask # large z also would be regarded as static here
+                large_z_mask = stable_neural_points_local_frame[:,2] > max_z_thre # nein, should be current frame
+                valid_stable_mask = valid_stable_mask | large_z_mask # large z also would be regarded as static here
 
-        self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
+            self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
 
-        # set back the mask to the global map
-        local_mask = self.neural_points.local_mask
-        self.neural_points.valid_gs_mask[local_mask[:-1]] = self.neural_points.local_valid_gs_mask
+            # set back the mask to the global map
+            local_mask = self.neural_points.local_mask
+            self.neural_points.valid_gs_mask[local_mask[:-1]] = self.neural_points.local_valid_gs_mask
         
 
     def init_gs_eval(self):
@@ -1944,8 +1970,6 @@ class Mapper:
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
         # For PSNR, it may have a difference of 0.1-0.2 PSNR
-
-        # TODO: the memory bank may still have some problem
 
         assert self.config.use_dataloader, "Only data loader version is supported currently"
 
@@ -1997,11 +2021,13 @@ class Mapper:
                 self.dataset.filter_and_correct()
 
                 # deskew and reset depth map
+                tran_in_frame = None
                 if self.config.deskew and frame_id > 0:
-                    self.dataset.deskew_at_frame(frame_id)
+                    tran_in_frame = self.dataset.get_tran_in_frame(frame_id)
+                    self.dataset.deskew_at_frame(tran_in_frame)
                 
                 if not self.dataset.is_rgbd:
-                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
+                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) # self.config.learn_color_residual)
 
                 if pc_cd_eval_on:
                     cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
@@ -2018,7 +2044,8 @@ class Mapper:
 
                     cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
-                for cam_name in self.dataset.cam_names:
+                cur_cam_names = list(self.dataset.cur_cam_img.keys())
+                for cam_name in cur_cam_names:
 
                     K_mat = self.dataset.K_mats[cam_name]
                     T_c_l_np = self.dataset.T_c_l_mats[cam_name]
@@ -2036,8 +2063,16 @@ class Mapper:
                                     cx=K_mat[0,2]/eval_down_scale,
                                     cy=K_mat[1,2]/eval_down_scale)
 
+                    diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
 
-                    T_w_c = T_w_l @ T_c_l.inverse() # need to convert to cam frame
+                    # relative transformation between the lidar reference timestamp and the camera triggering timestamp
+                    if frame_id > 0 and self.dataset.cur_sensor_ts is not None:
+                        T_last_cur_lidar = torch.linalg.inv(self.used_poses[frame_id-1]) @ T_w_l   
+                        cur_cam_ref_ts_ratio = self.dataset.get_cur_cam_ref_ts_ratio(cam_name)
+                        diff_pose_l_c_ts = slerp_pose(T_last_cur_lidar, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+
+                    T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
+                    T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
 
                     # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
@@ -2112,7 +2147,7 @@ class Mapper:
                             print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
-                            if self.config.exposure_correction_on:
+                            if self.config.exposure_correction_on and not self.config.affine_exposure_correction:
                                 print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
 
                         if cur_view_cam.depth_on and rendered_depth is not None: 
@@ -2233,6 +2268,7 @@ class Mapper:
         train_psnr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
 
         cam_count = len(self.dataset.cam_names) # better to also compute for each cam
+        # TODO: fix 
 
         train_frame_count = len(self.train_psnr_list) 
 

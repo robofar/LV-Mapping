@@ -51,7 +51,7 @@ class Config:
         # motion undistortion
         self.deskew: bool = False
         self.lidar_type_guess: str = "hesai" # velodyne
-        self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
+        self.deskew_ref_ratio: float = 0.0 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
 
         # preprocess
         # distance filter
@@ -307,6 +307,8 @@ class Config:
         self.lambda_sdf_normal_cons: float = 0.0 # gaussian's normal should align with sdf's gradient direction
         self.lambda_invalid_opacity: float = 0.0 # to let those part with not well constructed sdf to have a samller opacity
         self.lambda_sdf: float = 0.0 # pin map sdf fitting loss 
+
+        self.gs_consist_shift_count: int = 1
 
         # consistency loss supervision direction (FIXME)
         # cannot be all true
@@ -652,6 +654,8 @@ class Config:
             self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
 
             self.lr_pose = float(config_args["optimizer"].get("lr_pose_ba", self.lr_pose))
+            self.lr_cam_dr = float(config_args["optimizer"].get("lr_cam_dr", self.lr_cam_dr)) # 0.003 # learning rate for camera rotation
+            self.lr_cam_dt = float(config_args["optimizer"].get("lr_cam_dt", self.lr_cam_dt))# 0.001 # learning rate for camera translation
 
             # bundle adjustment
             self.ba_freq_frame = config_args["optimizer"].get("ba_freq_frame", 0) # default off
@@ -720,6 +724,8 @@ class Config:
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
             self.lambda_invalid_opacity = float(config_args["gs"].get("lambda_invalid_opacity", self.lambda_invalid_opacity)) # add this to better deal with dynamic objects
             self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
+
+            self.gs_consist_shift_count = int(config_args["gs"].get("consist_shift_count", self.gs_consist_normal_fixed))
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)

@@ -39,7 +39,8 @@ from utils.tools import (
     transform_torch,
     voxel_down_sample_torch,
     project_points_to_cam_torch,
-    rotmat_to_degree_np
+    rotmat_to_degree_np,
+    slerp_pose,
 )
 from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
@@ -185,8 +186,6 @@ class SLAMDataset():
         self.travel_dist = np.zeros(max_frame_number) 
         self.accu_travel_dist_for_keyframe: float = 0.0
         self.accu_travel_degree_for_keyframe: float = 0.0
-
-        self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
         
         self.time_table = []
 
@@ -209,6 +208,9 @@ class SLAMDataset():
                 self.config.max_range * 1e-2
             )  # inital guess for booting on x aixs
             self.color_scale = 1.0
+            self.config.deskew_ref_ratio = 0.5
+
+        self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)
 
         # current frame point cloud (for visualization)
         self.cur_frame_o3d = o3d.geometry.PointCloud()
@@ -263,6 +265,9 @@ class SLAMDataset():
 
         # imu data
         self.cur_frame_imus = None
+
+        # sensor timestamp
+        self.cur_sensor_ts = None
 
 
     def read_frame_ros(self, msg):
@@ -333,6 +338,8 @@ class SLAMDataset():
                 point_lidar_idx = frame_data["point_lidar_idx"]
             if "imus" in dict_keys: # TODO: add from Pinochio
                 self.cur_frame_imus = frame_data["imus"]
+            if "sensor_ts" in dict_keys:
+                self.cur_sensor_ts = frame_data["sensor_ts"]
             if "img" in dict_keys and use_image: # support multiple cameras
                 img_dict: dict = frame_data["img"]
                 cam_list = list(img_dict.keys())
@@ -612,7 +619,8 @@ class SLAMDataset():
         toc_0 = get_time()
         # print("Time for preprocessing input data to camera {:.2f} (ms)".format((toc_0-tic_0)*1e3))
 
-        self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
+        if points is not None:
+            self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
 
         if self.config.deskew: 
             self.get_point_ts(point_ts)
@@ -677,7 +685,7 @@ class SLAMDataset():
         proprocessing main function: all the preprocessing steps for a input point cloud
         """  
         # T1 = get_time()
-        
+
         # setup poses
         valid_frame_flag = self.initialize_pose()
         if not valid_frame_flag:   
@@ -744,14 +752,17 @@ class SLAMDataset():
                 cur_pose_init_guess, dtype=torch.float64, device=self.device
             )   
 
-        original_count = self.cur_point_cloud_torch.shape[0]
-        if original_count < 10:  # deal with missing data (invalid frame)
-            print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
-            if self.config.track_on:
-                self.odom_poses[frame_id] = cur_pose_init_guess
-            if self.config.pgo_on:
-                self.pgo_poses[frame_id] = cur_pose_init_guess
-            return False # indicating invalid frame
+        if self.cur_point_cloud_torch is not None:
+            original_count = self.cur_point_cloud_torch.shape[0]
+            if original_count < 10:  # deal with missing data (invalid frame)
+                print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
+                if self.config.track_on:
+                    self.odom_poses[frame_id] = cur_pose_init_guess
+                if self.config.pgo_on:
+                    self.pgo_poses[frame_id] = cur_pose_init_guess
+                return False # indicating invalid frame
+        else:
+            return False
         
         return True
 
@@ -881,7 +892,7 @@ class SLAMDataset():
             self.cur_source_points = deskewing(
                 self.cur_source_points,
                 cur_source_ts,
-                torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
+                self.last_odom_tran_torch,
                 ts_ref_pose = self.config.deskew_ref_ratio,
                 points_lidar_idx = cur_source_lidar_idx,
                 T_l_lm_list=self.T_l_lm_list,
@@ -951,12 +962,14 @@ class SLAMDataset():
         
         self.last_pose_ref = self.cur_pose_ref  # update for the next frame
 
+        self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)
+
         # deskewing (motion undistortion using the estimated transformation) for the points for mapping
         if self.config.deskew and not self.lose_track:
             self.cur_point_cloud_torch = deskewing(
                 self.cur_point_cloud_torch,
                 self.cur_point_ts_torch,
-                torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype),
+                self.last_odom_tran_torch,
                 ts_ref_pose = self.config.deskew_ref_ratio,
                 points_lidar_idx = self.cur_point_lidar_idx_torch,
                 T_l_lm_list=self.T_l_lm_list,
@@ -983,21 +996,54 @@ class SLAMDataset():
             self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
             self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
 
+    # get the relative timestamp shift from the reference lidar frame as a ratio
+    def get_cur_cam_ref_ts_ratio(self, cam_name, lidar_t_interval: float = 0.1):
+        
+        # FIXME (lidar_t_interval), deal with other cases, use last frame lidar ts
 
-    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True):
+        if self.cur_sensor_ts is None:
+            return None
+
+        cur_cam_ts = self.cur_sensor_ts[cam_name]
+        cur_main_lidar_ts = self.cur_sensor_ts[self.loader.main_lidar_name]
+
+        cur_cam_ref_ts_ratio = (cur_cam_ts - (cur_main_lidar_ts - lidar_t_interval)) / lidar_t_interval
+
+        # cur_cam_ref_ts_ratio = 1.0 - cur_cam_ref_ts_ratio
+
+        return cur_cam_ref_ts_ratio
+
+    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, tran_in_frame = None):
         # done after deskewing
         # to get a refined depth map and colorized point cloud
 
         point_count = self.cur_point_cloud_torch.shape[0]
         points_rgb_torch = torch.ones((point_count, 4)).to(self.cur_point_cloud_torch)
 
-        for cam_name in self.cam_names:
+        if self.cur_cam_img is None:
+            return
+
+        cur_cam_names = list(self.cur_cam_img.keys())
+        for cam_name in cur_cam_names:
             cam_img: CamImage = self.cur_cam_img[cam_name]
+
+            if cam_img is None:
+                continue
 
             cam_rgb_torch = cam_img.rgb_image_list[0] # without downsampling
 
             # TODO: check if this will be an in-place operation of self.cur_point_cloud_torch
             cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)
+            
+            # relative transformation between the lidar reference timestamp and the camera triggering timestamp
+            if tran_in_frame is not None and self.cur_sensor_ts is not None:
+                
+                cur_cam_ref_ts_ratio = self.get_cur_cam_ref_ts_ratio(cam_name)
+                # print(cur_cam_ref_ts_ratio)
+
+                diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(cur_T_c_l)
+                cur_T_c_l = cur_T_c_l @ torch.linalg.inv(diff_pose_l_c_ts)
+            
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)
 
             points_rgb_torch, depth_map_torch = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
@@ -1032,11 +1078,12 @@ class SLAMDataset():
         # self.cur_point_cloud_torch is in current lidar frame
 
         frame_o3d = o3d.geometry.PointCloud()
-        frame_points_np = (
-            frame_down_torch[:, :3].detach().cpu().numpy().astype(np.float64)
-        )
+        if frame_down_torch is not None:
+            frame_points_np = (
+                frame_down_torch[:, :3].detach().cpu().numpy().astype(np.float64)
+            )
 
-        frame_o3d.points = o3d.utility.Vector3dVector(frame_points_np)
+            frame_o3d.points = o3d.utility.Vector3dVector(frame_points_np)
 
         # visualize or not
         # uncomment to visualize the dynamic mask
@@ -1109,7 +1156,8 @@ class SLAMDataset():
 
         # use the downsampled neural points here (done outside the class)
 
-    def deskew_at_frame(self, frame_id, use_gt_pose: bool = False):
+    def get_tran_in_frame(self, frame_id, use_gt_pose: bool = False):
+        
         assert frame_id > 0, "frame_id needs to be larger than 0, because we use frame_id-1 here"
 
         cur_frame = frame_id
@@ -1131,14 +1179,22 @@ class SLAMDataset():
                     @ self.gt_poses[cur_frame]
                 )
             else:
-                return 
+                return None
+
+        # tran_in_frame: T_last<-cur
+
+        tran_in_frame = torch.tensor(tran_in_frame, device=self.device, dtype=torch.float64)
+
+        return tran_in_frame
+
+    def deskew_at_frame(self, tran_in_frame):
 
         # tran_in_frame: T_last<-cur
 
         self.cur_point_cloud_torch = deskewing(
             self.cur_point_cloud_torch,
             self.cur_point_ts_torch,
-            torch.tensor(tran_in_frame, device=self.device, dtype=torch.float64),
+            tran_in_frame,
             self.config.deskew_ref_ratio,
             points_lidar_idx = self.cur_point_lidar_idx_torch,
             T_l_lm_list=self.T_l_lm_list,
@@ -1182,8 +1238,14 @@ class SLAMDataset():
                     self.cur_point_cloud_torch, self.config.correction_deg
                 )
 
-            if self.config.deskew and frame_id > 0:
-                self.deskew_at_frame(frame_id, use_gt_pose)
+            if self.config.deskew:
+                if frame_id > 0:
+                    tran_in_frame = self.get_tran_in_frame(frame_id, use_gt_pose)
+                    self.deskew_at_frame(tran_in_frame)
+                else: 
+                    continue # FIXME, deal with first frame's deskewing
+
+            # TODO: project and assigne color
 
             if down_vox_m is None:
                 down_vox_m = self.config.vox_down_m
