@@ -315,10 +315,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         # for the first frame, we need more iterations to do the initialization (warm-up)
         if config.gs_on:
             # when train gs we do not do SDF training seperately except for the first frame
-            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 0 else 0 
+            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 1 else 0 
             frame_count_for_freeze_check = mapper.gs_train_frame_count
         else:
-            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 0 else config.iters
+            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 1 else config.iters
             frame_count_for_freeze_check = mapper.sdf_train_frame_count
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
@@ -329,16 +329,15 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             config.decoder_freezed = True
             neural_points.compute_feature_principle_components(down_rate = 17)
 
-        # mapping with fixed poses (every frame) # now only done for the first frame
-        if mapper.sdf_train_frame_count % config.mapping_freq_frame == 0:
-            mapper.mapping(cur_iter_num)
+        # mapping with fixed poses # now only done for the first frame for the gs mode
+        mapper.mapping(cur_iter_num)
 
         T5_1 = get_time()
 
         # gaussian splatting mapping (fitting)
         if config.gs_on: # only when color available
             mapper.update_cam_pool(frame_id)
-            if dataset.cur_cam_img is not None: # when there are new imgs, do training
+            if dataset.cur_cam_img is not None and not neural_points.is_empty(): # when there are new imgs, do training
                 mapper.joint_gsdf_mapping(config.gs_iters) # only when sdf field is learned well 
             
         # TODO: check its time consuming, can be done once per x frames 

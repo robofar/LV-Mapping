@@ -770,7 +770,10 @@ class Mapper:
     # the main training function
     def mapping(self, iter_count):
 
-        iter_count = max(1, iter_count + self.adaptive_iter_offset)
+        iter_count += self.adaptive_iter_offset
+
+        if iter_count <= 0 or self.neural_points.is_empty():
+            return # skip the mapping
 
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
