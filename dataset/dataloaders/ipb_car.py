@@ -405,7 +405,8 @@ class IPBCarDataset:
             T_cf_lh = np.array(lidar_h_calib["extrinsics"])
             T_cf_lv = np.array(lidar_v_calib["extrinsics"])
             self.T_lv_lh = np.linalg.inv(T_cf_lv) @ T_cf_lh
-            self.T_l_lm_mats.append(self.T_lv_lh)
+            if not self.use_only_lidar_h:
+                self.T_l_lm_mats.append(self.T_lv_lh)
 
             for cam_name in self.cam_list:
                 cur_cam_calib_name = "camera{}image_raw".format(cam_name)

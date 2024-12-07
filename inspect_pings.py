@@ -29,7 +29,7 @@ from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
 from utils.mesher import Mesher, filter_isolated_vertices
-from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps
+from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps, slerp_pose
 from utils.visualizer import MapVisualizer
 
 from eval.eval_mesh_utils import eval_pair
@@ -485,8 +485,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             # deskew and reset depth map
             if config.deskew and frame_id > 0:
-                tran_in_frame = self.get_tran_in_frame(frame_id)
-                dataset.deskew_at_frame(frame_id)
+                tran_in_frame = dataset.get_tran_in_frame(frame_id)
+                dataset.deskew_at_frame(tran_in_frame)
 
             if not dataset.is_rgbd:
                 dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) 
@@ -534,7 +534,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
                 if tran_in_frame is not None and dataset.cur_sensor_ts is not None:
                     cur_cam_ref_ts_ratio = dataset.get_cur_cam_ref_ts_ratio(cur_cam_name)
-                    diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+                    diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, config.deskew_ref_ratio).to(T_w_l)
 
                 T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
                 T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
@@ -723,7 +723,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     if cur_frame_rendered_pcd_o3d is not None:
                         packet_to_vis.add_rendered_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
                     
-                    # odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
+                    # odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(frame_id)
                     # packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
 
                     q_main2vis.put(packet_to_vis)
