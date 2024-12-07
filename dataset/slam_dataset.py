@@ -1009,6 +1009,8 @@ class SLAMDataset():
 
         cur_cam_ref_ts_ratio = (cur_cam_ts - (cur_main_lidar_ts - lidar_t_interval)) / lidar_t_interval
 
+        # cur_cam_ref_ts_ratio = 1.0 - cur_cam_ref_ts_ratio
+
         return cur_cam_ref_ts_ratio
 
     def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, tran_in_frame = None):

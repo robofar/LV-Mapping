@@ -1478,7 +1478,7 @@ class Mapper:
                         sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
 
                         sampled_count = sampled_guassians_xyz.shape[0]
-                        shift_sample_count = 1 # TODO: add to config
+                        shift_sample_count = self.config.gs_consist_shift_count # TODO: add to config
 
                         shift_range = 0.5 * self.config.voxel_size_m # TODO: add to config
 
@@ -1899,34 +1899,35 @@ class Mapper:
             render_min_nn_count: int = 5, 
             max_z_thre = None):
 
-        local_neural_points = self.neural_points.local_neural_points
-        stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
+        with torch.no_grad():  # eval step
+            local_neural_points = self.neural_points.local_neural_points
+            stable_neural_points_mask = self.neural_points.local_point_certainties > stability_threshold
 
-        # print("Begin to check the validity")
-        # print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
-        #     self.neural_points.local_count()))
+            # print("Begin to check the validity")
+            # print("Stable count {:d} from total local count {:d}".format(torch.sum(stable_neural_points_mask).item(),
+            #     self.neural_points.local_count()))
 
-        stable_neural_points = local_neural_points[stable_neural_points_mask]
+            stable_neural_points = local_neural_points[stable_neural_points_mask]
 
-        # this is a bit too much large, better to do it in batch
-        stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=render_min_nn_count) # self.config.query_nn_k
+            # this is a bit too much large, better to do it in batch
+            stable_neural_points_sdf, _, valid_nnk_mask = self.sdf_batch(stable_neural_points, self.config.infer_bs, min_nn_count=render_min_nn_count) # self.config.query_nn_k
 
-        static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
+            static_mask = torch.abs(stable_neural_points_sdf) < self.config.dynamic_sdf_ratio_thre * self.config.voxel_size_m
 
-        valid_stable_mask = static_mask & valid_nnk_mask
+            valid_stable_mask = static_mask & valid_nnk_mask
 
-        # a little heuristic
-        if max_z_thre is not None:
-            stable_neural_points_local_frame = transform_torch(stable_neural_points, torch.inverse(self.used_poses[-1]))
+            # a little heuristic
+            if max_z_thre is not None:
+                stable_neural_points_local_frame = transform_torch(stable_neural_points, torch.inverse(self.used_poses[-1]))
 
-            large_z_mask = stable_neural_points_local_frame[:,2] > max_z_thre # nein, should be current frame
-            valid_stable_mask = valid_stable_mask | large_z_mask # large z also would be regarded as static here
+                large_z_mask = stable_neural_points_local_frame[:,2] > max_z_thre # nein, should be current frame
+                valid_stable_mask = valid_stable_mask | large_z_mask # large z also would be regarded as static here
 
-        self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
+            self.neural_points.local_valid_gs_mask[stable_neural_points_mask] = valid_stable_mask # start with all True
 
-        # set back the mask to the global map
-        local_mask = self.neural_points.local_mask
-        self.neural_points.valid_gs_mask[local_mask[:-1]] = self.neural_points.local_valid_gs_mask
+            # set back the mask to the global map
+            local_mask = self.neural_points.local_mask
+            self.neural_points.valid_gs_mask[local_mask[:-1]] = self.neural_points.local_valid_gs_mask
         
 
     def init_gs_eval(self):

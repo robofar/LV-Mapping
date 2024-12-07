@@ -81,5 +81,6 @@ optimizer: # mapper
   learning_rate_exposure: 1e-3 # or 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
+  gs_eval_on: False
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mesh_min_nn: 16
+  mesh_min_nn: 15

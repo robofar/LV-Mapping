@@ -251,74 +251,74 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         T1 = get_time()
         
-        valid_frame_flag = dataset.preprocess_frame()
-        if not valid_frame_flag:
-            dataset.processed_frame += 1
-            continue
-
+        valid_lidar_frame_flag = dataset.preprocess_frame()
 
         T2 = get_time()
-        
-        # II. Odometry
-        if frame_id > 0: 
-            if config.track_on:
-                tracking_result = tracker.tracking(dataset.cur_source_points, dataset.cur_pose_guess_torch, 
-                                                dataset.cur_source_colors, dataset.cur_source_normals,
-                                                vis_result=config.o3d_vis_on and not config.o3d_vis_raw)
-                cur_pose_torch, cur_odom_cov, weight_pc_o3d, valid_flag = tracking_result
-                dataset.lose_track = not valid_flag
-                dataset.update_odom_pose(cur_pose_torch) # update dataset.cur_pose_torch
-                
-                if not valid_flag and config.o3d_vis_on:
-                    if o3d_vis.debug_mode > 0:
-                        o3d_vis.stop()
-                
-            else: # incremental mapping with gt pose
-                if dataset.gt_pose_provided:
-                    dataset.update_odom_pose(dataset.cur_pose_guess_torch) 
-                else:
-                    sys.exit("You are using the mapping mode, but no pose is provided.")
 
-        travel_dist = dataset.travel_dist[:frame_id+1]
-        neural_points.travel_dist = torch.tensor(travel_dist, device=config.device, dtype=config.dtype) # always update this
-                                                                                                                                                            
-        T3 = get_time()
+        if valid_lidar_frame_flag: # no input point cloud for this frame
 
-        # III. Loop detection and pgo
-        if config.pgo_on: 
-            detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o3d_vis, frame_id)
+            # II. Odometry
+            if frame_id > 0: 
+                if config.track_on:
+                    tracking_result = tracker.tracking(dataset.cur_source_points, dataset.cur_pose_guess_torch, 
+                                                    dataset.cur_source_colors, dataset.cur_source_normals,
+                                                    vis_result=config.o3d_vis_on and not config.o3d_vis_raw)
+                    cur_pose_torch, cur_odom_cov, weight_pc_o3d, valid_flag = tracking_result
+                    dataset.lose_track = not valid_flag
+                    dataset.update_odom_pose(cur_pose_torch) # update dataset.cur_pose_torch
+                    
+                    if not valid_flag and config.o3d_vis_on:
+                        if o3d_vis.debug_mode > 0:
+                            o3d_vis.stop()
+                    
+                else: # incremental mapping with gt pose
+                    if dataset.gt_pose_provided:
+                        dataset.update_odom_pose(dataset.cur_pose_guess_torch) 
+                    else:
+                        sys.exit("You are using the mapping mode, but no pose is provided.")
 
-        T4 = get_time()
-        
-        # IV: Mapping and bundle adjustment
-        
-        # Re-generate colorized point cloud and correct depth map after point cloud deskewing
-        # if config.deskew: # only needed for LiDAR datasets
-        # TODO: turn on
-        if config.gs_on and (not dataset.is_rgbd):
-            dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual, tran_in_frame=dataset.last_odom_tran_torch) # True # config.learn_color_residual
-        
-        # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
-        # if the robot stop, also don't process this frame, since there's no new oberservations
-        dataset.voxel_downsample_points_for_mapping()
-        
-        if (not dataset.lose_track and not dataset.stop_status) or frame_id < 5:
-            mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals,
-                                dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0),
-                                dataset.cur_point_cloud_mono_depth, dataset.cur_point_normals_mono_depth)
-        else:
-            mapper.determine_used_pose()
-            neural_points.reset_local_map(dataset.cur_pose_torch[:3,3], None, frame_id) # not efficient for large map
-                                
+            travel_dist = dataset.travel_dist[:frame_id+1]
+            neural_points.travel_dist = torch.tensor(travel_dist, device=config.device, dtype=config.dtype) # always update this
+                                                                                                                                                                
+            T3 = get_time()
+
+            # III. Loop detection and pgo
+            if config.pgo_on: 
+                detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o3d_vis, frame_id)
+
+            T4 = get_time()
+            
+            # IV: Mapping
+            
+            # Re-generate colorized point cloud and correct depth map after point cloud deskewing
+            # if config.deskew: # only needed for LiDAR datasets
+            # TODO: turn on
+            if config.gs_on and (not dataset.is_rgbd):
+                dataset.project_pointcloud_to_cams(use_only_colorized_points=config.learn_color_residual, tran_in_frame=dataset.last_odom_tran_torch) # True # config.learn_color_residual
+            
+            # if lose track, we will not update the map and data pool (don't let the wrong pose to corrupt the map)
+            # if the robot stop, also don't process this frame, since there's no new oberservations
+            dataset.voxel_downsample_points_for_mapping()
+            
+            # update neural point map and sample data for sdf training
+            if (not dataset.lose_track and not dataset.stop_status) or frame_id < 5:
+                mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals,
+                                    dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0),
+                                    dataset.cur_point_cloud_mono_depth, dataset.cur_point_normals_mono_depth)
+            else:
+                mapper.determine_used_pose()
+                neural_points.reset_local_map(dataset.cur_pose_torch[:3,3], None, frame_id) # not efficient for large map
+
+
         T5 = get_time()
 
         # for the first frame, we need more iterations to do the initialization (warm-up)
         if config.gs_on:
             # when train gs we do not do SDF training seperately except for the first frame
-            cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else 0 
+            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 0 else 0 
             frame_count_for_freeze_check = mapper.gs_train_frame_count
         else:
-            cur_iter_num = config.iters * config.init_iter_ratio if frame_id == 0 else config.iters
+            cur_iter_num = config.iters * config.init_iter_ratio if mapper.sdf_train_frame_count == 0 else config.iters
             frame_count_for_freeze_check = mapper.sdf_train_frame_count
         if dataset.stop_status:
             cur_iter_num = max(1, cur_iter_num-10)
@@ -329,46 +329,38 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
             config.decoder_freezed = True
             neural_points.compute_feature_principle_components(down_rate = 17)
 
-        # # conduct local bundle adjustment (with lower frequency)
-        # if config.track_on and config.ba_freq_frame > 0 and (frame_id+1) % config.ba_freq_frame == 0:
-        #     mapper.bundle_adjustment(config.ba_iters, config.ba_frame)
-        
         # mapping with fixed poses (every frame) # now only done for the first frame
-        if frame_id % config.mapping_freq_frame == 0:
+        if mapper.sdf_train_frame_count % config.mapping_freq_frame == 0:
             mapper.mapping(cur_iter_num)
 
         T5_1 = get_time()
 
         # gaussian splatting mapping (fitting)
         if config.gs_on: # only when color available
-            if config.gs_batch_training_on:
-                gs_iter_num = config.gs_iters if frame_id == (config.gs_batch_frame-1) else 0
-            else:
-                gs_iter_num = config.gs_iters
-
             mapper.update_cam_pool(frame_id)
-
-            mapper.joint_gsdf_mapping(gs_iter_num, online_eval_on=config.gs_eval_on, render_pcd=False) # only when sdf field is learned well 
+            if dataset.cur_cam_img is not None: # when there are new imgs, do training
+                mapper.joint_gsdf_mapping(config.gs_iters) # only when sdf field is learned well 
             
         # TODO: check its time consuming, can be done once per x frames 
-        if frame_id > 5 and frame_id % 2 == 0 and config.gs_invalid_check_on:
-            with torch.no_grad():  # eval step
-                mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
+        if mapper.sdf_train_frame_count > 5 and mapper.sdf_train_frame_count % 2 == 0 and config.gs_invalid_check_on:
+            mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
 
         T6 = get_time()
 
-        # regular saving logs
+        # regular saving logs (not used)
         if config.log_freq_frame > 0 and (frame_id+1) % config.log_freq_frame == 0:
             dataset.write_results_log()
 
         if not config.silence:
             print("time for frame reading          (ms):", (T1-T0)*1e3)
             print("time for frame preprocessing    (ms):", (T2-T1)*1e3)
-            if config.track_on:
-                print("time for odometry               (ms):", (T3-T2)*1e3)
-            if config.pgo_on:
-                print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
-            print("time for mapping preparation    (ms):", (T5-T4)*1e3)
+            if valid_lidar_frame_flag:
+                if config.track_on:
+                    print("time for odometry               (ms):", (T3-T2)*1e3)
+                if config.pgo_on:
+                    print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
+                print("time for mapping preparation    (ms):", (T5-T4)*1e3)
+
             print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
             if config.gs_on:
                 print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)

@@ -308,6 +308,8 @@ class Config:
         self.lambda_invalid_opacity: float = 0.0 # to let those part with not well constructed sdf to have a samller opacity
         self.lambda_sdf: float = 0.0 # pin map sdf fitting loss 
 
+        self.gs_consist_shift_count: int = 1
+
         # consistency loss supervision direction (FIXME)
         # cannot be all true
         self.gs_consist_depth_fixed: bool = False
@@ -722,6 +724,8 @@ class Config:
             self.lambda_sdf_normal_cons = float(config_args["gs"].get("lambda_sdf_normal_cons", self.lambda_sdf_normal_cons))
             self.lambda_invalid_opacity = float(config_args["gs"].get("lambda_invalid_opacity", self.lambda_invalid_opacity)) # add this to better deal with dynamic objects
             self.lambda_sdf = float(config_args["gs"].get("lambda_sdf", self.lambda_sdf))
+
+            self.gs_consist_shift_count = int(config_args["gs"].get("consist_shift_count", self.gs_consist_normal_fixed))
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
