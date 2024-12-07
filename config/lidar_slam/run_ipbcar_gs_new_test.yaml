@@ -48,7 +48,8 @@ continual:
 #   virtual_side_count: 6
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
-  exposure_correction_on: True # verified to be better than False
+  exposure_correction_on: True # verified to be better than False # try false
+  affine_exposure_correction: True
   view_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 100 # 50 # 100
@@ -77,7 +78,7 @@ optimizer: # mapper
   batch_size: 8192
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr
-  learning_rate_exposure: 1e-3 # or 1e-3
+  learning_rate_exposure: 1e-3 # or 1e-3 # TODO
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply
