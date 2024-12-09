@@ -78,7 +78,7 @@ def geo_loss(normals):
 
 
 def normal_smooth_loss(normals, depths, mask, normal_diff_sigma=0.3, depth_jump_thre_m=0.02): 
-    # normal smoothness
+    # normal smoothness loss
     # Copyright: Liren Jin
     # Compute edge-aware weights
 

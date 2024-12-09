@@ -50,6 +50,7 @@ gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False # try false
   affine_exposure_correction: False
+  eval_cam_refine_on: True
   view_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 150 # 50 # 100
@@ -69,7 +70,7 @@ gs:
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   lambda_normal_depth: 0.01 #
-  lambda_normal_smooth: 0.0
+  lambda_normal_smooth: 0.01
   consist_shift_count: 1
   lambda_sdf_cons: 0.02 # the weight do not need to be very large
   lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
