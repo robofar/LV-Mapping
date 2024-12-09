@@ -264,7 +264,7 @@ class Config:
         self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
         self.gs_keyframe_accu_travel_degree: float = 10.0 # unit: degree
 
-        self.lastest_train_prob: float = 0.1 # the probabilibilty of sampling a cam from the lastest observation for training
+        self.lastest_train_prob: float = 0.2 # FIXME the probabilibilty of sampling a cam from the lastest observation for training # TODO
         self.short_term_train_prob: float = 0.5 # the probabilibilty of sampling a cam from short-term memory for training
         self.long_term_train_down: bool = False # downsample the training image for long-term memory, faster, vague supervision in long term memory
         
@@ -299,7 +299,7 @@ class Config:
         self.lambda_opacity: float = 0.0 # prefer larger opacity value, the smaller this value, the more likely to have masked gaussians -> fewer gaussian number for rendering
         self.lambda_opacity_ent: float = 0.0 # for the entropy loss, opacity --> 0 or 1
         self.lambda_normal_depth_consist: float = 0.0 # normal consistency regularization weight # 0.05
-        self.lambda_normal_smooth: float = 0.0
+        self.lambda_normal_smooth: float = 0.0 # normal smoothness loss
         self.lambda_mono_normal: float = 0.0 # mono normal prior loss weight
         self.lambda_distort: float = 0.0 # distance distortion regularization weight (1000 for bounded scene, 100 for unbounded scene), this is used to concentrate the gaussians, decrease the distance between the splat-ray intersections # [confirmed to be not very useful]
         self.lambda_sky: float = 0.01 # bce loss, let the sky gaussians has small opacity
@@ -319,22 +319,23 @@ class Config:
         self.learn_color_residual: bool = False
 
         self.min_alpha: float = 0.01
-        self.depth_min_accu_alpha: float = 0.5
+        self.depth_min_accu_alpha: float = 0.2
 
-        # these are deprecated
+        # these are deprecated, when directly optimize gs
         # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
         # self.gs_position_lr: float = 0.00016 # 1.6e4 # the original value in 3D GS is 0.00016
         # self.gs_rotation_lr: float = 1e-3 # the original value in 3D GS is 1e-3, we set it to a larger value here
         # self.gs_scaling_lr: float = 5e-3 # the original value in 3D GS is 5e-3
         # self.gs_opacity_lr: float = 5e-2 # the original value in 3D GS is 5e-2
 
-        self.pin_gs_opt_on: bool = True # optimize pin features together with gaussians
-
+        # gs batch mode
         self.gs_batch_training_on: bool = False
         self.gs_batch_frame: int = -1
 
-        self.gaussian_vis_scale: float = 1.0
-        self.gs_vis_on: bool = True # gs visualizer
+        # gs evaluation
+        self.gs_eval_cam_refine_on: bool = False  
+        self.gs_cam_refine_iter_count: int = 50 # should be larger than 0
+
 
         # tracking (odometry estimation)
         self.track_on: bool = False
@@ -421,8 +422,8 @@ class Config:
         self.cam_cad_path = "./cad/camera.ply"
 
         # GS visualizer
+        self.gs_vis_on: bool = True # gs visualizer
         self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
-
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
 
         # result saving settings
@@ -655,8 +656,8 @@ class Config:
             self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
 
             self.lr_pose = float(config_args["optimizer"].get("lr_pose_ba", self.lr_pose))
-            self.lr_cam_dr = float(config_args["optimizer"].get("lr_cam_dr", self.lr_cam_dr)) # 0.003 # learning rate for camera rotation
-            self.lr_cam_dt = float(config_args["optimizer"].get("lr_cam_dt", self.lr_cam_dt))# 0.001 # learning rate for camera translation
+            self.lr_cam_dr = float(config_args["optimizer"].get("learning_rate_cam_dr", self.lr_cam_dr)) # 0.003 # learning rate for camera rotation
+            self.lr_cam_dt = float(config_args["optimizer"].get("learning_rate_cam_dt", self.lr_cam_dt))# 0.001 # learning rate for camera translation
 
             # bundle adjustment
             self.ba_freq_frame = config_args["optimizer"].get("ba_freq_frame", 0) # default off

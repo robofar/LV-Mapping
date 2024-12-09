@@ -353,15 +353,14 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         if not config.silence:
             print("time for frame reading          (ms):", (T1-T0)*1e3)
-            print("time for frame preprocessing    (ms):", (T2-T1)*1e3)
             if valid_lidar_frame_flag:
+                print("time for frame preprocessing    (ms):", (T2-T1)*1e3)
                 if config.track_on:
                     print("time for odometry               (ms):", (T3-T2)*1e3)
                 if config.pgo_on:
                     print("time for loop detection and PGO (ms):", (T4-T3)*1e3)
                 print("time for mapping preparation    (ms):", (T5-T4)*1e3)
-
-            print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
+                print("time for mapping (SDF)          (ms):", (T5_1-T5)*1e3)
             if config.gs_on:
                 print("time for mapping (Gaussian+SDF) (ms):", (T6-T5_1)*1e3)
 

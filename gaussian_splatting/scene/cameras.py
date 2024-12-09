@@ -228,6 +228,10 @@ class CamImage:
         self.exposure_mat = exposure_mat
         self.exposure_offset = exposure_offset
 
+    def set_delta_pose(self, delta_r, delta_t):
+        self.cam_rot_delta = delta_r
+        self.cam_trans_delta = delta_t
+
     def set_depth_img(self, depth_img_torch):
         if depth_img_torch is not None:  # 1, H, W
             self.depth_on = True
