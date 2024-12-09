@@ -203,6 +203,8 @@ class SLAMDataset():
         self.stop_count: int = 0
         self.stop_status = False
 
+        self.loop_reg_failed_count: int = 0
+
         if self.config.kitti_correction_on:
             self.last_odom_tran[0, 3] = (
                 self.config.max_range * 1e-2

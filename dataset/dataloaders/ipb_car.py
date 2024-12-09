@@ -133,8 +133,8 @@ class IPBCarDataset:
 
         # read reference poses (by Louis)
 
-        poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
-        # poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
+        # poses_file = os.path.join(data_dir, "poses.txt") # TODO: this is the globally bundle adjustment pose (but not with TLS constraints yet)
+        poses_file = os.path.join(data_dir, "poses_pin_slam.txt")
         if os.path.exists(poses_file):
             self.gt_poses = self.read_kitti_format_poses(poses_file)
             # self.gt_poses = np.load(os.path.join(data_dir, "poses", "latest.npy"))
@@ -291,7 +291,10 @@ class IPBCarDataset:
             frame_data["img"] = img_dict 
             # frame_data["depth"] = depth_img_dict  
 
-        frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "sensor_ts": sensor_ts_dict})
+        frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx})
+        
+        # FIXME: I really don't know why
+        # frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "sensor_ts": sensor_ts_dict})
 
         return frame_data
 

@@ -188,7 +188,6 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
     lcd_npmc = NeuralPointMapContextManager(config) # npmc: neural point map context
 
     last_frame = dataset.total_pc_count-1
-    loop_reg_failed_count = 0
 
     # save merged point cloud map from gt pose as a reference map
     if config.save_merged_pc and dataset.gt_pose_provided:
@@ -284,7 +283,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
             # III. Loop detection and pgo
             if config.pgo_on: 
-                detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o3d_vis, frame_id)
+                detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, tracker, o3d_vis, frame_id)
 
             T4 = get_time()
             
@@ -549,7 +548,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
 
 
-def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o3d_vis, frame_id):
+def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc,
+                        mapper, tracker, o3d_vis, frame_id):
 
     if config.global_loop_on:
         if config.local_map_context and frame_id >= config.local_map_context_latency: # local map context
@@ -578,7 +578,7 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o
         loop_id = None
         if np.any(loop_candidate_mask): # have at least one candidate
             # firstly try to detect the local loop by checking the distance
-            loop_id, loop_dist, loop_transform = detect_local_loop(dataset.pgo_poses[:frame_id+1], loop_candidate_mask, pgm.drift_radius, frame_id, loop_reg_failed_count, config.local_loop_dist_thre, config.local_loop_dist_thre*3.0, config.silence)
+            loop_id, loop_dist, loop_transform = detect_local_loop(dataset.pgo_poses[:frame_id+1], loop_candidate_mask, pgm.drift_radius, frame_id, dataset.loop_reg_failed_count, config.local_loop_dist_thre, config.local_loop_dist_thre*3.0, config.silence)
             if loop_id is None and config.global_loop_on: # global loop detection (large drift)
                 loop_id, loop_cos_dist, loop_transform, local_map_context_loop = lcd_npmc.detect_global_loop(dataset.pgo_poses[:frame_id+1], pgm.drift_radius*config.loop_dist_drift_ratio_thre, loop_candidate_mask, neural_points) # latency has been considered here     
         if loop_id is not None:
@@ -620,14 +620,14 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc, mapper, o
                 dataset.update_poses_after_pgo(pgm.pgo_poses)
                 pgm.last_loop_idx = frame_id
                 pgm.min_loop_idx = min(pgm.min_loop_idx, loop_id)
-                loop_reg_failed_count = 0
+                dataset.loop_reg_failed_count = 0
                 if config.o3d_vis_on:
                     o3d_vis.before_pgo = False
             else:
                 if not config.silence:
                     print("[bold red]Registration failed, reject the loop candidate [/bold red]")
                 neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, True, True, frame_id) # if failed, you need to reset the local map back to current frame
-                loop_reg_failed_count += 1
+                dataset.loop_reg_failed_count += 1
                 if config.o3d_vis_on and o3d_vis.debug_mode > 1:
                     o3d_vis.stop()
 
