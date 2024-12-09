@@ -97,7 +97,7 @@ class Tracker:
         if source_sdf is None:  # only use the surface samples (all zero)
             source_sdf = torch.zeros(source_point_count, device=self.device)
 
-        for i in tqdm(range(iter_n), disable=self.silence):
+        for i in tqdm(range(iter_n), disable=self.silence, desc="Odometry"):
 
             T01 = get_time()
 

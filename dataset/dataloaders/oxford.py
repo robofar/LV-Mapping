@@ -89,6 +89,8 @@ class OxfordDataset:
 
         lidar_associated_count = np.shape(lidar_pose_associated_idx)[0]
 
+        print("Lidar count: {},  associated count: {}". format(len(lidar_files), lidar_associated_count))
+
         for i in range(lidar_associated_count):
             self.lidar_files[lidar_pose_associated_idx[i]] = lidar_files[lidar_associated_idx[i]]
 
@@ -96,6 +98,8 @@ class OxfordDataset:
         cam0_pose_associated_idx, cam0_associated_idx = associate_sensor_to_pose(cam0_ts, pose_ts)
 
         cam0_associated_count = np.shape(cam0_pose_associated_idx)[0]
+
+        print("Cam0 count: {},  associated count: {}". format(len(cam0_files), cam0_associated_count))
 
         for i in range(cam0_associated_count):
             self.cam0_files[cam0_pose_associated_idx[i]] = cam0_files[cam0_associated_idx[i]]
@@ -105,6 +109,8 @@ class OxfordDataset:
 
         cam1_associated_count = np.shape(cam1_pose_associated_idx)[0]
 
+        print("Cam1 count: {},  associated count: {}". format(len(cam1_files), cam1_associated_count))
+
         for i in range(cam1_associated_count):
             self.cam1_files[cam1_pose_associated_idx[i]] = cam1_files[cam1_associated_idx[i]]
 
@@ -112,6 +118,8 @@ class OxfordDataset:
         cam2_pose_associated_idx, cam2_associated_idx = associate_sensor_to_pose(cam2_ts, pose_ts)
 
         cam2_associated_count = np.shape(cam2_pose_associated_idx)[0]
+
+        print("Cam2 count: {},  associated count: {}". format(len(cam2_files), cam2_associated_count))
 
         for i in range(cam2_associated_count):
             self.cam2_files[cam2_pose_associated_idx[i]] = cam2_files[cam2_associated_idx[i]]

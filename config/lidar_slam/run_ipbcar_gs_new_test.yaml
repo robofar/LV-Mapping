@@ -33,7 +33,7 @@ loss:
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   numerical_grad: False # FIXME
-  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
+  weight_e: 0.1 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO # try 0.1
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
@@ -65,13 +65,14 @@ gs:
   lambda_depth: 0.01 # 0.02
   lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  # lambda_invalid_opacity: 2e-3 # TODO # this is actually useful
+  lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   lambda_normal_depth: 0.01 #
-  gs_consist_shift_count: 0
-  lambda_sdf_cons: 0.01 # the weight do not need to be very large
-  lambda_sdf_normal_cons: 0.01 # the weight do not need to be very large # TODO
+  lambda_normal_smooth: 0.0
+  consist_shift_count: 1
+  lambda_sdf_cons: 0.02 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
@@ -80,6 +81,8 @@ optimizer: # mapper
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr # 0.2
   learning_rate_exposure: 1e-3 # or 1e-3
+  learning_rate_cam_dr: 3e-3
+  learning_rate_cam_dt: 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   sensor_cad_path: ./cad/ipb_car_cheap.ply
