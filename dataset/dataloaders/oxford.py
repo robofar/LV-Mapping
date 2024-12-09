@@ -129,6 +129,11 @@ class OxfordDataset:
         calib_file = os.path.join(dataset_parent_path, "calibration", "cam-lidar-imu.yaml")
         self.read_calib_file(calib_file)
 
+        # T_b_l_mat = [[-1.     0.     0.     0.   ]
+        #              [ 0.    -1.     0.     0.   ]
+        #              [ 0.     0.     1.     0.124]
+        #              [ 0.     0.     0.     1.   ]]
+
         self.gt_poses = apply_poses_calib(self.gt_poses, self.T_b_l_mat) # convert base frame poses to lidar frame poses
 
 
@@ -231,7 +236,8 @@ def apply_poses_calib(poses_np, calib_T):
     """Converts from Lidar to Body Frame in batch"""
     poses_calib_np = poses_np.copy()
     for i in range(poses_np.shape[0]):
-        poses_calib_np[i, :, :] = calib_T @ poses_np[i, :, :] @ np.linalg.inv(calib_T)
+        # poses_calib_np[i, :, :] = calib_T @ poses_np[i, :, :] @ np.linalg.inv(calib_T)
+        poses_calib_np[i, :, :] = poses_np[i, :, :] @ calib_T # T_w_l = T_w_b @ T_b_l
 
     return poses_calib_np
 
@@ -320,7 +326,7 @@ def tran_quat_to_mat(trans, quat_rot):
 
     return tran_mat
 
-def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.025):
+def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.01):
     # for each lidar ts, find the closest pose
     # pose_ts_associated = []
 

@@ -207,8 +207,10 @@ class CamImage:
 
     def set_pose(self, cam_pose):
 
-        if cam_pose is not None: # we also directly load the camera pose here
+        # input pose is torch tensor
 
+        if cam_pose is not None: # we also directly load the camera pose here
+                    
             T_cw = torch.linalg.inv(cam_pose).to(dtype=self.dtype, device=self.device) 
 
             self.world_view_transform = (T_cw.T)

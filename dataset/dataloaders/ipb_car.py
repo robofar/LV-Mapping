@@ -291,7 +291,10 @@ class IPBCarDataset:
             frame_data["img"] = img_dict 
             # frame_data["depth"] = depth_img_dict  
 
-        frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "sensor_ts": sensor_ts_dict})
+        frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx})
+        
+        # FIXME: I really don't know why using the exact recorded timestamp give rise to a worse result
+        # frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx, "sensor_ts": sensor_ts_dict})
 
         return frame_data
 

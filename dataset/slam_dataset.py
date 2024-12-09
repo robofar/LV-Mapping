@@ -203,6 +203,8 @@ class SLAMDataset():
         self.stop_count: int = 0
         self.stop_status = False
 
+        self.loop_reg_failed_count: int = 0
+
         if self.config.kitti_correction_on:
             self.last_odom_tran[0, 3] = (
                 self.config.max_range * 1e-2
@@ -917,7 +919,7 @@ class SLAMDataset():
             
         self.cur_pose_ref = self.cur_pose_torch.cpu().numpy()
 
-        self.last_odom_tran = inv(self.last_pose_ref) @ self.cur_pose_ref  # T_last<-cur
+        self.last_odom_tran = inv(self.last_pose_ref) @ self.cur_pose_ref  # T_last<-cur # the odometry result instead of the inital guess
 
         # here we consider both rot and tran
         if tranmat_close_to_identity(
@@ -1042,6 +1044,7 @@ class SLAMDataset():
                 # print(cur_cam_ref_ts_ratio)
 
                 diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(cur_T_c_l)
+
                 cur_T_c_l = cur_T_c_l @ torch.linalg.inv(diff_pose_l_c_ts)
             
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)
@@ -1084,6 +1087,8 @@ class SLAMDataset():
             )
 
             frame_o3d.points = o3d.utility.Vector3dVector(frame_points_np)
+        else:
+            return
 
         # visualize or not
         # uncomment to visualize the dynamic mask
@@ -1228,10 +1233,16 @@ class SLAMDataset():
         for frame_id in tqdm(
             range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
         ):  # frame id as the idx of the frame in the data folder without skipping
+            
+            self.init_temp_data() # init cur frame temp data
+            
             if self.config.use_dataloader:
                 self.read_frame_with_loader(frame_id, False, False)
             else:
                 self.read_frame(frame_id, False)
+
+            if self.cur_point_cloud_torch is None:
+                continue
 
             if self.config.kitti_correction_on:
                 self.cur_point_cloud_torch = intrinsic_correct(

@@ -493,6 +493,9 @@ class Mesher:
         mesh_min_nn=10,
         use_torch_mc=False,
     ):
+        if aabbs is None:
+            return None
+        
         if not self.silence:
             print("# Chunk for meshing: ", len(aabbs))
             

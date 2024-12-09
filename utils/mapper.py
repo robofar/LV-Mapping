@@ -364,16 +364,6 @@ class Mapper:
         # update the data pool
         # get the data pool ready for training
 
-        # determine used poses # a dirty quick fix
-        self.determine_used_pose()
-
-        # ba not used now
-        # if self.ba_done_flag:  # bundle adjustment is not done
-        #     self.global_coord_pool = transform_batch_torch(
-        #         self.coord_pool, self.used_poses[self.time_pool]
-        #     )  # very slow here [if ba is not done, then you don't need to transform the whole data pool]
-        #     self.ba_done_flag = False
-
         # else:  # used when ba is not enabled
         global_coord = transform_torch(coord, cur_pose_torch)
         self.global_coord_pool = torch.cat(
@@ -605,7 +595,6 @@ class Mapper:
 
     def update_cam_pool(self, frame_id: int):
 
-
         if self.dataset.cur_cam_img is None:
             return
 
@@ -614,7 +603,7 @@ class Mapper:
         for cam_name in cur_cam_names: # for each cam in this frame
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
 
-            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose
+            T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose (in the lidar deskewed reference frame)
 
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
 
@@ -623,11 +612,16 @@ class Mapper:
             # relative transformation between the lidar reference timestamp and the camera triggering timestamp
             if frame_id > 0 and self.dataset.cur_sensor_ts is not None:
                 cur_cam_ref_ts_ratio = self.dataset.get_cur_cam_ref_ts_ratio(cam_name)
+                # print(cur_cam_ref_ts_ratio)
                 diff_pose_l_c_ts = slerp_pose(self.dataset.last_odom_tran_torch, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(T_w_l)
+                # print(diff_pose_l_c_ts)
 
             T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
             T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame # Here there could be different cameras, support this
             cur_view_cam.set_pose(T_w_c) # set camera pose
+
+            # print(T_w_c)
+
             cur_view_cam.free_memory_under_levels(min(self.config.gs_down_rate, self.config.gs_vis_down_rate)-1)
         
         keyframe_on = (self.gs_train_frame_count == 0) or \
@@ -691,6 +685,20 @@ class Mapper:
 
                 # print(self.cam_short_term_train_pool_id)
 
+    # update cam poses after loop pgo
+    def update_poses_cam_pool(self, poses_after_pgo):
+
+        for cam in self.cam_short_term_train_pool:
+            cam_pose_after_pgo = poses_after_pgo[cam.frame_id]
+            if isinstance(cam_pose_after_pgo, np.ndarray):
+                cam_pose_after_pgo = torch.tensor(cam_pose_after_pgo, device=self.device, dtype=self.dtype)
+            cam.set_pose(cam_pose_after_pgo)
+
+        for cam in self.cam_long_term_train_pool:
+            cam_pose_after_pgo = poses_after_pgo[cam.frame_id]
+            if isinstance(cam_pose_after_pgo, np.ndarray):
+                cam_pose_after_pgo = torch.tensor(cam_pose_after_pgo, device=self.device, dtype=self.dtype)
+            cam.set_pose(cam_pose_after_pgo)
 
     # get a batch of training samples and labels for map optimization
     def get_batch(self, global_coord=True):
@@ -2081,6 +2089,8 @@ class Mapper:
                     # you need to also load the camera exposure coefficients here
                     cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
                     cur_view_cam.set_pose(T_w_c)
+
+                    # print(T_w_c)
                     
                     cur_uid = cur_view_cam.uid
                     cur_cam_id = cur_view_cam.cam_id # cam_name

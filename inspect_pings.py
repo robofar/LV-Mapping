@@ -534,6 +534,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
                 if tran_in_frame is not None and dataset.cur_sensor_ts is not None:
                     cur_cam_ref_ts_ratio = dataset.get_cur_cam_ref_ts_ratio(cur_cam_name)
+                    # print(cur_cam_ref_ts_ratio)
                     diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, config.deskew_ref_ratio).to(T_w_l)
 
                 T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
