@@ -184,6 +184,7 @@ class SLAMDataset():
             self.pgo_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy() # T_wi
 
         self.travel_dist = np.zeros(max_frame_number) 
+        self.accu_travel_dist: float = 0.0
         self.accu_travel_dist_for_keyframe: float = 0.0
         self.accu_travel_degree_for_keyframe: float = 0.0
         
@@ -957,10 +958,10 @@ class SLAMDataset():
         self.accu_travel_dist_for_keyframe += cur_frame_travel_dist
         self.accu_travel_degree_for_keyframe += cur_frame_travel_degree
 
-        accu_travel_dist = self.travel_dist[cur_frame_id-1] + cur_frame_travel_dist
-        self.travel_dist[cur_frame_id] = accu_travel_dist
+        self.accu_travel_dist += cur_frame_travel_dist
+        self.travel_dist[cur_frame_id] = self.accu_travel_dist
         if not self.silence:
-            print("Accumulated travel distance (m): %f" % accu_travel_dist)
+            print("Accumulated travel distance (m): %f" % self.accu_travel_dist)
         
         self.last_pose_ref = self.cur_pose_ref  # update for the next frame
 

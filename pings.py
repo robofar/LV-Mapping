@@ -530,11 +530,10 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
         print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
-        output_mc_res_m = config.mc_res_m*0.6
-        chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), output_mc_res_m * 100) # reconstruct in chunks
-        mc_cm_str = str(round(output_mc_res_m*1e2))
+        chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), config.mc_res_m * 100) # reconstruct in chunks
+        mc_cm_str = str(round(config.mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
-        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, output_mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
+        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, config.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
     neural_points.clear_temp() # clear temp data for output
     if config.save_map:
         save_implicit_map(run_path, neural_points, mlp_dict)
