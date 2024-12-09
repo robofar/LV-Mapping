@@ -739,7 +739,8 @@ class Config:
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:
                 self.gs_batch_frame = config_args["gs"].get("gs_batch_frame", self.gs_batch_frame)
-        
+
+            self.gs_eval_cam_refine_on = config_args["gs"].get("eval_cam_refine_on", self.gs_eval_cam_refine_on) 
         
         # vis and eval
         if "eval" in config_args:

@@ -1895,7 +1895,7 @@ class Mapper:
                 cur_cam_id = cur_view_cam.cam_id # cam_name
                 cur_frame_id = cur_view_cam.frame_id # frame_id
 
-                # find the closest train view exposure
+                # find the closest train view exposure and delta pose
                 if self.config.exposure_correction_on:
                     closest_train_frame_id = min(self.per_cam_exposure_ab[cur_cam_id].keys(), key=lambda k: (abs(k - cur_frame_id), k))
                     cur_exposure = (self.per_cam_exposure_ab[cur_cam_id])[closest_train_frame_id]
@@ -1904,7 +1904,9 @@ class Mapper:
                     else:
                         cur_view_cam.set_exposure_ab(cur_exposure[0], cur_exposure[1])
                     
-                    # print(cur_view_cam)
+                    cur_delta_pose = (self.per_cam_pose_delta_rt[cur_cam_id])[closest_train_frame_id]
+                    if closest_train_frame_id == cur_frame_id:
+                        cur_view_cam.set_delta_pose(cur_delta_pose)                
 
                 # gs_cam_refine_iter_count = 50 # in config now
 
@@ -1935,7 +1937,7 @@ class Mapper:
                     gt_depth_img = None
                     if cur_view_cam.depth_on is not None: 
                         gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
-                        valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
+                        valid_depth_mask = (gt_depth_img > eval_depth_min) & (gt_depth_img < eval_depth_max)
 
                     for iter in tqdm(range(self.config.gs_cam_refine_iter_count+1), disable=self.silence, desc="Camera refinement"):    
 
