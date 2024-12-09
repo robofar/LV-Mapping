@@ -1074,12 +1074,15 @@ def deskewing(
 
     return points_deskewd
 
-def slerp_pose(relativ_pose: torch.tensor, ts: float, ts_ref_pose: float):
+def slerp_pose(relative_pose: torch.tensor, ts: float, ts_ref_pose: float):
     ts -= ts_ref_pose 
-    rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(relativ_pose).unsqueeze(0), relativ_pose[:3, :3].unsqueeze(0), torch.tensor(ts).to(relativ_pose)).squeeze(0)
-    tran_lerp = ts * relativ_pose[:3, 3]
+    rotmat_slerp = roma.rotmat_slerp(torch.eye(3).to(relative_pose).unsqueeze(0), relative_pose[:3, :3].unsqueeze(0), torch.tensor(ts).to(relative_pose)).squeeze(0)
+    tran_lerp = ts * relative_pose[:3, 3]
 
-    T_slerp = torch.eye(4).to(relativ_pose)
+    # print(ts)
+    # print(tran_lerp)
+
+    T_slerp = torch.eye(4).to(relative_pose)
     T_slerp[:3,:3] = rotmat_slerp
     T_slerp[:3, 3] = tran_lerp
 

@@ -248,6 +248,9 @@ def render(viewpoint_camera: CamImage,
             spawn_results["visible_neural_point_ratio"] = visible_neural_point_ratio
             results = spawn_results
 
+    else:
+        return None
+
     # Spawned local gaussians
     # if train_mode:
 
@@ -507,7 +510,7 @@ def spawn_gaussians(neural_points_data: Dict,
                     dist_concat_on: bool = False, 
                     view_concat_on: bool = False,
                     alpha_filter_on: bool = True,
-                    scale_filter_on: bool = False,
+                    scale_filter_on: bool = True,
                     z_far: float = 100.0,
                     dist_adaptive_scale: bool = False,
                     learn_color_residual: bool = True,
@@ -749,7 +752,7 @@ def spawn_gaussians(neural_points_data: Dict,
 
         before_size = gaussian_alpha.shape[0]
 
-        scale_mask = torch.any(gaussian_scale > 0.5 * neural_point_resolution, dim=1)
+        scale_mask = torch.any(gaussian_scale > 0.1 * neural_point_resolution, dim=1)
 
         gaussian_xyz = gaussian_xyz[scale_mask]
         gaussian_scale = gaussian_scale[scale_mask]

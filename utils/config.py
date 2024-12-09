@@ -51,7 +51,7 @@ class Config:
         # motion undistortion
         self.deskew: bool = False
         self.lidar_type_guess: str = "hesai" # velodyne
-        self.deskew_ref_ratio: float = 0.0 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
+        self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
 
         # preprocess
         # distance filter
@@ -308,7 +308,7 @@ class Config:
         self.lambda_invalid_opacity: float = 0.0 # to let those part with not well constructed sdf to have a samller opacity
         self.lambda_sdf: float = 0.0 # pin map sdf fitting loss 
 
-        self.gs_consist_shift_count: int = 1
+        self.gs_consist_shift_count: int = 0
         self.gs_consist_shift_range_m: float = 0.5 * self.voxel_size_m
 
         # consistency loss supervision direction (FIXME)
@@ -780,7 +780,7 @@ class Config:
         # associated parameters
         self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
-        self.local_map_radius = min(self.max_range*1.05, self.max_range+5.0) # for the local neural points
+        self.local_map_radius = min(self.max_range*1.1, self.max_range+10.0) # for the local neural points
         self.window_radius = max(self.local_map_radius-self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small
         self.sorrounding_map_radius = self.local_map_radius * 1.8
         self.vis_frame_axis_len = self.max_range / 50.0

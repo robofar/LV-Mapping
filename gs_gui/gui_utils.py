@@ -229,6 +229,7 @@ class VisPacket:
     def add_neural_points_data(self, neural_points, only_local_map: bool = True, 
                                add_sorrounding_points: bool = True,
                                pca_color_on: bool = True):
+        
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
