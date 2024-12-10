@@ -2015,7 +2015,7 @@ class Mapper:
                         
                         accu_alpha_mask = None
                         if rendered_alpha is not None:
-                            accu_alpha_mask = rendered_alpha > self.config.depth_min_accu_alpha
+                            accu_alpha_mask = rendered_alpha > self.config.eval_depth_min_accu_alpha
                             valid_depth_mask = valid_depth_mask & accu_alpha_mask
                                         
                         diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
