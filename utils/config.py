@@ -320,7 +320,7 @@ class Config:
 
         self.min_alpha: float = 0.01
         self.depth_min_accu_alpha: float = 0.2
-        self.eval_depth_min_accu_alpha: float = 0.6
+        self.eval_depth_min_accu_alpha: float = 0.8
 
         # these are deprecated, when directly optimize gs
         # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore

@@ -1914,7 +1914,7 @@ class Mapper:
 
                 if cam_name in eval_cam_name:
 
-                    opt = setup_optimizer(config, cams = [cur_view_cam])
+                    opt = setup_optimizer(self.config, cams = [cur_view_cam])
                     
                     gt_rgb_image = cur_view_cam.rgb_image_list[eval_down_rate]
 

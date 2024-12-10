@@ -29,7 +29,7 @@ from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
 from utils.mesher import Mesher, filter_isolated_vertices
-from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps, slerp_pose
+from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps, slerp_pose, setup_optimizer
 from utils.visualizer import MapVisualizer
 
 from eval.eval_mesh_utils import eval_pair
@@ -37,6 +37,7 @@ from eval.eval_mesh_utils import eval_pair
 from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
+from gaussian_splatting.utils.loss_utils import l1_loss, tukey_loss
 from gaussian_splatting.utils.image_utils import psnr
 
 from fused_ssim import fused_ssim
