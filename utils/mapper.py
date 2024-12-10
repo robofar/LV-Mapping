@@ -1914,27 +1914,24 @@ class Mapper:
 
                 if cam_name in eval_cam_name:
 
-                    opt = setup_optimizer(
-                        self.config,
-                        cams = [cur_view_cam],
-                    )
+                    opt = setup_optimizer(config, cams = [cur_view_cam])
                     
-                    gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
+                    gt_rgb_image = cur_view_cam.rgb_image_list[eval_down_rate]
 
                     # if cur_view_cam.sky_mask_on:
                     #     # mask the sky part for eval
                     #     cur_sky_mask = cur_view_cam.sky_mask_list[eval_down_rate] # still torch
                     #     mask_broadcasted = cur_sky_mask.repeat(3,1,1)
-                    #     gt_rgb_img[mask_broadcasted] = bg_3d.expand_as(gt_rgb_img)[mask_broadcasted]
+                    #     gt_rgb_image[mask_broadcasted] = bg_3d.expand_as(gt_rgb_image)[mask_broadcasted]
 
                     if cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
-                        pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
+                        pixel_h_used = int(910/1024*gt_rgb_image.shape[1])
                     elif cam_name == "front":
-                        pixel_h_used = int(990/1024*gt_rgb_img.shape[1])
+                        pixel_h_used = int(990/1024*gt_rgb_image.shape[1])
                     else:  
                         pixel_h_used = -1
 
-                    gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
+                    gt_rgb_image_for_eval = gt_rgb_image[:,:pixel_h_used,:]
 
                     gt_depth_image = None
                     if cur_view_cam.depth_on is not None: 

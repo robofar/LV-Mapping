@@ -380,6 +380,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     cd_list = []
     f1_list = []
 
+    eval_depth_max = config.max_range * 0.8
+    eval_depth_min = config.min_range
+
 
     # free camera parameters
     free_cam_W = 640
@@ -517,8 +520,11 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             
 
         for cur_cam_name in cam_list: 
+            
+            gt_rgb_image = None
+            gt_depth_image = None
 
-            if args.use_free_view_camera: # in this case, we do not do evaluation
+            if args.use_free_view_camera and (not eval_on): # in this case, we do not do evaluation
                 K_mat = free_cam_K_mat #  # as np.array
                 T_w_c = T_w_l # the input is then directly the camera poses
                 
@@ -545,13 +551,63 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
                 cur_view_cam.set_pose(T_w_c)
 
-                gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
-            
+                gt_rgb_image = cur_view_cam.rgb_image_list[eval_down_rate]
 
-            opt = setup_optimizer(
-                config,
-                cams = [cur_view_cam],
-            )
+                if cur_view_cam.depth_on:
+                    gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate]
+                    valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
+
+            if eval_on and config.gs_eval_cam_refine_on and gt_rgb_image is not None:
+
+                opt = setup_optimizer(config, cams = [cur_view_cam])
+                
+                # consider increase gs_cam_refine_iter_count here
+                for iter in tqdm(range(config.gs_cam_refine_iter_count), disable=(not args.log_on), desc="Camera refinement"):    
+                    
+                    # current values
+                    render_pkg = render(cur_view_cam, None, neural_points_data, 
+                        decoders, sorrounding_spawn_results, background, 
+                        down_rate=eval_down_rate, 
+                        dist_concat_on=config.dist_concat_on, 
+                        view_concat_on=config.view_concat_on, 
+                        correct_exposure=config.exposure_correction_on, 
+                        correct_exposure_affine = config.affine_exposure_correction,
+                        learn_color_residual=config.learn_color_residual,
+                        front_only_on=config.train_front_only,
+                        gs_type=config.gs_type,
+                        displacement_range_ratio=config.displacement_range_ratio,
+                        max_scale_ratio=config.max_scale_ratio,
+                        unit_scale_ratio=config.unit_scale_ratio,
+                        verbose=args.log_on)
+                    
+                    # rendered results
+                    rendered_rgb_image, rendered_depth, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
+
+                    rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
+
+                    loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image, c=0.0) # now just l1 loss
+
+                    if config.lambda_ssim > 0.0:
+                        ssim_value = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image.unsqueeze(0)) # have to be 4 dim
+                        rgb_loss = (1.0 - config.lambda_ssim) * loss_rgb_robust + config.lambda_ssim * (1.0 - ssim_value)
+                    else:
+                        rgb_loss = loss_rgb_robust # l1 only, ssim might take a long time
+
+                    depth_loss = 0.0 
+                    if rendered_depth is not None and gt_depth_image is not None and config.lambda_depth > 0:
+                        if rendered_alpha is not None:
+                            accu_alpha_mask = rendered_alpha.detach() > config.depth_min_accu_alpha
+                            valid_depth_mask = valid_depth_mask & accu_alpha_mask
+                        depth_loss = l1_loss(gt_depth_image[valid_depth_mask], rendered_depth[valid_depth_mask])
+                        depth_loss *= config.lambda_depth
+
+                    total_loss = rgb_loss + depth_loss
+
+                    # print("Camera refinement loss:", total_loss.item())
+
+                    opt.zero_grad(set_to_none=True) 
+                    total_loss.backward(retain_graph=True) 
+                    opt.step()    
 
             # current values
             render_pkg = render(cur_view_cam, None, neural_points_data, 
@@ -636,14 +692,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                 if eval_on:
                     if cur_cam_name == "rear": # only for ipb car dataset (FIXME), use mask in the future, now it's just a ugly quick fix
-                        pixel_h_used = int(910/1024*gt_rgb_img.shape[1])
+                        pixel_h_used = int(910/1024*gt_rgb_image.shape[1])
                     elif cur_cam_name == "front":
-                        pixel_h_used = int(990/1024*gt_rgb_img.shape[1])
+                        pixel_h_used = int(990/1024*gt_rgb_image.shape[1])
                     else:  
                         pixel_h_used = -1
 
                     rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
-                    gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
+                    gt_rgb_image_for_eval = gt_rgb_image[:,:pixel_h_used,:]
 
                     cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
                     cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
@@ -663,14 +719,13 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                         print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                         print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                 
-                    if cur_view_cam.depth_on and rendered_depth is not None: 
-                        eval_depth_max = config.max_range * 0.8
-                        eval_depth_min = config.min_range
+                    if gt_depth_image is not None and rendered_depth is not None: 
                         gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
-                        depth_valid_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        
                         diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs
                         # diff_depth[~depth_valid_mask] = 0.0
-                        diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
+                        diff_depth_masked = diff_depth[valid_depth_mask].detach().cpu().numpy()
                         cur_depth_l1 = np.mean(diff_depth_masked)
                         cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
                         if args.log_on:
