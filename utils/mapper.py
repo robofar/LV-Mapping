@@ -1906,7 +1906,7 @@ class Mapper:
                     
                     cur_delta_pose = (self.per_cam_pose_delta_rt[cur_cam_id])[closest_train_frame_id]
                     if closest_train_frame_id == cur_frame_id:
-                        cur_view_cam.set_delta_pose(cur_delta_pose)                
+                        cur_view_cam.set_delta_pose(cur_delta_pose[0], cur_delta_pose[1])                
 
                 # gs_cam_refine_iter_count = 50 # in config now
 
