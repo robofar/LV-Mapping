@@ -206,8 +206,7 @@ class CamImage:
         return torch.tensor([0, 0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
     def set_pose(self, cam_pose):
-
-        # input pose is torch tensor
+        # input pose is torch tensor, and is T_w_c (c to w)
 
         if cam_pose is not None: # we also directly load the camera pose here
                     

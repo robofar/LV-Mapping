@@ -31,6 +31,7 @@ from utils.config import Config
 from utils.mesher import Mesher, filter_isolated_vertices
 from utils.tools import setup_experiment, split_chunks, load_decoders, save_video_np, remove_gpu_cache, colorize_depth_maps, slerp_pose, setup_optimizer
 from utils.visualizer import MapVisualizer
+from utils.campose_utils import update_pose
 
 from eval.eval_mesh_utils import eval_pair
 
@@ -563,7 +564,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 opt = setup_optimizer(config, cams = [cur_view_cam])
                 
                 # consider increase gs_cam_refine_iter_count here
-                for iter in tqdm(range(config.gs_cam_refine_iter_count), disable=(not args.log_on), desc="Camera refinement"):    
+                for iter in tqdm(range(config.gs_cam_refine_iter_count*2), disable=(not args.log_on), desc="Camera refinement"):    
                     
                     # current values
                     render_pkg = render(cur_view_cam, None, neural_points_data, 
@@ -586,10 +587,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                     rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
 
-                    loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image, c=0.0) # now just l1 loss
+                    loss_rgb_robust = tukey_loss(rendered_rgb_image, gt_rgb_image, c=0.5) # now just l1 loss
 
                     if config.lambda_ssim > 0.0:
-                        ssim_value = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image.unsqueeze(0)) # have to be 4 dim
+                        ssim_value = fused_ssim(rendered_rgb_image.unsqueeze(0), gt_rgb_image.unsqueeze(0)) # have to be 4 dim
                         rgb_loss = (1.0 - config.lambda_ssim) * loss_rgb_robust + config.lambda_ssim * (1.0 - ssim_value)
                     else:
                         rgb_loss = loss_rgb_robust # l1 only, ssim might take a long time
@@ -606,9 +607,16 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                     # print("Camera refinement loss:", total_loss.item())
 
+                    total_loss.backward()
+                    
+                    with torch.no_grad():
+                        opt.step()
+                        converged = update_pose(cur_view_cam)
+
                     opt.zero_grad(set_to_none=True) 
-                    total_loss.backward(retain_graph=True) 
-                    opt.step()    
+
+                    if converged:
+                        break     
 
             # current values
             render_pkg = render(cur_view_cam, None, neural_points_data, 

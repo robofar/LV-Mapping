@@ -78,6 +78,10 @@ def SE3_exp(tau):
 
 def update_pose(camera, converged_threshold=1e-4):
     tau = torch.cat([camera.cam_trans_delta, camera.cam_rot_delta], axis=0)
+    tau_norm = tau.norm()
+    
+    if tau.norm() == 0: # in this case, pose optimization off
+        return True 
 
     T_w2c = torch.eye(4, device=tau.device)
     T_w2c[0:3, 0:3] = camera.R
@@ -85,11 +89,9 @@ def update_pose(camera, converged_threshold=1e-4):
 
     new_w2c = SE3_exp(tau) @ T_w2c
 
-    new_R = new_w2c[0:3, 0:3]
-    new_T = new_w2c[0:3, 3]
-
     converged = tau.norm() < converged_threshold
-    camera.update_RT(new_R, new_T)
+
+    camera.set_pose(torch.linalg.inv(new_w2c)) # input pose should be c2w (T_w_c)
 
     camera.cam_rot_delta.data.fill_(0)
     camera.cam_trans_delta.data.fill_(0)

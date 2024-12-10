@@ -37,6 +37,7 @@ from utils.tools import (
     remove_gpu_cache,
     slerp_pose,
 )
+from utils.campose_utils import update_pose
 
 from eval.eval_mesh_utils import eval_pair
 
@@ -1663,6 +1664,10 @@ class Mapper:
                 opt.step()
                 opt.zero_grad(set_to_none=True) 
 
+                # update cam pose
+                update_pose(viewpoint_cam)
+
+
                 T7 = get_time()
                 
                 # if not self.silence:
@@ -1965,7 +1970,7 @@ class Mapper:
                         if not self.config.gs_eval_cam_refine_on:
                             break
 
-                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.0) # now just l1 loss
+                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.5) # now just l1 loss
 
                         if self.config.lambda_ssim > 0.0:
                             ssim_value = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)) # have to be 4 dim
@@ -1985,9 +1990,16 @@ class Mapper:
 
                         # print("Camera refinement loss:", total_loss.item())
 
+                        total_loss.backward()
+                    
+                        with torch.no_grad():
+                            opt.step()
+                            converged = update_pose(cur_view_cam)
+
                         opt.zero_grad(set_to_none=True) 
-                        total_loss.backward(retain_graph=True) 
-                        opt.step()    
+
+                        if converged:
+                            break     
                     
                     cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
                     cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
