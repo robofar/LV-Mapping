@@ -689,20 +689,20 @@ class Mapper:
 
                 # print(self.cam_short_term_train_pool_id)
 
-    # update cam poses after loop pgo
+    # update cam poses after loop pgo 
     def update_poses_cam_pool(self, poses_after_pgo):
+        
+        cam_pool_all = self.cam_short_term_train_pool + self.cam_long_term_train_pool
 
-        for cam in self.cam_short_term_train_pool:
-            cam_pose_after_pgo = poses_after_pgo[cam.frame_id]
-            if isinstance(cam_pose_after_pgo, np.ndarray):
-                cam_pose_after_pgo = torch.tensor(cam_pose_after_pgo, device=self.device, dtype=self.dtype)
-            cam.set_pose(cam_pose_after_pgo)
+        for cam in cam_pool_all:
+            T_w_l_after_pgo = poses_after_pgo[cam.frame_id]
+            if isinstance(T_w_l_after_pgo, np.ndarray):
+                T_w_l_after_pgo = torch.tensor(T_w_l_after_pgo, device=self.device, dtype=self.dtype)
+            
+            T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam.cam_id], device=self.device, dtype=self.dtype)
+            T_w_c_after_pgo = T_w_l_after_pgo @ torch.linalg.inv(T_c_l)
 
-        for cam in self.cam_long_term_train_pool:
-            cam_pose_after_pgo = poses_after_pgo[cam.frame_id]
-            if isinstance(cam_pose_after_pgo, np.ndarray):
-                cam_pose_after_pgo = torch.tensor(cam_pose_after_pgo, device=self.device, dtype=self.dtype)
-            cam.set_pose(cam_pose_after_pgo)
+            cam.set_pose(T_w_c_after_pgo)
 
     # get a batch of training samples and labels for map optimization
     def get_batch(self, global_coord=True):
@@ -1199,11 +1199,6 @@ class Mapper:
 
                 T3 = get_time()
 
-                if "local_view_gaussian_count" in list(render_pkg.keys()):
-                    local_visible_mask = visible_mask[:render_pkg["local_view_gaussian_count"]]
-                else:
-                    continue
-
                 # rendered results
                 rendered_rgb_image = render_pkg["render"] # 3, H, W 
                 rendered_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
@@ -1216,6 +1211,10 @@ class Mapper:
                 visible_mask = render_pkg["visibility_filter"] # gaussian visibility mask, this is for the spawned gaussians (include those sorrounding part)
                 
                 # these are only for those spawned gaussians in the local map
+                if "local_view_gaussian_count" in list(render_pkg.keys()):
+                    local_visible_mask = visible_mask[:render_pkg["local_view_gaussian_count"]]
+                else:
+                    continue
                 gaussian_xyz = render_pkg["gaussian_xyz"]
                 gaussian_scale = render_pkg["gaussian_scale"]
                 gaussian_rot = render_pkg["gaussian_rot"]
