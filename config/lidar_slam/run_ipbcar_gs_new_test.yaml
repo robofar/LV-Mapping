@@ -11,7 +11,7 @@ process:
   vox_down_m: 0.08
   dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.3
+  surface_sample_range_m: 0.25
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
