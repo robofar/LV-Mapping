@@ -1313,18 +1313,17 @@ class Mapper:
                     if rendered_alpha is not None:
                         accu_alpha_mask = rendered_alpha.detach() > self.config.depth_min_accu_alpha
                         valid_depth_mask = valid_depth_mask & accu_alpha_mask
-                    # gt_depth_image = gt_depth_image[valid_depth_mask]
-                    # # print(gt_depth_image)
-                    # rendered_depth = rendered_depth[valid_depth_mask]
+                    gt_depth_image_valid = gt_depth_image[valid_depth_mask]
+                    rendered_depth_valid = rendered_depth[valid_depth_mask]
                     if self.config.inverse_depth_loss:
-                        depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rendered_depth, valid_depth_mask) # use inverse depth (then we will care more about the close range part)
-                        # depth_loss = tukey_loss(1.0/gt_depth_image, 1.0/rendered_depth) 
+                        depth_loss = l1_loss(1.0/gt_depth_image_valid, 1.0/rendered_depth_valid) # use inverse depth (then we will care more about the close range part)
+                        # depth_loss = tukey_loss(1.0/gt_depth_image_valid, 1.0/rendered_depth_valid) 
                         # if not self.silence:
                         #     print(" Inverse depth rendering loss:", depth_loss.item())
                     else:
-                        depth_loss = l1_loss(gt_depth_image, rendered_depth, valid_depth_mask)
-                        # if not self.silence:
-                        #     print(" Depth rendering loss (m):", depth_loss.item())
+                        depth_loss = l1_loss(gt_depth_image_valid, rendered_depth_valid)
+                        if not self.silence:
+                            print(" Depth rendering loss (m):", depth_loss.item())
                     depth_loss *= (weight_down_rate * self.config.lambda_depth)
 
                 T3_5 = get_time()
