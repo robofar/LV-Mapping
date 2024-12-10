@@ -1313,18 +1313,17 @@ class Mapper:
                     if rendered_alpha is not None:
                         accu_alpha_mask = rendered_alpha.detach() > self.config.depth_min_accu_alpha
                         valid_depth_mask = valid_depth_mask & accu_alpha_mask
-                    # gt_depth_image = gt_depth_image[valid_depth_mask]
-                    # # print(gt_depth_image)
-                    # rendered_depth = rendered_depth[valid_depth_mask]
+                    gt_depth_image_valid = gt_depth_image[valid_depth_mask]
+                    rendered_depth_valid = rendered_depth[valid_depth_mask]
                     if self.config.inverse_depth_loss:
-                        depth_loss = l1_loss(1.0/gt_depth_image, 1.0/rendered_depth, valid_depth_mask) # use inverse depth (then we will care more about the close range part)
-                        # depth_loss = tukey_loss(1.0/gt_depth_image, 1.0/rendered_depth) 
+                        depth_loss = l1_loss(1.0/gt_depth_image_valid, 1.0/rendered_depth_valid) # use inverse depth (then we will care more about the close range part)
+                        # depth_loss = tukey_loss(1.0/gt_depth_image_valid, 1.0/rendered_depth_valid) 
                         # if not self.silence:
                         #     print(" Inverse depth rendering loss:", depth_loss.item())
                     else:
-                        depth_loss = l1_loss(gt_depth_image, rendered_depth, valid_depth_mask)
-                        # if not self.silence:
-                        #     print(" Depth rendering loss (m):", depth_loss.item())
+                        depth_loss = l1_loss(gt_depth_image_valid, rendered_depth_valid)
+                        if not self.silence:
+                            print(" Depth rendering loss (m):", depth_loss.item())
                     depth_loss *= (weight_down_rate * self.config.lambda_depth)
 
                 T3_5 = get_time()
@@ -1937,10 +1936,10 @@ class Mapper:
 
                     gt_rgb_image_for_eval = gt_rgb_img[:,:pixel_h_used,:]
 
-                    gt_depth_img = None
+                    gt_depth_image = None
                     if cur_view_cam.depth_on is not None: 
-                        gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
-                        valid_depth_mask = (gt_depth_img > eval_depth_min) & (gt_depth_img < eval_depth_max)
+                        gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
+                        valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
 
                     for iter in tqdm(range(self.config.gs_cam_refine_iter_count+1), disable=self.silence, desc="Camera refinement"):    
 
@@ -1978,11 +1977,11 @@ class Mapper:
                             rgb_loss = loss_rgb_robust # l1 only, ssim might take a long time
 
                         depth_loss = 0.0 
-                        if rendered_depth is not None and gt_depth_img is not None and self.config.lambda_depth > 0:
+                        if rendered_depth is not None and gt_depth_image is not None and self.config.lambda_depth > 0:
                             if rendered_alpha is not None:
                                 accu_alpha_mask = rendered_alpha.detach() > self.config.depth_min_accu_alpha
                                 valid_depth_mask = valid_depth_mask & accu_alpha_mask
-                            depth_loss = l1_loss(gt_depth_img, rendered_depth, valid_depth_mask)
+                            depth_loss = l1_loss(gt_depth_image[valid_depth_mask], rendered_depth[valid_depth_mask])
                             depth_loss *= self.config.lambda_depth
 
                         total_loss = rgb_loss + depth_loss
@@ -2010,15 +2009,15 @@ class Mapper:
                             print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
                         
 
-                    if gt_depth_img is not None and rendered_depth is not None: 
-                        valid_depth_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
+                    if gt_depth_image is not None and rendered_depth is not None: 
+                        valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
                         
                         accu_alpha_mask = None
                         if rendered_alpha is not None:
                             accu_alpha_mask = rendered_alpha > self.config.eval_depth_min_accu_alpha
                             valid_depth_mask = valid_depth_mask & accu_alpha_mask
                                         
-                        diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
+                        diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs
                         # diff_depth[~valid_depth_mask] = 0.0
                         diff_depth_masked = diff_depth[valid_depth_mask].detach().cpu().numpy()
                         cur_depth_l1 = np.mean(diff_depth_masked)
