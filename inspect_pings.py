@@ -518,7 +518,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         for cur_cam_name in cam_list: 
 
-            if args.use_free_view_camera:
+            if args.use_free_view_camera: # in this case, we do not do evaluation
                 K_mat = free_cam_K_mat #  # as np.array
                 T_w_c = T_w_l # the input is then directly the camera poses
                 
@@ -526,6 +526,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                                         config.min_range*0.5, config.local_map_radius*1.1,
                                         cur_cam_name, device=config.device, cam_pose = T_w_c, 
                                         img_width = free_cam_W, img_height = free_cam_H)
+
 
             else:
                 K_mat = dataset.K_mats[cur_cam_name]
@@ -545,7 +546,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 cur_view_cam.set_pose(T_w_c)
 
                 gt_rgb_img = cur_view_cam.rgb_image_list[eval_down_rate]
+            
 
+            opt = setup_optimizer(
+                config,
+                cams = [cur_view_cam],
+            )
 
             # current values
             render_pkg = render(cur_view_cam, None, neural_points_data, 
@@ -576,7 +582,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                 alpha_mask = None
                 if rendered_alpha is not None:
-                    alpha_mask = rendered_alpha > config.depth_min_accu_alpha
+                    alpha_mask = rendered_alpha > config.eval_depth_min_accu_alpha
 
                 # depth
                 if rendered_depth is not None:

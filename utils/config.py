@@ -320,6 +320,7 @@ class Config:
 
         self.min_alpha: float = 0.01
         self.depth_min_accu_alpha: float = 0.2
+        self.eval_depth_min_accu_alpha: float = 0.6
 
         # these are deprecated, when directly optimize gs
         # self.gs_init_opacity: float = 0.5 # initial value for the opacity of each gaussian # 0.1, 0.99 (according to RTG-SLAM) # not used anymore
@@ -735,6 +736,7 @@ class Config:
 
             self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha) # this is the per-gaussian alpha
             self.depth_min_accu_alpha = config_args["gs"].get("depth_min_accu_alpha", self.depth_min_accu_alpha) # this is the rendered accumulated alpha for valid depth
+            self.eval_depth_min_accu_alpha = config_args["gs"].get("eval_depth_min_accu_alpha", self.eval_depth_min_accu_alpha) # this is the rendered accumulated alpha for valid depth
 
             self.gs_batch_training_on = config_args["gs"].get("gs_batch_training_on", self.gs_batch_training_on)
             if self.gs_batch_training_on:
