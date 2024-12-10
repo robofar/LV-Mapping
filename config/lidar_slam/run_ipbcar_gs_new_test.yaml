@@ -25,7 +25,7 @@ neuralpoints:
 decoder:
   freeze_after_frame: 30 # 30
   gs_mlp_level: 1 # 2?, not much improvement
-  gs_mlp_hidden_dim: 128
+  gs_mlp_hidden_dim: 128 # 128
 loss:
   sigma_sigmoid_m: 0.05 # the smaller, we care more about the part very close to the surface
   weight_color: 0.2
@@ -53,12 +53,12 @@ gs:
   eval_cam_refine_on: True
   view_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 100 # 50 # 100
+  gs_iters: 150 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
-  short_term_train_prob: 0.6
+  short_term_train_prob: 0.5 # 0.6
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m

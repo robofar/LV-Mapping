@@ -1199,6 +1199,11 @@ class Mapper:
 
                 T3 = get_time()
 
+                if "local_view_gaussian_count" in list(render_pkg.keys()):
+                    local_visible_mask = visible_mask[:render_pkg["local_view_gaussian_count"]]
+                else:
+                    continue
+
                 # rendered results
                 rendered_rgb_image = render_pkg["render"] # 3, H, W 
                 rendered_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
@@ -1211,7 +1216,6 @@ class Mapper:
                 visible_mask = render_pkg["visibility_filter"] # gaussian visibility mask, this is for the spawned gaussians (include those sorrounding part)
                 
                 # these are only for those spawned gaussians in the local map
-                local_visible_mask = visible_mask[:render_pkg["local_view_gaussian_count"]]
                 gaussian_xyz = render_pkg["gaussian_xyz"]
                 gaussian_scale = render_pkg["gaussian_scale"]
                 gaussian_rot = render_pkg["gaussian_rot"]
