@@ -666,9 +666,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     if cur_view_cam.depth_on and rendered_depth is not None: 
                         eval_depth_max = config.max_range * 0.8
                         eval_depth_min = config.min_range
-                        gt_depth_img = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
-                        depth_valid_mask = (gt_depth_img > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_img < eval_depth_max) & (rendered_depth < eval_depth_max)
-                        diff_depth = torch.abs(gt_depth_img - rendered_depth) # already abs
+                        gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
+                        depth_valid_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
+                        diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs
                         # diff_depth[~depth_valid_mask] = 0.0
                         diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                         cur_depth_l1 = np.mean(diff_depth_masked)
