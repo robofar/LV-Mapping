@@ -9,7 +9,7 @@ process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.08
-  dynamic_sdf_ratio_thre: 0.6
+  dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.3
   surface_sample_n: 5
@@ -58,18 +58,19 @@ gs:
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
-  short_term_train_prob: 0.6
+  short_term_train_prob: 0.5
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
-  lambda_depth: 0.01 # 20.0 # decrease this , it's not useful ... depth rendering
+  lambda_depth: 0.01 
   lambda_opacity: 2e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   lambda_invalid_opacity: 2e-3
   lambda_area: 2e-4 # 1e-3
-  lambda_normal_depth: 0.01
+  # lambda_normal_depth: 0.01
   # consist_normal_fixed: True
+  consist_shift_count: 0 # not for ipb car set, on for oxford
   lambda_sdf_cons: 0.02
   lambda_sdf_normal_cons: 0.02 # rendered normal seems to be better without this loss
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
