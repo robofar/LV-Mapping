@@ -1588,7 +1588,7 @@ class SLAM_GUI:
                 if rendered_depth is not None and cur_gt_depth is not None:
                     
                     depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
-                    if render_results["rend_alpha"] is not None and self.depth_filter_with_alpha_chbox.checked:
+                    if render_results["rend_alpha"] is not None:
                         depth_valid_mask = depth_valid_mask & (render_results["rend_alpha"] > self.config.eval_depth_min_accu_alpha)
 
                     diff_depth = torch.abs(rendered_depth - cur_gt_depth)
@@ -1749,7 +1749,7 @@ class SLAM_GUI:
             if depth is None:
                 return None # don't show gs rendering results
             
-            if results["rend_alpha"] is not None:
+            if results["rend_alpha"] is not None and self.depth_filter_with_alpha_chbox.checked:
                 valid_depth_mask = (results["rend_alpha"] > self.config.eval_depth_min_accu_alpha)
                 depth[~valid_depth_mask] = 0.0
 

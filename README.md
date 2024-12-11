@@ -51,6 +51,15 @@ python pings.py ./config/lidar_slam/run_ipbcar_gs_new_test.yaml ipb_car -i ./dat
 python pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-Spires-Dataset/2024-03-12-keble-college-04/ -vmsg
 ```
 
+
+
+### Inspect the results afterwards
+
+Example
+```
+python inspect_pings.py ./pings_experiments/small_loop_test_ipbcar_gs_longer_ipb_car__2024-12-10_23-54-59/ -f 2400
+```
+
 ### For more details, please refer to NOTE.md
 
 

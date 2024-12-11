@@ -11,7 +11,7 @@ process:
   vox_down_m: 0.08
   dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.25
+  surface_sample_range_m: 0.3
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
@@ -58,7 +58,7 @@ gs:
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
-  short_term_train_prob: 0.5 # 0.6
+  short_term_train_prob: 0.5
   gs_down_rate: 1
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
@@ -66,21 +66,21 @@ gs:
   lambda_depth: 0.01 # 0.02
   lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  lambda_invalid_opacity: 2e-3 # TODO
-  lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
+  # lambda_invalid_opacity: 2e-3 # TODO
+  lambda_area: 1e-3 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
-  lambda_normal_depth: 0.01 #
-  lambda_normal_smooth: 0.01
-  consist_shift_count: 1
-  lambda_sdf_cons: 0.02 # the weight do not need to be very large
-  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
+  # lambda_normal_depth: 0.01 #
+  # lambda_normal_smooth: 0.01
+  consist_shift_count: 0
+  lambda_sdf_cons: 0.01 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.01 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
-  learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
-  learning_rate_color: 0.002 # neural point color feature lr # 0.2
+  learning_rate_geo: 2e-3 # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
+  learning_rate_color: 2e-3 # neural point color feature lr # 0.2
   learning_rate_exposure: 1e-3 # or 1e-3
   learning_rate_cam_dr: 3e-3
   learning_rate_cam_dt: 1e-3
