@@ -67,7 +67,7 @@ gs:
   lambda_opacity: 2e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   lambda_invalid_opacity: 2e-3
-  lambda_area: 2e-4 # 1e-3
+  lambda_area: 1e-3 # 1e-3
   # lambda_normal_depth: 0.01
   # consist_normal_fixed: True
   consist_shift_count: 0 # not for ipb car set, on for oxford

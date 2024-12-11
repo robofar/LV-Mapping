@@ -1591,8 +1591,8 @@ class Mapper:
                     # with batch size bs (this is done for all the sdf samples in the local map)
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
-                    surface_mask = torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m
-                    close_to_surface_mask = torch.abs(sdf_label) < self.config.free_sample_end_dist_m
+                    valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] > 0.0) # Note: here we set the invalid color label with a negative value
+                    apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
                     poses = self.used_poses[ts]
                     origins = poses[:, :3, 3]
@@ -1609,9 +1609,9 @@ class Mapper:
                         sdf_pred = torch.sum(sdf_pred * weight_knn, dim=1).squeeze(1)  # N
                     
                     if self.config.color_on:
-                        surface_color_pred = self.color_mlp.regress_color(color_feature[surface_mask])  # [N, K, C]
+                        surface_color_pred = self.color_mlp.regress_color(color_feature[valid_color_mask])  # [N, K, C]
                         if not self.config.weighted_first:
-                            surface_color_pred = torch.sum(surface_color_pred * weight_knn[surface_mask], dim=1)  # N, C
+                            surface_color_pred = torch.sum(surface_color_pred * weight_knn[valid_color_mask], dim=1)  # N, C
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
@@ -1619,8 +1619,8 @@ class Mapper:
                     sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
 
                     if self.config.weight_e > 0:
-                        coord_for_eikonal = coord[close_to_surface_mask]
-                        sdf_pred_for_eikonal = sdf_pred[close_to_surface_mask]
+                        coord_for_eikonal = coord[apply_eikonal_mask]
+                        sdf_pred_for_eikonal = sdf_pred[apply_eikonal_mask]
                         if self.require_gradient:
                             g = get_gradient(coord_for_eikonal, sdf_pred_for_eikonal)  # to unit m
                         elif self.config.numerical_grad:
@@ -1631,7 +1631,7 @@ class Mapper:
                         eikonal_loss = ((g.norm(2, dim=-1) - 1.0) ** 2).mean() 
                         
                     if self.config.color_on and self.config.weight_i > 0:
-                        color_loss = color_diff_loss(surface_color_pred, color_label[surface_mask])
+                        color_loss = color_diff_loss(surface_color_pred, color_label[valid_color_mask])
                         
                     if not self.silence:
                         print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
@@ -1661,11 +1661,13 @@ class Mapper:
 
                 total_loss.backward() 
                 
-                opt.step()
-                opt.zero_grad(set_to_none=True) 
+                with torch.no_grad():
+                    opt.step()
+                    # update cam pose
+                    update_pose(viewpoint_cam)
 
-                # update cam pose
-                update_pose(viewpoint_cam)
+                # opt.step()
+                opt.zero_grad(set_to_none=True) 
 
 
                 T7 = get_time()
@@ -1698,10 +1700,11 @@ class Mapper:
                     else:
                         self.cams_exposure_ab[cam_param.uid] = (cam_param.exposure_a, cam_param.exposure_b)
                     
-                    self.cams_pose_delta_rt[cam_param.uid] = (cam_param.cam_rot_delta, cam_param.cam_trans_delta)
+                    # self.cams_pose_delta_rt[cam_param.uid] = (cam_param.cam_rot_delta, cam_param.cam_trans_delta)
 
                     # print(cam_param.cam_rot_delta)
                     # print(cam_param.cam_trans_delta)
+                    # better to record the updated cam pose # TODO
 
             self.gs_total_iter += (self.config.gs_bs * iter_count)
 
@@ -1769,10 +1772,10 @@ class Mapper:
             exposure_record_frame = int(exposure_record[0]) # frame
             if exposure_record_cam not in list(self.per_cam_exposure_ab.keys()):
                 self.per_cam_exposure_ab[exposure_record_cam] = {}
-                self.per_cam_pose_delta_rt[exposure_record_cam] = {}
+                # self.per_cam_pose_delta_rt[exposure_record_cam] = {}
             else:
                 (self.per_cam_exposure_ab[exposure_record_cam])[exposure_record_frame] = self.cams_exposure_ab[exposure_record_uid]
-                (self.per_cam_pose_delta_rt[exposure_record_cam])[exposure_record_frame] = self.cams_pose_delta_rt[exposure_record_uid]
+                # (self.per_cam_pose_delta_rt[exposure_record_cam])[exposure_record_frame] = self.cams_pose_delta_rt[exposure_record_uid]
 
 
     def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
@@ -1911,9 +1914,9 @@ class Mapper:
                     else:
                         cur_view_cam.set_exposure_ab(cur_exposure[0], cur_exposure[1])
                     
-                    cur_delta_pose = (self.per_cam_pose_delta_rt[cur_cam_id])[closest_train_frame_id]
-                    if closest_train_frame_id == cur_frame_id:
-                        cur_view_cam.set_delta_pose(cur_delta_pose[0], cur_delta_pose[1])                
+                    # cur_delta_pose = (self.per_cam_pose_delta_rt[cur_cam_id])[closest_train_frame_id]
+                    # if closest_train_frame_id == cur_frame_id:
+                    #     cur_view_cam.set_delta_pose(cur_delta_pose[0], cur_delta_pose[1])                
 
                 # gs_cam_refine_iter_count = 50 # in config now
 

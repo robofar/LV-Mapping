@@ -63,6 +63,9 @@ class DataSampler:
         if color_torch is not None:
             color_channel = color_torch.shape[1]
             surface_color_tensor = color_torch.repeat(surface_sample_n, 1)
+
+            if color_valid_mask is not None:
+                color_torch[~color_valid_mask] *= -1.0 # set to negative, as an invalid flag
         
         # TODO: use color valid mask
 
@@ -85,9 +88,9 @@ class DataSampler:
         if sem_label_torch is not None:
             free_sem_label_front = torch.zeros_like(repeated_dist)
         if color_torch is not None:
-            free_color_front = torch.ones(
+            free_color_front = -1.0 * torch.ones(
                 point_num * freespace_front_sample_n, color_channel, device=dev
-            )
+            ) # set to negative, as an invalid flag
 
         # Part 3. free space (behind surface) uniform sampling
         repeated_dist = distances.repeat(freespace_behind_sample_n, 1)
@@ -107,9 +110,9 @@ class DataSampler:
         if sem_label_torch is not None:
             free_sem_label_behind = torch.zeros_like(repeated_dist)
         if color_torch is not None:
-            free_color_behind = torch.ones(
+            free_color_behind = -1.0 * torch.ones(
                 point_num * freespace_behind_sample_n, color_channel, device=dev
-            )
+            ) # set to negative, as an invalid flag
 
         # T1 = get_time()
 
@@ -259,4 +262,5 @@ class DataSampler:
             sem_label_tensor,
             color_tensor,
             weight_tensor,
+            # color_mask_tensor,
         )
