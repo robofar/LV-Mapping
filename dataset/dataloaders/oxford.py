@@ -157,7 +157,7 @@ class OxfordDataset:
 
             points = (points_homo @ self.T_l_b_mat.T)[:,:3]
 
-            points_rgb = np.ones_like(points) # only for further processing
+            points_rgb = -1.0 * np.ones_like(points) # only for further processing # set to invalid (indicated by negative value) at first
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             frame_data["points"] = points

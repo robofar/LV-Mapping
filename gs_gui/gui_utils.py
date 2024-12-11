@@ -297,6 +297,12 @@ class VisPacket:
                         color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=31)
                         self.neural_points_data["color_pca_color"] = color_feature_3d
 
+            if neural_points.color_on:
+                invalid_color_mask = (self.neural_points_data["color"][:,0] < 0)
+                invalid_color_part = self.neural_points_data["color"][invalid_color_mask]
+                self.neural_points_data["color"][invalid_color_mask] = torch.ones_like(invalid_color_part).to(invalid_color_part) # show as white instead of black
+
+
     def add_gaussians(self,  
                     gaussian_xyz=None,
                     gaussian_scale=None,
@@ -325,6 +331,13 @@ class VisPacket:
     def add_scan(self, current_pointcloud_xyz=None, current_pointcloud_rgb=None):
         self.current_pointcloud_xyz = current_pointcloud_xyz
         self.current_pointcloud_rgb = current_pointcloud_rgb
+
+        if current_pointcloud_rgb is not None:
+            invalid_mask = (current_pointcloud_rgb[:,0] < 0)
+            invalid_rgb = current_pointcloud_rgb[invalid_mask]
+            self.current_pointcloud_rgb[invalid_mask] = np.ones_like(invalid_rgb)
+        # show invalid as white (all 1) instead of black
+
         # TODO: add normal later
 
     def add_rendered_scan(self, current_rendered_xyz=None, current_rendered_rgb=None):

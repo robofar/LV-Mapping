@@ -234,7 +234,7 @@ class IPBCarDataset:
             img_dict = {}
             depth_img_dict = {}
 
-            points_rgb = np.ones_like(points) # N,4, last channel for the mask
+            points_rgb = -1.0 * np.ones_like(points) # N,4, last channel for the mask # set to invalid (indicated by negative value) at first
 
             for cam_name in self.cam_list:
                 

@@ -949,6 +949,7 @@ class SLAMDataset():
 
         if (
             cur_frame_travel_dist > self.config.surface_sample_range_m * 40.0
+            and self.config.track_on
         ):  # too large translation in one frame --> lose track
             self.lose_track = True
             self.write_results() # record before the failure point
@@ -1021,7 +1022,12 @@ class SLAMDataset():
         # to get a refined depth map and colorized point cloud
 
         point_count = self.cur_point_cloud_torch.shape[0]
-        points_rgb_torch = torch.ones((point_count, 4)).to(self.cur_point_cloud_torch)
+        point_channel = self.cur_point_cloud_torch.shape[1]
+
+        # if point_channel >= 6:
+        # TODO
+
+        points_rgb_torch = -1.0 * torch.ones((point_count, 4)).to(self.cur_point_cloud_torch) # set as invalid in the beginning
 
         if self.cur_cam_img is None:
             return

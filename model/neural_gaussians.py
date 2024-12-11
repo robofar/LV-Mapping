@@ -307,10 +307,10 @@ class NeuralPoints(nn.Module):
             update_mask = (hash_idx == -1) | (dist2 > 3 * cur_resolution**2)
 
             if sample_colors is not None:
-                # # only use the part that are not all white (this can be used for the case that we use the full point cloud)
-                sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] < 1.0) 
+                # # only use the valid part (this can be used for the case that we use the full point cloud)
+                sample_points_valid_color_mask = (sample_colors[:, 0] >= 0.0) # negative value indicate invalid
                 # then this would be all True (this can be used for the case that we use only the colorized part of the point cloud)
-                # sample_points_valid_color_mask = (torch.min(sample_colors, 1)[0] <= 1.0)
+        
 
                 color_update_mask = (hash_idx > -1) & (self.valid_color_mask[hash_idx] == 0) & sample_points_valid_color_mask # these neural gaussian's sh color need to be updated # sampled point size
                 hash_idx_color_update = hash_idx[color_update_mask]
@@ -486,8 +486,9 @@ class NeuralPoints(nn.Module):
         ## Mask
         if added_colors is not None:
             # FIXME
-            new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
+            # new_valid_color_mask = (torch.min(added_colors, 1)[0] < 1.0) # not all white (this can be used when we use the full point cloud)
             # new_valid_color_mask = (torch.min(added_colors, 1)[0] <= 1.0) # this will then be all true (this can be used when we only use the colorized part of the point cloud)
+            new_valid_color_mask = added_colors[:, 0] >= 0.0 # negative value indicates invalid
 
             self.valid_color_mask = torch.cat((self.valid_color_mask, new_valid_color_mask), 0)
         else:

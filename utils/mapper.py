@@ -823,7 +823,10 @@ class Mapper:
             poses = self.used_poses[ts]
             origins = poses[:, :3, 3]
 
-            surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+            # surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
+
+            valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
+            apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
             if self.ba_done_flag:
                 coord = transform_batch_torch(
@@ -856,9 +859,9 @@ class Mapper:
                 if not self.config.weighted_first:
                     sem_pred = torch.sum(sem_pred * weight_knn, dim=1)  # N, S
             if self.config.color_on:
-                color_pred = self.color_mlp.regress_color(color_feature[surface_mask])  # [N, K, C]
+                color_pred = self.color_mlp.regress_color(color_feature[valid_color_mask])  # [N, K, C]
                 if not self.config.weighted_first:
-                    color_pred = torch.sum(color_pred * weight_knn[surface_mask], dim=1)  # N, C
+                    color_pred = torch.sum(color_pred * weight_knn[valid_color_mask], dim=1)  # N, C
 
             if self.require_gradient:
                 g = get_gradient(coord, sdf_pred)  # to unit m
@@ -943,16 +946,16 @@ class Mapper:
             if (
                 self.config.ekional_loss_on and self.config.weight_e > 0
             ):  # MSE with regards to 1
-                surface_mask_decimated = surface_mask[
+                apply_eikonal_mask = apply_eikonal_mask[
                     :: self.config.gradient_decimation
-                ]
+                ] # decimated if needed
                 # weight_used = (weight.clone())[::self.config.gradient_decimation] # point-wise weight not used
                 if self.config.ekional_add_to == "freespace":
-                    g_used = g[~surface_mask_decimated]
-                    # weight_used = weight_used[~surface_mask_decimated]
+                    g_used = g[~apply_eikonal_mask]
+                    # weight_used = weight_used[~apply_eikonal_mask]
                 elif self.config.ekional_add_to == "surface":
-                    g_used = g[surface_mask_decimated]
-                    # weight_used = weight_used[surface_mask_decimated]
+                    g_used = g[apply_eikonal_mask]
+                    # weight_used = weight_used[apply_eikonal_mask]
                 else:  # "all"  # both the surface and the freespace, used here # [used]
                     g_used = g
                 eikonal_loss = (
@@ -985,8 +988,8 @@ class Mapper:
             if self.config.color_on and self.config.weight_i > 0:
                 color_loss = color_diff_loss(
                     color_pred,
-                    color_label[surface_mask],
-                    weight[surface_mask],
+                    color_label[valid_color_mask],
+                    weight[valid_color_mask],
                     self.config.loss_weight_on,
                     l2_loss=False,
                 )
@@ -1591,7 +1594,7 @@ class Mapper:
                     # with batch size bs (this is done for all the sdf samples in the local map)
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
-                    valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] > 0.0) # Note: here we set the invalid color label with a negative value
+                    valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
                     apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
                     poses = self.used_poses[ts]

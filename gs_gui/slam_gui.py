@@ -1595,7 +1595,7 @@ class SLAM_GUI:
                     diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
                     cur_depthl1 = np.mean(diff_depth_masked)
 
-                    if show_depth_error:
+                    if show_depth_error: # TODO: use scatters
 
                         diff_depth[~depth_valid_mask] = 0.0
                         diff_depth_np = diff_depth.detach().cpu().numpy()
