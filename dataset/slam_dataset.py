@@ -631,6 +631,9 @@ class SLAMDataset():
         if point_lidar_idx is not None:
             self.cur_point_lidar_idx_torch = torch.tensor(point_lidar_idx, device=self.device, dtype=int)
 
+        # if points is not None and self.cur_cam_img is not None:
+        #     print("Point cloud and img associated")
+
     def read_frame(self, frame_id, init_pose: bool = True):
 
         if init_pose:

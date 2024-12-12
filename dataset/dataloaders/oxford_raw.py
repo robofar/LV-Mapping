@@ -58,22 +58,22 @@ class OxfordDataset:
 
         pose_ts = np.array(pose_ts)
 
-        self.lidar_files = [None] * self.poses_count
+        self.lidar_files = [None] * self.poses_count 
         self.cam0_files = [None] * self.poses_count
         self.cam1_files = [None] * self.poses_count
         self.cam2_files = [None] * self.poses_count
 
-        # note these lidar point clouds are in base frame
-        lidar_dir = os.path.join(data_dir, "processed", "vilens-slam", "undist-clouds/")
+        # raw lidars (under lidar frame)
+        lidar_dir = os.path.join(data_dir, "raw", "lidar-clouds/")
         lidar_files = sorted(glob.glob(lidar_dir + "*.pcd"))
+        lidar_ts = extract_time_from_cam_filenames(lidar_files)
 
-        lidar_ts = extract_time_from_lidar_filenames(lidar_files)
+        # raw images
+        img_dir_base = os.path.join(data_dir, "raw", "images_rectified")
 
-        img_dir_base = os.path.join(data_dir, "processed", "colmap", "images_rectified")
-
-        cam0_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam0_debayered_image_compressed/")
-        cam1_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam1_debayered_image_compressed/")
-        cam2_dir = os.path.join(img_dir_base, "alphasense_driver_ros_cam2_debayered_image_compressed/")
+        cam0_dir = os.path.join(img_dir_base, "cam0/")
+        cam1_dir = os.path.join(img_dir_base, "cam1/")
+        cam2_dir = os.path.join(img_dir_base, "cam2/")
 
         cam0_files = sorted(glob.glob(cam0_dir + "*.jpg"))
         cam0_ts = extract_time_from_cam_filenames(cam0_files)
@@ -84,7 +84,7 @@ class OxfordDataset:
         cam2_files = sorted(glob.glob(cam2_dir + "*.jpg"))
         cam2_ts = extract_time_from_cam_filenames(cam2_files)
 
-        # lidar - pose association
+        # raw lidar - pose association
         lidar_pose_associated_idx, lidar_associated_idx = associate_sensor_to_pose(lidar_ts, pose_ts)
 
         lidar_associated_count = np.shape(lidar_pose_associated_idx)[0]
@@ -151,16 +151,20 @@ class OxfordDataset:
         cur_lidar_file = self.lidar_files[idx]
         if cur_lidar_file is not None:
             points = self.read_point_cloud(cur_lidar_file)
+            point_count = points.shape[0]
 
-            # transform from base frame to lidar frame
-            points_homo = np.hstack((points[:,:3], np.ones((np.shape(points)[0], 1))))
-
-            points = (points_homo @ self.T_l_b_mat.T)[:,:3]
+            # already in LiDAR frame
+            # # transform from base frame to lidar frame
+            # points_homo = np.hstack((points[:,:3], np.ones((np.shape(points)[0], 1))))
+            # points = (points_homo @ self.T_l_b_mat.T)[:,:3]
 
             points_rgb = -1.0 * np.ones_like(points) # only for further processing # set to invalid (indicated by negative value) at first
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
+            points_ts = np.linspace(0, 1, point_count)
+
             frame_data["points"] = points
+            frame_data["points_ts"] = points_ts
 
         if self.load_img:
             
