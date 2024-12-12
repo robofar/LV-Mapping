@@ -636,6 +636,8 @@ class Mapper:
         # training views
         if keyframe_on and frame_id % self.config.gs_keyframe_interval==0:
             
+            # added to train view
+            
             self.gs_train_frame_count += 1
             self.dataset.accu_travel_dist_for_keyframe = 0.0 # set back to zero
             self.dataset.accu_travel_degree_for_keyframe = 0.0 # set back to zero

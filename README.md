@@ -49,6 +49,8 @@ python pings.py ./config/lidar_slam/run_ipbcar_gs_new_test.yaml ipb_car -i ./dat
 
 ```
 python pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-Spires-Dataset/2024-03-12-keble-college-04/ -vmsg
+
+python pings.py ./config/lidar_slam/run_oxford_gs_raw.yaml oxford_raw -i ./data/Oxford-Spires-Dataset/2024-03-18-christ-church-02/ -vmsg
 ```
 
 

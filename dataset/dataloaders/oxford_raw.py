@@ -164,7 +164,7 @@ class OxfordDataset:
             points_ts = np.linspace(0, 1, point_count)
 
             frame_data["points"] = points
-            frame_data["points_ts"] = points_ts
+            frame_data["point_ts"] = points_ts
 
         if self.load_img:
             
