@@ -461,6 +461,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
                 T9 = get_time()
 
                 # add the most recent train frame for vis
+                # we have either Lidar point cloud or camera images loaded
                 packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
                     current_frames=dataset.cur_cam_img, 
                     keyframes=mapper.cur_frame_train_views, # None

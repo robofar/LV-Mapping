@@ -183,8 +183,8 @@ class OxfordDataset:
             if len(img_dict.keys())>0: # at least one img got associated to this timestamp
                 
                 # print("Img loaded: ", len(img_dict.keys()))
-                
                 frame_data["img"] = img_dict
+            # otherwise no image loaded
         
         return frame_data
     
