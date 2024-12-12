@@ -1039,7 +1039,6 @@ class Mapper:
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
 
         cams_param = self.cam_short_term_train_pool
-        # cams_param = self.cam_short_term_train_pool if self.config.exposure_correction_on else None
 
         mlp_color_param = list(self.color_mlp.parameters()) if self.color_mlp is not None else None
 
@@ -1055,6 +1054,8 @@ class Mapper:
             mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
             mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
             cams = cams_param,
+            exposure_correction_on=self.config.exposure_correction_on,
+            cam_pose_correction_on=self.config.cam_pose_train_on,
         )
 
         self.cur_frame_train_views = {} # set back to empty

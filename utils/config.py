@@ -248,6 +248,8 @@ class Config:
         self.exposure_correction_on: bool = False
         self.affine_exposure_correction: bool = True
 
+        self.cam_pose_train_on: bool = False # jointly optimize camera pose during training
+
         self.gs_invalid_check_on: bool = True
 
         # self.bg_color = [0.5, 0.5, 0.5] # gray # TODO
@@ -676,6 +678,8 @@ class Config:
 
             self.exposure_correction_on = config_args["gs"].get("exposure_correction_on", self.exposure_correction_on)
             self.affine_exposure_correction = config_args["gs"].get("affine_exposure_correction", self.affine_exposure_correction)
+
+            self.cam_pose_train_on = config_args["gs"].get("cam_pose_train_on", self.cam_pose_train_on)
 
             self.gs_invalid_check_on = config_args["gs"].get("invalid_check_on", self.gs_invalid_check_on) 
 
