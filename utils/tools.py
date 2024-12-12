@@ -156,6 +156,8 @@ def setup_optimizer(
     gs_opacity=None,
     gs_scaling=None,
     gs_rotation=None,
+    exposure_correction_on=True,
+    cam_pose_correction_on=True
 ) -> Optimizer:
     
     """
@@ -291,48 +293,50 @@ def setup_optimizer(
     if cams is not None:
         for cam in cams:
             # exposure
-            opt_setting.append(
-                {
-                    "params": [cam.exposure_a],
-                    "lr": config.lr_exposure,
-                    "name": "cam_{}_exposure_a".format(cam.uid),
-                }
-            )
-            opt_setting.append(
-                {
-                    "params": [cam.exposure_b],
-                    "lr": config.lr_exposure,
-                    "name": "cam_{}_exposure_b".format(cam.uid),
-                }
-            )
-            opt_setting.append(
-                {
-                    "params": [cam.exposure_mat],
-                    "lr": config.lr_exposure,
-                    "name": "cam_{}_exposure_a".format(cam.uid),
-                }
-            )
-            opt_setting.append(
-                {
-                    "params": [cam.exposure_offset],
-                    "lr": config.lr_exposure,
-                    "name": "cam_{}_exposure_b".format(cam.uid),
-                }
-            )
-            opt_setting.append(
-                {
-                    "params": [cam.cam_rot_delta],
-                    "lr": config.lr_cam_dr,
-                    "name": "cam_{}_dr".format(cam.uid),
-                }
-            )
-            opt_setting.append(
-                {
-                    "params": [cam.cam_trans_delta],
-                    "lr": config.lr_cam_dt,
-                    "name": "cam_{}_dt".format(cam.uid),
-                }
-            )
+            if exposure_correction_on:
+                opt_setting.append(
+                    {
+                        "params": [cam.exposure_a],
+                        "lr": config.lr_exposure,
+                        "name": "cam_{}_exposure_a".format(cam.uid),
+                    }
+                )
+                opt_setting.append(
+                    {
+                        "params": [cam.exposure_b],
+                        "lr": config.lr_exposure,
+                        "name": "cam_{}_exposure_b".format(cam.uid),
+                    }
+                )
+                opt_setting.append(
+                    {
+                        "params": [cam.exposure_mat],
+                        "lr": config.lr_exposure,
+                        "name": "cam_{}_exposure_a".format(cam.uid),
+                    }
+                )
+                opt_setting.append(
+                    {
+                        "params": [cam.exposure_offset],
+                        "lr": config.lr_exposure,
+                        "name": "cam_{}_exposure_b".format(cam.uid),
+                    }
+                )
+            if cam_pose_correction_on:
+                opt_setting.append(
+                    {
+                        "params": [cam.cam_rot_delta],
+                        "lr": config.lr_cam_dr,
+                        "name": "cam_{}_dr".format(cam.uid),
+                    }
+                )
+                opt_setting.append(
+                    {
+                        "params": [cam.cam_trans_delta],
+                        "lr": config.lr_cam_dt,
+                        "name": "cam_{}_dt".format(cam.uid),
+                    }
+                )
 
     weight_decay_feature = 0.0
 
