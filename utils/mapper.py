@@ -1538,7 +1538,7 @@ class Mapper:
                         # valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
                         invalid_opacity_loss = (sampled_guassians_alpha[~valid_grad_mask_no_shift].mean())
                         
-                        if not self.silence:
+                        if not self.silence and self.config.lambda_invalid_opacity > 0.0:
                             print(" Invalid part opacity loss:", invalid_opacity_loss.item())
 
                         invalid_opacity_loss *= self.config.lambda_invalid_opacity

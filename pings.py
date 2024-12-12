@@ -337,8 +337,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # gaussian splatting mapping (fitting)
         if config.gs_on: # only when color available
-            mapper.update_cam_pool(frame_id)
             if dataset.cur_cam_img is not None and not neural_points.is_empty(): # when there are new imgs, do training
+                mapper.update_cam_pool(frame_id)
                 mapper.joint_gsdf_mapping(config.gs_iters) # only when sdf field is learned well 
             
         # TODO: check its time consuming, can be done once per x frames 
@@ -367,7 +367,7 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
         # V: Mesh reconstruction and visualization
 
-        if valid_lidar_frame_flag or dataset.cur_cam_img is not None:
+        if valid_lidar_frame_flag or dataset.cur_cam_img is not None: # lidar or cameras are avilable
 
             cur_mesh = None
             cur_sdf_slice = None
