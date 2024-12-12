@@ -1976,7 +1976,7 @@ class Mapper:
                         if not self.config.gs_eval_cam_refine_on:
                             break
 
-                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.5) # now just l1 loss
+                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.0) # now just l1 loss
 
                         if self.config.lambda_ssim > 0.0:
                             ssim_value = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)) # have to be 4 dim

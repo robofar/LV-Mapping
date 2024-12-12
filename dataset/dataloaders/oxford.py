@@ -334,7 +334,7 @@ def tran_quat_to_mat(trans, quat_rot):
 
     return tran_mat
 
-def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.01):
+def associate_sensor_to_pose(sensor_ts, pose_ts, max_dt=0.025):
     # for each lidar ts, find the closest pose
     # pose_ts_associated = []
 
