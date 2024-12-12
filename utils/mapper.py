@@ -1670,7 +1670,8 @@ class Mapper:
                 with torch.no_grad():
                     opt.step()
                     # update cam pose
-                    update_pose(viewpoint_cam)
+                    if self.config.cam_pose_train_on:
+                        update_pose(viewpoint_cam)
 
                 # opt.step()
                 opt.zero_grad(set_to_none=True) 

@@ -327,6 +327,10 @@ class SLAM_GUI:
         self.staybehind_chbox.checked = True
         chbox_tile.add_child(self.staybehind_chbox)
 
+        self.still_chbox = gui.Checkbox("Still")
+        self.still_chbox.checked = False
+        chbox_tile.add_child(self.still_chbox)
+
         self.fly_chbox = gui.Checkbox("Fly")
         # NOTE: in fly mode, you can control like a game using WASD,Q,Z,E,R, up, right, left, down
         self.fly_chbox.checked = False
@@ -829,13 +833,14 @@ class SLAM_GUI:
         model_idx = self.model_dict[new_val]
         self.global_map.active_map_idx = model_idx
 
-    def _on_combo_kf(self, new_val, new_idx):
-        frustum = self.frustum_dict[new_val]
-        viewpoint = frustum.view_dir
+    # # not used now
+    # def _on_combo_kf(self, new_val, new_idx):
+    #     frustum = self.frustum_dict[new_val]
+    #     viewpoint = frustum.view_dir
 
-        # look_at(center, eye, up): sets the camera view so that the camera is located at ‘eye’, pointing towards ‘center’, and oriented so that the up vector is ‘up’
-        # both center, eye, up are 3x1 np arrays
-        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+    #     # look_at(center, eye, up): sets the camera view so that the camera is located at ‘eye’, pointing towards ‘center’, and oriented so that the up vector is ‘up’
+    #     # both center, eye, up are 3x1 np arrays
+    #     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
     def _on_combo_cams(self, new_val, new_idx):
         frustum = self.frustum_dict[new_val]
@@ -844,7 +849,8 @@ class SLAM_GUI:
                     if self.staybehind_chbox.checked
                     else frustum.view_dir
                 )
-        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+        if not self.still_chbox.checked:
+            self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
         self.update_img_show(new_val)
 
@@ -855,7 +861,8 @@ class SLAM_GUI:
                     if self.staybehind_chbox.checked
                     else frustum.view_dir
                 )
-        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+        if not self.still_chbox.checked:
+            self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
         self.update_img_show(new_val, from_cur_frame=False)
 
@@ -1295,6 +1302,7 @@ class SLAM_GUI:
                     frustum = self.add_camera(
                         gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
                     )
+                    # print("Cam added")
                 if self.followcam_chbox.checked:
                     selected_cam = self.combo_cams.selected_text
                     selected_frustum = self.frustum_dict[selected_cam]
@@ -1303,10 +1311,11 @@ class SLAM_GUI:
                         if self.staybehind_chbox.checked
                         else selected_frustum.view_dir
                     )
-                    self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
+                    if not self.still_chbox.checked:
+                        self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
                     # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
-                    self.update_img_show(selected_cam)            
+                    self.update_img_show(selected_cam)                           
 
             if gaussian_packet.keyframes is not None: # as Camera class
                 
