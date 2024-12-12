@@ -671,22 +671,22 @@ class SLAM_GUI:
         self.rendered_depth_widget = gui.ImageWidget()
         self.rendered_depth_error_widget = gui.ImageWidget()
 
-        view_info_tile = gui.Horiz(1.5 * em, gui.Margins(margin))
+        # view_info_tile = gui.Horiz(1.0 * em, gui.Margins(margin))
         # view_info_tile.add_stretch()
 
         self.cur_view_info = gui.Label("Camera: ")
-        view_info_tile.add_child(self.cur_view_info)
-
-        self.cur_exposure_info = gui.Label("Exposure: ")
-        view_info_tile.add_child(self.cur_exposure_info)
+        tab_input.add_child(self.cur_view_info)
 
         self.cur_view_psnr_info = gui.Label("PSNR: ")
-        view_info_tile.add_child(self.cur_view_psnr_info)
+        tab_input.add_child(self.cur_view_psnr_info)
 
         self.cur_view_depthl1_info = gui.Label("Depth L1 (m): ")
-        view_info_tile.add_child(self.cur_view_depthl1_info)
+        tab_input.add_child(self.cur_view_depthl1_info)
+
+        self.cur_exposure_info = gui.Label("Exposure: ")
+        tab_input.add_child(self.cur_exposure_info)
     
-        tab_input.add_child(view_info_tile)
+        # tab_input.add_child(view_info_tile)
 
         tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
 

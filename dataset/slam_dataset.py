@@ -1638,6 +1638,10 @@ class SLAMDataset():
     # point-wise timestamp is now only used for motion undistortion (deskewing)
     def get_point_ts(self, point_ts=None): 
         # point_ts is already the normalized timestamp in a scan frame # [0,1]
+        
+        if self.cur_point_cloud_torch is None:
+            return
+
         if self.config.deskew:
             if point_ts is not None and min(point_ts) < 1.0: # not all 1
                 # if not self.silence:

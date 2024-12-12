@@ -67,11 +67,13 @@ parser.add_argument('--recon_3d', '-r', action='store_true', default=False, help
 parser.add_argument('--recon_3d_tsdf', '-t', action='store_true', default=False, help='Reconstruct 3D using TSDF fusion by rendering the PINGS map')
 parser.add_argument('--show_mesh', '-m', action='store_true', default=False, help='Show the PINGS mesh')
 parser.add_argument('--show_global', '-g', action='store_true', default=False, help='Show the global map instead of the local map (might cost a lot of memory and not very fast during inferencing)')
+parser.add_argument('--cam_refine_on', action='store_true', default=False, help='When doing evaluation using the test views, we would also refine the camera exposure and camera poses')
 parser.add_argument('--neural_point_color_mode', type=int, default=0, help='0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability')
 parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes resolution (in meter) for mesh reconstruction')
 parser.add_argument('--mesh_min_nn_k', type=int, default=-1, help='SDF querying min neighbor neural point count for mesh reconstruction')
 parser.add_argument('--sorrounding_map_r_m', type=float, default=-1, help='Radius of the sorrounding map in meter for far-away stuff rendering')
 parser.add_argument('--tsdf_fusion_max_range_m', type=float, default=-1, help='Maximum range for doing the TSDF fusion')
+
 args, unknown = parser.parse_known_args()
 
 def inspect_pings_map():
@@ -129,6 +131,11 @@ def inspect_pings_map():
 
     run_path = setup_experiment(config, sys.argv, debug_mode=True)
     config.use_dataloader = True
+
+    if args.eval_seq and args.cam_refine_on:
+        config.gs_eval_cam_refine_on = True
+        config.learning_rate_cam_dr = 3e-3
+        config.learning_rate_cam_dr = 1e-3
 
     mp.set_start_method("spawn") # don't forget this
     

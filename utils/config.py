@@ -262,7 +262,7 @@ class Config:
         # gs keyframes
         self.gs_keyframe_interval: int = 1
         self.gs_keyframe_accu_travel_dist: float = 0.1 # unit: m
-        self.gs_keyframe_accu_travel_degree: float = 10.0 # unit: degree
+        self.gs_keyframe_accu_travel_degree: float = 30.0 # unit: degree
 
         self.lastest_train_prob: float = 0.2 # FIXME the probabilibilty of sampling a cam from the lastest observation for training # TODO
         self.short_term_train_prob: float = 0.5 # the probabilibilty of sampling a cam from short-term memory for training
