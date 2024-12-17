@@ -1980,7 +1980,7 @@ class Mapper:
                         if not self.config.gs_eval_cam_refine_on:
                             break
 
-                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.5) # now just l1 loss
+                        loss_rgb_robust = tukey_loss(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, c=0.0) # now just l1 loss
 
                         if self.config.lambda_ssim > 0.0:
                             ssim_value = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)) # have to be 4 dim
@@ -2064,6 +2064,11 @@ class Mapper:
                                                                                     depth_scale=1.0, 
                                                                                     depth_trunc=eval_depth_max, 
                                                                                     convert_rgb_to_intensity=False)
+
+                            # use updated pose instead (TODO)
+
+                            # T_cw = cur_view_cam.world_view_transform.T
+                            # T_cl = T_cw @ T_wl
 
                             cur_cam_rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
                                                                 cur_rgbd_o3d, 

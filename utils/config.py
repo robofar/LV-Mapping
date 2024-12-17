@@ -655,6 +655,11 @@ class Config:
             self.lr_color = float(config_args["optimizer"].get("learning_rate_color", self.lr_color))
             # for mlps
             self.lr_mlp_base = float(config_args["optimizer"].get("learning_rate_mlp_base", self.lr_mlp_base))
+            self.lr_mlp_gs_xyz = float(config_args["optimizer"].get("learning_rate_mlp_gs_xyz", self.lr_mlp_gs_xyz))  
+            self.lr_mlp_gs_alpha = float(config_args["optimizer"].get("learning_rate_mlp_gs_alpha", self.lr_mlp_gs_alpha))
+            self.lr_mlp_gs_scale = float(config_args["optimizer"].get("learning_rate_mlp_gs_scale", self.lr_mlp_gs_scale))
+            self.lr_mlp_gs_rot = float(config_args["optimizer"].get("learning_rate_mlp_gs_rot", self.lr_mlp_gs_rot))
+            self.lr_mlp_gs_color = float(config_args["optimizer"].get("learning_rate_mlp_gs_color", self.lr_mlp_gs_color))
             # for exposures
             self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
 
