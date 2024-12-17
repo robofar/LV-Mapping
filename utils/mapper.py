@@ -2065,6 +2065,11 @@ class Mapper:
                                                                                     depth_trunc=eval_depth_max, 
                                                                                     convert_rgb_to_intensity=False)
 
+                            # use updated pose instead (TODO)
+
+                            # T_cw = cur_view_cam.world_view_transform.T
+                            # T_cl = T_cw @ T_wl
+
                             cur_cam_rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
                                                                 cur_rgbd_o3d, 
                                                                 cur_intrinsic_o3d, 

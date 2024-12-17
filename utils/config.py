@@ -290,7 +290,7 @@ class Config:
         # disable backface rendering
         self.train_front_only: bool = True
 
-        self.min_visible_neural_point_ratio: float = 0.15 # only train when the visible local neural point in this frame is larger than this threshold
+        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
         
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights
@@ -655,6 +655,11 @@ class Config:
             self.lr_color = float(config_args["optimizer"].get("learning_rate_color", self.lr_color))
             # for mlps
             self.lr_mlp_base = float(config_args["optimizer"].get("learning_rate_mlp_base", self.lr_mlp_base))
+            self.lr_mlp_gs_xyz = float(config_args["optimizer"].get("learning_rate_mlp_gs_xyz", self.lr_mlp_gs_xyz))  
+            self.lr_mlp_gs_alpha = float(config_args["optimizer"].get("learning_rate_mlp_gs_alpha", self.lr_mlp_gs_alpha))
+            self.lr_mlp_gs_scale = float(config_args["optimizer"].get("learning_rate_mlp_gs_scale", self.lr_mlp_gs_scale))
+            self.lr_mlp_gs_rot = float(config_args["optimizer"].get("learning_rate_mlp_gs_rot", self.lr_mlp_gs_rot))
+            self.lr_mlp_gs_color = float(config_args["optimizer"].get("learning_rate_mlp_gs_color", self.lr_mlp_gs_color))
             # for exposures
             self.lr_exposure = float(config_args["optimizer"].get("learning_rate_exposure", self.lr_exposure))
 

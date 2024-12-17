@@ -294,7 +294,7 @@ def inspect_pings_map():
             poses_for_render, 
             cam_names, 
             recon_3d_on=args.recon_3d, 
-            recon_3d_tsdf_on=args.recon_3d, 
+            recon_3d_tsdf_on=False, 
             eval_on=args.eval_seq,
             video_save_base_path=video_folder_path, 
             mesh_save_base_path=mesh_folder_path,
