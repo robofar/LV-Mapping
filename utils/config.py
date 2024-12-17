@@ -290,7 +290,7 @@ class Config:
         # disable backface rendering
         self.train_front_only: bool = True
 
-        self.min_visible_neural_point_ratio: float = 0.15 # only train when the visible local neural point in this frame is larger than this threshold
+        self.min_visible_neural_point_ratio: float = 0.1 # only train when the visible local neural point in this frame is larger than this threshold
         
         self.inverse_depth_loss: bool = False # use inverse depth (disparity) L1 loss or not
         # losses weights

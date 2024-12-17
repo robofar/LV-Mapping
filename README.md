@@ -60,6 +60,8 @@ python pings.py ./config/lidar_slam/run_oxford_gs_raw.yaml oxford_raw -i ./data/
 Example
 ```
 python inspect_pings.py ./pings_experiments/small_loop_test_ipbcar_gs_longer_ipb_car__2024-12-10_23-54-59/ -f 2400
+
+python inspect_pings.py  ./pings_experiments/church_${exp_tag}_test_ipbcar_gs*/ -i ./data/ipb_car/2024-04-30_cheap_car/extracted_2/  --range 2660 2720 1 -e --vis_off
 ```
 
 ### For more details, please refer to NOTE.md

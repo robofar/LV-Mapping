@@ -1203,10 +1203,10 @@ class SLAM_GUI:
         if gaussian_packet is None:
             return
 
-        if gaussian_packet.frame_id != self.cur_frame_id:
-            
+        # if gaussian_packet.frame_id != self.cur_frame_id:
             # only update with new data (once)
 
+        if True:    
             self.cur_frame_id = gaussian_packet.frame_id
 
             self.gaussian_cur = gaussian_packet
@@ -1315,6 +1315,7 @@ class SLAM_GUI:
                         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
                     # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
+                    # print("Update now")
                     self.update_img_show(selected_cam)                           
 
             if gaussian_packet.keyframes is not None: # as Camera class

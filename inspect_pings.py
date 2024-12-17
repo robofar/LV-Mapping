@@ -12,6 +12,7 @@ import yaml
 import csv
 import cv2
 from datetime import datetime
+from time import sleep
 
 from typing import Dict, List
 
@@ -294,7 +295,7 @@ def inspect_pings_map():
             poses_for_render, 
             cam_names, 
             recon_3d_on=args.recon_3d, 
-            recon_3d_tsdf_on=args.recon_3d, 
+            recon_3d_tsdf_on=False, 
             eval_on=args.eval_seq,
             video_save_base_path=video_folder_path, 
             mesh_save_base_path=mesh_folder_path,
@@ -559,7 +560,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 # you need to also load the camera exposure coefficients here
                 cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
                 cur_view_cam.set_pose(T_w_c)
-
+        
                 gt_rgb_image = cur_view_cam.rgb_image_list[eval_down_rate]
 
                 if cur_view_cam.depth_on:
@@ -621,6 +622,18 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                         converged = update_pose(cur_view_cam)
 
                     opt.zero_grad(set_to_none=True) 
+
+                    # if vis_on:
+                    #     sleep(0.1)
+                    #     if q_main2vis is not None:
+                    #         # add the eval frame to vis
+                    #         packet_to_vis= VisPacket(frame_id=frame_id,
+                    #             current_frames=dataset.cur_cam_img, 
+                    #             img_down_rate=eval_down_rate)
+
+                    #         packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
+
+                    #         q_main2vis.put(packet_to_vis)
 
                     if converged:
                         break     
