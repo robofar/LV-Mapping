@@ -521,6 +521,38 @@ def spawn_gaussians(neural_points_data: Dict,
                     unit_scale_ratio: float = 0.2, # 0.5
                     scale_filter_ratio: float = 0.2,
                     ): 
+    
+    """
+    Spawn gaussians from neural points
+    Input:
+        neural_points_data: Dict, containing the neural points data
+        decoders: Dict, containing the decoders
+        visible_mask: torch.tensor, the visible mask
+        cam_origin: torch.tensor, the camera origin
+        dist_concat_on: bool, whether to concatenate the distance to the geo feature
+        view_concat_on: bool, whether to concatenate the view direction to the geo feature
+        alpha_filter_on: bool, whether to filter the gaussians by alpha, only for sorrounding gaussians
+        scale_filter_on: bool, whether to filter the gaussians by scale, only for sorrounding gaussians
+        z_far: float, the far plane distance
+        dist_adaptive_scale: bool, whether to adapt the scale based on the distance
+        learn_color_residual: bool, whether to learn the color residual
+        view_direction_xy_only: bool, whether to only use the horizontal view direction
+        gs_type: str, the type of gaussian splatting, selected from ["gaussian_surfel", "2d_gs", "3d_gs"]
+        displacement_range_ratio: float, the ratio of the displacement range of the spawned gaussians, 
+            unit is the neural point resolution
+        max_scale_ratio: float, the maximum scale ratio of the spawned gaussians, 
+            unit is the neural point resolution
+        unit_scale_ratio: float, the unit scale ratio of the spawned gaussians, 
+            unit is the neural point resolution
+        scale_filter_ratio: float, the scale filter ratio of the spawned gaussians, 
+            unit is the neural point resolution
+    
+    Output:
+        spawn_results: Dict, containing the spawned gaussians and some meta information
+
+    Note:
+        This function is used for both training and inference
+    """
 
     neural_point_position = neural_points_data["position"]
     neural_point_orientation = neural_points_data["orientation"] # as quat
@@ -623,7 +655,7 @@ def spawn_gaussians(neural_points_data: Dict,
     xyz_displacement = xyz_displacement.view(local_gaussian_count, -1) # NK, 3
     
     xyz_displacement = apply_quaternion_rotation(neural_point_quat, xyz_displacement) # NK, 3            
-    ## passive rotation (axis rotation w.r.t point) # TODO: is this correct
+    ## passive rotation (axis rotation w.r.t point) # TODO: is this correct # check
 
     neural_point_xyz = neural_point_position.repeat(1, gaussian_count_per_point).view(local_gaussian_count, -1) # NK, 3
 
