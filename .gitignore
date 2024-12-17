@@ -167,7 +167,7 @@ pings_experiments
 pings_experiments/
 .vscode/
 
-.json
+*.json
 # NOTE.md
 
 tmp*/
