@@ -3,7 +3,6 @@
 # @author    Yue Pan     [yue.pan@igg.uni-bonn.de]
 # Copyright (c) 2024 Yue Pan, all rights reserved
 
-import argparse
 import csv
 import os
 import sys
@@ -17,8 +16,12 @@ import wandb
 from rich import print
 from tqdm import tqdm
 
+import dtyper as typer
+from typing import Optional, Tuple
+
 from dataset.dataset_indexing import set_dataset_path
 from dataset.slam_dataset import SLAMDataset
+from dataset.dataloaders import available_dataloaders
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
 from utils.config import Config
@@ -47,74 +50,85 @@ from gs_gui import slam_gui
 from gs_gui.gui_utils import VisPacket, ParamsGUI
 
 '''
-    📍PIN-SLAM: LiDAR SLAM Using a Point-Based Implicit Neural Representation for Achieving Global Map Consistency
+    📍PINGS
      Y. Pan et al. from IPB
 '''
 
-# or maybe we directly add the inspection function here?
+app = typer.Typer(add_completion=False, rich_markup_mode="rich", context_settings={"help_option_names": ["-h", "--help"]})
 
-parser = argparse.ArgumentParser()
-parser.add_argument('config_path', type=str, nargs='?', default='config/lidar_slam/run.yaml', help='[Optional] Path to *.yaml config file, if not set, default config would be used')
-parser.add_argument('dataset_name', type=str, nargs='?', help='[Optional] Name of a specific dataset, example: kitti, mulran, or rosbag (when -d is set)')
-parser.add_argument('sequence_name', type=str, nargs='?', help='[Optional] Name of a specific data sequence or the rostopic for point cloud (when -d is set)')
-parser.add_argument('--seed', type=int, default=42, help='Set the random seed (default 42)')
-parser.add_argument('--input_path', '-i', type=str, default=None, help='Path to the point cloud input directory (this will override the pc_path in config file)')
-parser.add_argument('--output_path', '-o', type=str, default=None, help='Path to the result output directory (this will override the output_root in config file)')
-parser.add_argument('--range', nargs=3, type=int, metavar=('START', 'END', 'STEP'), default=None, help='Specify the start, end and step of the processed frame, for example: --range 10 1000 1')
-parser.add_argument('--data_loader_on', '-d', action='store_true', default=True, help='Use specific data loader (you can use the rosbag, pcap, mcap dataloaders and some typical supported datasets)')
-parser.add_argument('--visualize', '-v', action='store_true', help='Turn on the GS visualizer, note that this would make the SLAM processing slower')
-parser.add_argument('--cpu_only', '-c', action='store_true', help='Run only on CPU')
-parser.add_argument('--log_on', '-l', action='store_true', help='Turn on the logs printing')
-parser.add_argument('--wandb_on', '-w', action='store_true', help='Turn on the weight & bias logging')
-parser.add_argument('--save_map', '-s', action='store_true', help='Save the PIN map after SLAM')
-parser.add_argument('--save_mesh', '-m', action='store_true', help='Save the reconstructed mesh after SLAM')
-parser.add_argument('--save_merged_pc', '-p', action='store_true', help='Save the merged point cloud after SLAM')
-parser.add_argument('--gs_on', '-g', action='store_true', help='Turn on GS')
-parser.add_argument('--deskew', action='store_true', help='Try to deskew the LiDAR scans')
-parser.add_argument('--tag', type=str, default=None, help='A tag for this experiment')
+_available_dl_help = available_dataloaders()
 
-args, unknown = parser.parse_known_args()
+docstring = f"""
+:round_pushpin: PINGS: joint distance field and radiance field mapping using a unified neural representation\n
 
-def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=None):
+[bold green]Examples: [/bold green]
+
+# Run on IPB Car data sequence
+$ python3 pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vmsg
+
+# Run on Oxford Spires dataset
+$ python3 pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-Spires-Dataset/2024-03-12-keble-college-04/ -vmsg
+"""
+
+@app.command(help=docstring)
+def run_pin_slam(
+    config_path: str = typer.Argument('config/lidar_slam/run.yaml', help='Path to *.yaml config file'),
+    dataset_name: Optional[str] = typer.Argument(None, help='Name of a specific dataset, example: kitti, mulran, or rosbag (when data_loader_on is set)'),
+    sequence_name: Optional[str] = typer.Argument(None, help='Name of a specific data sequence or the rostopic for point cloud (when data_loader_on is set)'),
+    seed: int = typer.Option(42, help='Set the random seed'),
+    input_path: Optional[str] = typer.Option(None, '--input-path', '-i', help='Path to the point cloud input directory (overrides pc_path in config file)'),
+    output_path: Optional[str] = typer.Option(None, '--output-path', '-o', help='Path to the result output directory (overrides output_root in config file)'),
+    frame_range: Optional[Tuple[int, int, int]] = typer.Option(None, '--range', help='Specify the start, end and step of the processed frame, e.g. "10 1000 1"'),
+    data_loader_on: bool = typer.Option(True, '--data-loader-on', '-d', help='Use specific data loader (rosbag, pcap, mcap dataloaders and typical supported datasets)'),
+    visualize: bool = typer.Option(False, '--visualize', '-v', help='Turn on the GS visualizer (could make the SLAM processing slower)'),
+    cpu_only: bool = typer.Option(False, '--cpu-only', '-c', help='Run only on CPU'),
+    log_on: bool = typer.Option(False, '--log-on', '-l', help='Turn on the logs printing'),
+    wandb_on: bool = typer.Option(False, '--wandb-on', '-w', help='Turn on the weight & bias logging'),
+    save_map: bool = typer.Option(False, '--save-map', '-s', help='Save the PIN map after SLAM'),
+    save_mesh: bool = typer.Option(False, '--save-mesh', '-m', help='Save the reconstructed mesh after SLAM'),
+    save_merged_pc: bool = typer.Option(False, '--save-merged-pc', '-p', help='Save the merged point cloud after SLAM'),
+    gs_on: bool = typer.Option(False, '--gs-on', '-g', help='Turn on GS'),
+    deskew: bool = typer.Option(False, '--deskew', help='Try to deskew the LiDAR scans'),
+    tag: Optional[str] = typer.Option(None, '--tag', help='A tag for this experiment')
+) -> None:
 
     config = Config()
-    if config_path is not None: # use as a function
-        config.load(config_path)
-        if dataset_name is not None:
-            set_dataset_path(config, dataset_name, sequence_name)
-        if seed is not None:
-            config.seed = seed
-        argv = ['pin_slam.py', config_path, dataset_name, sequence_name, str(seed)]
-        run_path = setup_experiment(config, argv)
-    else: # from args
-        argv = sys.argv
-        config.load(args.config_path)
-        config.use_dataloader = args.data_loader_on
-        config.seed = args.seed
-        config.silence = not args.log_on
-        config.wandb_vis_on = args.wandb_on
-        config.gs_vis_on = args.visualize
-        config.o3d_vis_on = args.visualize # TODO (then mesh recon is also disabled when visualization off)
-        config.gs_on = args.gs_on # ADDED
-        config.save_map = args.save_map
-        config.save_mesh = args.save_mesh
-        config.save_merged_pc = args.save_merged_pc
-        if not config.deskew and args.deskew: # set to True if not set in the config file but set upon running
-            config.deskew = True
-        if args.range is not None:
-            config.begin_frame, config.end_frame, config.step_frame = args.range
-        if args.cpu_only:
-            config.device = 'cpu'
-        if args.input_path is not None:
-            config.pc_path = args.input_path
-        if args.output_path is not None:
-            config.output_root = args.output_path
-        if args.dataset_name is not None: # specific dataset [optional]
-            set_dataset_path(config, args.dataset_name, args.sequence_name)
-        if args.tag is not None:
-            config.name = "{}_{}".format(args.tag, config.name)  
-        run_path = setup_experiment(config, argv)
-        print("[bold green]PIN-SLAM starts[/bold green]","📍" )
+    config.load(config_path)
+    config.use_dataloader = data_loader_on
+    config.seed = seed
+    config.silence = not log_on
+    config.wandb_vis_on = wandb_on
+    config.gs_on = gs_on
+    config.gs_vis_on = visualize
+    config.o3d_vis_on = visualize
+    config.save_map = save_map
+    config.save_mesh = save_mesh
+    config.save_merged_pc = save_merged_pc
+
+    if not config.deskew and deskew:
+        config.deskew = True
+    
+    if frame_range:
+        config.begin_frame, config.end_frame, config.step_frame = frame_range
+        
+    if cpu_only:
+        config.device = 'cpu'
+        
+    if input_path:
+        config.pc_path = input_path
+        
+    if output_path:
+        config.output_root = output_path
+        
+    if dataset_name:
+        set_dataset_path(config, dataset_name, sequence_name)
+
+    if tag:
+        config.name = "{}_{}".format(tag, config.name)  
+
+    argv = sys.argv
+    run_path = setup_experiment(config, argv)
+    print("[bold green]PIN-SLAM starts[/bold green]")
 
     mp.set_start_method("spawn")
 
@@ -552,8 +566,8 @@ def run_pin_slam(config_path=None, dataset_name=None, sequence_name=None, seed=N
 
 
 
-def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc,
-                        mapper, tracker, o3d_vis, frame_id):
+def detect_correct_loop(config, pgm: PoseGraphManager, dataset: SLAMDataset, neural_points: NeuralPoints, lcd_npmc: NeuralPointMapContextManager,
+                        mapper: Mapper, tracker: Tracker, o3d_vis: MapVisualizer, frame_id: int):
 
     if config.global_loop_on:
         if config.local_map_context and frame_id >= config.local_map_context_latency: # local map context
@@ -570,8 +584,7 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc,
     pgm.init_poses = dataset.pgo_poses[:frame_id+1]
     if frame_id > 0:
         travel_dist = dataset.travel_dist[:frame_id+1]
-        cur_edge_cov = cur_odom_cov if config.use_reg_cov_mat else None
-        pgm.add_odometry_factor(frame_id, frame_id-1, dataset.last_odom_tran, cov = cur_edge_cov) # T_p<-c
+        pgm.add_odometry_factor(frame_id, frame_id-1, dataset.last_odom_tran) # T_p<-c
         pgm.estimate_drift(travel_dist, frame_id, correct_ratio=0.01) # estimate the current drift
         if config.pgo_with_pose_prior: # add pose prior
             pgm.add_pose_prior(frame_id, dataset.pgo_poses[frame_id])
@@ -605,8 +618,7 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc,
             if reg_valid_flag: # refine succeed
                 pose_refine_np = pose_refine_torch.detach().cpu().numpy()
                 loop_transform = np.linalg.inv(dataset.pgo_poses[loop_id]) @ pose_refine_np # T_l<-c = T_l<-w @ T_w<-c # after refinement
-                cur_edge_cov = loop_cov_mat if config.use_reg_cov_mat else None
-                reg_valid_flag = pgm.add_loop_factor(frame_id, loop_id, loop_transform, cov = cur_edge_cov)
+                reg_valid_flag = pgm.add_loop_factor(frame_id, loop_id, loop_transform)
             if reg_valid_flag:
                 if not config.silence:
                     print("[bold green]Refine loop transformation succeed [/bold green]")
@@ -639,5 +651,4 @@ def detect_correct_loop(config, pgm, dataset, neural_points, lcd_npmc,
 
 
 if __name__ == "__main__":
-
-    run_pin_slam()
+    app()

@@ -316,6 +316,18 @@ new_rots = torch.nan_to_num(new_rots, 0, 0)
 export CUDA_VISIBLE_DEVICES=2
 ```
 
+
+## Offline training using gsplat
+
+```
+cd  gsplat/gsplat
+python ./examples/simple_trainer.py mcmc 
+
+# check the usage
+python ./examples/simple_trainer.py mcmc --help 
+```
+
+
 ## GS Visualizer
 
 [Three.js Viewer](https://projects.markkellogg.org/threejs/demo_gaussian_splats_3d.php)
