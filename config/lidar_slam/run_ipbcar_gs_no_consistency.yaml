@@ -2,14 +2,16 @@ setting:
   name: "test_ipbcar_gs_without_consistency"
   output_root: "./pings_experiments"
   deskew: True
+  deskew_ref_ratio: 0.33
   color_channel: 3
   color_map_on: True
 process:
   min_range_m: 1.5
   max_range_m: 60.0
   vox_down_m: 0.08
+  dynamic_sdf_ratio_thre: 0.6
 sampler:
-  surface_sample_range_m: 0.4
+  surface_sample_range_m: 0.3
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
@@ -23,19 +25,18 @@ neuralpoints:
 decoder:
   freeze_after_frame: 30 # 30
   gs_mlp_level: 1 # 2?, not much improvement
-  gs_mlp_hidden_dim: 128
+  gs_mlp_hidden_dim: 128 # 128
 loss:
-  sigma_sigmoid_m: 0.05
+  sigma_sigmoid_m: 0.05 # the smaller, we care more about the part very close to the surface
   weight_color: 0.2
   # loss_weight_on: True
   # dist_weight_scale: 0.8
   ekional_loss_on: True
   numerical_grad: False # FIXME
-  weight_e: 0.5 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO
+  weight_e: 0.1 # 1.0 # not much differences # better 1.0 ? 0.5 # TODO # try 0.1
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 2e7 # this is often the part that takes a lot of memory # better to increase this
-  pool_filter_freq: 5
+  pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
 # now test a mapping mode
 # tracker:
 #   source_vox_down_m: 0.6
@@ -46,43 +47,48 @@ continual:
 #   virtual_side_count: 6
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
-  exposure_correction_on: True # verified to be better than False
+  exposure_correction_on: True # verified to be better than False # try false
+  affine_exposure_correction: False
+  cam_pose_train_on: True
+  eval_cam_refine_on: True
   view_concat_on: True
-  dist_concat_on: False # not much improvement for test views ( abit improvement at train views)
-  n_gaussian: 8 # not worth to increase it, a little improvement
+  dist_concat_on: True
+  n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 100 # 50 # 100
-  gaussian_bs_ratio: 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 60 # TODO
   long_term_img_pool_size: 120
   long_term_train_down: False
-  short_term_train_prob: 0.6
+  short_term_train_prob: 0.5 # 0.5 is best
   gs_down_rate: 1
   gs_vis_down_rate: 1
-  gs_keyframe_accu_dist: 1.0 # 1.0 # unit: m
-  invalid_check_on: False # do not turn on this
+  gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  # inverse_depth_loss: True
-  # lambda_depth: 1.0 # 10.0
   lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
-  # lambda_invalid_opacity: 1e-3 # TODO
-  lambda_area: 2e-4 # 1e-3 # test turning on this (TODO)
+  # lambda_invalid_opacity: 2e-3 # TODO
+  lambda_area: 1e-3 # 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
-  # lambda_normal_depth: 0.01 #
-  # lambda_sdf_cons: 0.05
-  # lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss
+  # lambda_normal_depth: 0.01 # # better to be off
+  # lambda_normal_smooth: 0.01
+  consist_shift_count: 0 # not for ipb car set, on for oxford
+  lambda_sdf_cons: 0 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0 # the weight do not need to be very large # TODO
   lambda_sdf: 0.5 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
-  learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
-  learning_rate_color: 0.002 # neural point color feature lr
+  learning_rate_geo: 2e-3 # 0.01 (not good) # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
+  learning_rate_color: 2e-3 # 0.01 (not good) # neural point color feature lr # 0.2
   learning_rate_exposure: 1e-3 # or 1e-3
+  learning_rate_cam_dr: 3e-3
+  learning_rate_cam_dt: 1e-3
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
+  # rendered_pc_eval_on: True
   sensor_cad_path: ./cad/ipb_car_cheap.ply
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
+  mesh_min_nn: 15
   visualizer_split_width_ratio: 0.6

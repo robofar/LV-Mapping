@@ -52,6 +52,7 @@ gs:
   exposure_correction_on: True # verified to be better than False
   affine_exposure_correction: False
   view_concat_on: True
+  learn_color_residual: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
