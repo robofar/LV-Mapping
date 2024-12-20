@@ -379,16 +379,20 @@ class Mapper:
         T3_1 = get_time()
 
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
-            pool_relatve = self.global_coord_pool - frame_origin_torch
-            # print(pool_relatve.shape)
-            if self.config.range_filter_2d:
-                pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
-            else:
-                pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
-                
-            dist_mask = pool_relative_dist < self.config.window_radius
 
-            filter_mask = dist_mask
+            if self.config.pool_filter_with_dist:
+                pool_relatve = self.global_coord_pool - frame_origin_torch
+                # print(pool_relatve.shape)
+                if self.config.range_filter_2d:
+                    pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
+                else:
+                    pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+                
+                dist_mask = pool_relative_dist < self.config.window_radius # keep inside
+
+                filter_mask = dist_mask
+            else:
+                filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
 
             true_indices = torch.nonzero(filter_mask).squeeze()
 
@@ -1229,6 +1233,11 @@ class Mapper:
                 gaussian_color = render_pkg["gaussian_color"]
                 gaussian_free_mask = render_pkg["gaussian_free_mask"]
                 visible_neural_point_ratio = render_pkg["visible_neural_point_ratio"]
+
+                if "contributions" in list(render_pkg.keys()):
+                    gaussian_contributions = render_pkg["contributions"]
+                else:
+                    gaussian_contributions = None
 
                 # print(" Visible neural point ratio: {:.2f}".format(visible_neural_point_ratio))
 
