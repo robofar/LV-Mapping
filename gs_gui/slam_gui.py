@@ -402,17 +402,12 @@ class SLAM_GUI:
         # self.gs_chbox.set_on_checked(self._on_gs_chbox)
         chbox_tile_3dobj.add_child(self.gs_chbox)
 
-        self.backface_chbox = gui.Checkbox("Back")
-        self.backface_chbox.checked = False
-        # self.backface_chbox.set_on_checked(self._on_backface_chbox)
-        chbox_tile_3dobj.add_child(self.backface_chbox)
-
         self.cameras_chbox = gui.Checkbox("Cameras")
         self.cameras_chbox.checked = True
         self.cameras_chbox.set_on_checked(self._on_cameras_chbox)
         chbox_tile_3dobj.add_child(self.cameras_chbox)
 
-        self.keyframe_chbox = gui.Checkbox("Train Cams")
+        self.keyframe_chbox = gui.Checkbox("Train Cameras")
         self.keyframe_chbox.checked = True
         self.keyframe_chbox.set_on_checked(self._on_keyframes_chbox)
         chbox_tile_3dobj.add_child(self.keyframe_chbox)
@@ -577,6 +572,11 @@ class SLAM_GUI:
         # self.time_shader_chbox = gui.Checkbox("Time Shader")
         # self.time_shader_chbox.checked = False
         # chbox_tile_gsrender_2.add_child(self.time_shader_chbox)
+
+        self.backface_chbox = gui.Checkbox("Back")
+        self.backface_chbox.checked = False
+        # self.backface_chbox.set_on_checked(self._on_backface_chbox)
+        chbox_tile_gsrender_2.add_child(self.backface_chbox)
 
         self.elliopsoid_2d_chbox = gui.Checkbox("Surfel Mode")
         if self.config.gs_type == "3d_gs":
