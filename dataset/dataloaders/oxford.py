@@ -223,11 +223,6 @@ class OxfordDataset:
                 quat_rot_c_l = np.array([T_c_l_t_q[6], T_c_l_t_q[3], T_c_l_t_q[4], T_c_l_t_q[5]]) 
                 T_c_l_mat = tran_quat_to_mat(t_c_l, quat_rot_c_l)
 
-                # rotate around z axis by 180 degree
-                # flip_mat = np.eye(4)
-                # flip_mat[0,0] = flip_mat[1,1] = -1
-                # T_c_l_mat = T_c_l_mat @ flip_mat
-
                 self.T_c_l_mats[cam_name] = T_c_l_mat
 
                 self.cam_widths[cam_name] = int(cur_camera_calib["width"])
