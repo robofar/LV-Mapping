@@ -25,6 +25,9 @@ from rich import print
 import vdbfusion
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
+import typer
+from typing import Optional, Tuple
+
 from dataset.slam_dataset import SLAMDataset, read_kitti_format_poses
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints

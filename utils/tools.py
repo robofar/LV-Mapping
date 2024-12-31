@@ -930,14 +930,16 @@ def voxel_down_sample_min_value_torch(
 # split a large point cloud into bounding box chunks
 def split_chunks(
     pc: o3d.geometry.PointCloud(),
-    aabb: o3d.geometry.AxisAlignedBoundingBox(),
+    aabb: o3d.geometry.AxisAlignedBoundingBox() = None,
     chunk_m: float = 100.0
 ):
 
     if not pc.has_points():
         return None
 
-    # aabb = pc.get_axis_aligned_bounding_box()
+    if aabb is None:
+        aabb = pc.get_axis_aligned_bounding_box()
+    
     chunk_aabb = []
 
     min_bound = aabb.get_min_bound()

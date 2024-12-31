@@ -84,6 +84,7 @@ class KITTIOdometryDataset:
             self.T_c_l_mats = {self.left_cam_name: calib_data['T_cam2_velo']}
             self.K_mats = {self.left_cam_name: calib_data["K_cam2"]}
             
+            
             H, W = 376, 1241
 
             # TODO; add for other loaders
@@ -91,16 +92,16 @@ class KITTIOdometryDataset:
             self.cam_heights = {self.left_cam_name: H}
 
             # FIXME: mono_depth rgbd version
-            self.intrinsic = o3d.camera.PinholeCameraIntrinsic()
-            self.intrinsic.set_intrinsics(
-                                        height=H,
-                                        width=W,
-                                        fx=calib_data["K_cam2"][0,0],
-                                        fy=calib_data["K_cam2"][1,1],
-                                        cx=calib_data["K_cam2"][0,2],
-                                        cy=calib_data["K_cam2"][1,2])
-
-            self.extrinsic = calib_data['T_cam2_velo'] # T_c_l
+            intrinsic = o3d.camera.PinholeCameraIntrinsic()
+            intrinsic.set_intrinsics(
+                                    height=H,
+                                    width=W,
+                                    fx=calib_data["K_cam2"][0,0],
+                                    fy=calib_data["K_cam2"][1,1],
+                                    cx=calib_data["K_cam2"][0,2],
+                                    cy=calib_data["K_cam2"][1,2])
+            
+            self.intrinsics_o3d = {self.left_cam_name: intrinsic}
             
             self.mono_depth_for_high_z: bool = True
 

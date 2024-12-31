@@ -796,6 +796,6 @@ class Config:
         self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
         self.local_map_radius = min(self.max_range*1.1, self.max_range+10.0) # for the local neural points
-        self.window_radius = max(self.local_map_radius-self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small
+        self.window_radius = max(self.local_map_radius+self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small
         self.sorrounding_map_radius = self.local_map_radius * 1.8
         self.vis_frame_axis_len = self.max_range / 50.0

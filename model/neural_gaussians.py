@@ -80,9 +80,10 @@ class NeuralPoints(nn.Module):
 
         self.temporal_local_map_on = True
 
-        if not self.config.track_on:
-            # print("Not using temporal local map")
-            self.temporal_local_map_on = False
+        # FIXME
+        # if not self.config.track_on:
+        #     # print("Not using temporal local map")
+        #     self.temporal_local_map_on = False
 
         self.diff_travel_dist_local = (
             self.config.local_map_radius * self.config.local_map_travel_dist_ratio
@@ -271,9 +272,9 @@ class NeuralPoints(nn.Module):
         points: torch.Tensor,
         colors: torch.Tensor,
         normals: torch.Tensor,
-        sensor_position: torch.Tensor,
-        sensor_orientation: torch.Tensor,
-        cur_ts,
+        sensor_position: torch.Tensor = None,
+        sensor_orientation: torch.Tensor = None,
+        cur_ts: int = 0,
         is_reliable: bool = True # if false, these neural points are initialized with the mono depth estimation, which is not accurate
     ):
         # update the neural point map using new observations
@@ -496,9 +497,10 @@ class NeuralPoints(nn.Module):
 
         self.valid_gs_mask = torch.cat((self.valid_gs_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0) # all True
 
-        self.reset_local_map(
-            sensor_position, sensor_orientation, cur_ts
-        )  # no need to recreate hash
+        if sensor_position is not None:
+            self.reset_local_map(
+                sensor_position, sensor_orientation, cur_ts
+            )  # no need to recreate hash
 
         return new_point_ratio
 
@@ -1631,6 +1633,7 @@ class NeuralPoints(nn.Module):
         neural_points_data["resolution"] = self.resolution
         neural_points_data["free_mask"] = self.local_free_gs_mask
         neural_points_data["valid_mask"] = self.local_valid_gs_mask
+        neural_points_data["stability"] = self.local_point_certainties
 
         sorrounding_neural_points_data = None
         if with_sorroundings:
@@ -1648,6 +1651,7 @@ class NeuralPoints(nn.Module):
             sorrounding_neural_points_data["resolution"] = self.resolution
             sorrounding_neural_points_data["free_mask"] = self.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
             sorrounding_neural_points_data["valid_mask"] = self.valid_gs_mask[sorrounding_mask_a]
+            sorrounding_neural_points_data["stability"] = self.point_certainties[sorrounding_mask_a]
 
         return neural_points_data, sorrounding_neural_points_data
 

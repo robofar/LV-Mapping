@@ -8,16 +8,16 @@ process:
   min_range_m: 1.0
   max_range_m: 60.0
   min_z_m: -10.0
-  vox_down_m: 0.06
+  vox_down_m: 0.08
   # adaptive_range_on: True
   dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.25
-  surface_sample_n: 5
+  surface_sample_n: 6
   free_sample_begin_ratio: 0.3
-  free_sample_end_dist_m: 0.5
+  free_sample_end_dist_m: 0.6
   free_front_sample_n: 2 
-  # free_behind_n: 1
+  free_behind_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.25
   search_alpha: 0.8
@@ -49,26 +49,30 @@ continual:
 #   pgo_freq_frame: 30
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
+  monodepth_on: False # True
   exposure_correction_on: True # verified to be better than False
   affine_exposure_correction: False
   view_concat_on: True
-  learn_color_residual: True
+  dist_concat_on: False
+  learn_color_residual: False
+  cam_pose_train_on: False
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 20 # 50 # 100
+  gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 40 # TODO
-  long_term_img_pool_size: 200
+  long_term_img_pool_size: 80 # 200
   long_term_train_down: False
   short_term_train_prob: 0.5
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
-  # lambda_opacity_ent: 1e-3
-  lambda_invalid_opacity: 2e-3 # TODO
-  lambda_area: 1e-2 # 1e-3 # test turning on this (TODO)
+  lambda_mono_normal: 0.01
+  lambda_opacity: 5e-4 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity_ent: 1e-3
+  # lambda_invalid_opacity: 2e-3 # TODO
+  lambda_area: 1e-3 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
   # lambda_normal_depth: 0.01 #
   consist_shift_count: 1
@@ -76,16 +80,20 @@ gs:
   lambda_sdf_normal_cons: 0.05 # the weight do not need to be very large # TODO
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
+  displacement_range_ratio: 5.0 
+  max_scale_ratio: 2.0
+  unit_scale_ratio: 0.5
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 8192
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr
   learning_rate_exposure: 1e-3 # or 1e-3
-  # learning_rate_cam_dr: 3e-3
-  # learning_rate_cam_dt: 1e-3
+  learning_rate_cam_dr: 1e-3
+  learning_rate_cam_dt: 5e-4
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   gs_eval_on: False
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
   mesh_min_nn: 15
+  min_cluster_vertices: 1000

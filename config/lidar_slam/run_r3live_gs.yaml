@@ -1,6 +1,6 @@
 setting:
   name: "test_r3live_gs"
-  output_root: "./experiments"
+  output_root: "./pings_experiments"
   deskew: True
   color_channel: 3
   color_map_on: True # pin slam does not make use of color
@@ -71,6 +71,6 @@ optimizer: # mapper
   batch_size: 8192
 eval:
   o3d_vis_on: True # visualize the mapping or not
-  mesh_freq_frame: 20 # reconstruct the mesh every x frames
+  mesh_freq_frame: 40 # reconstruct the mesh every x frames
   mesh_min_nn: 15
   # sensor_cad_path: ./cad/livox.ply

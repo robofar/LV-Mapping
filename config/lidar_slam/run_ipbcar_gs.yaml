@@ -83,7 +83,7 @@ optimizer: # mapper
   batch_size: 8192
   learning_rate_geo: 2e-3 # 0.01 (not good) # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 2e-3 # 0.01 (not good) # neural point color feature lr # 0.2
-  learning_rate_exposure: 1e-3 # or 1e-3
+  learning_rate_exposure: 1e-3
   learning_rate_cam_dr: 3e-3
   learning_rate_cam_dt: 1e-3
 eval:
