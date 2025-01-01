@@ -16,11 +16,12 @@ process:
   # dynamic_sdf_ratio_thre: 0.5
   # dynamic_min_grad_norm_thre: 0.25
 sampler:
-  surface_sample_range_m: 0.3
-  surface_sample_n: 3
+  surface_sample_range_m: 0.25
+  surface_sample_n: 4
   free_sample_begin_ratio: 0.3
-  free_sample_end_dist_m: 1.0
-  free_front_sample_n: 3
+  free_sample_end_dist_m: 0.8
+  free_front_sample_n: 2
+  free_behind_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.25 # smaller value does not neccessarily lead to a better result here
   search_alpha: 0.8
@@ -31,36 +32,45 @@ neuralpoints:
 decoder:
   freeze_after_frame: 30
 loss:
-  sigma_sigmoid_m: 0.08
+  sigma_sigmoid_m: 0.05
   # loss_weight_on: True
   # dist_weight_scale: 0.8
   ekional_loss_on: True
-  weight_e: 0.5
+  weight_e: 0.1
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   monodepth_on: True # True
   exposure_correction_on: True
+  affine_exposure_correction: False
+  cam_pose_train_on: True
   view_concat_on: True
   dist_concat_on: False
   gs_iters: 50 # 100 has good results
   gaussian_bs_ratio: 2.0
   img_pool_size: 20 # 15
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  long_term_img_pool_size: 60
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   # lambda_ssim: 0.0
-  inverse_depth_loss: True
-  lambda_depth: 10.0 # 10.0
-  lambda_normal_depth: 0.05
-  consist_normal_fixed: True
+  inverse_depth_loss: False
+  lambda_depth: 0.02 # 10.0
+  # lambda_normal_depth: 0.05
+  # consist_normal_fixed: True
   # lambda_normal_smooth: 0.1
   lambda_mono_normal: 0.01
   # lambda_isotropic: 1.0
   # lambda_area: 1e-2 # 1e-3
-  lambda_opacity: 5e-3 # 5e-4 # 1e-3 # 5e-4 # increase to have more valid gaussians
+  lambda_opacity: 2e-3 # 5e-4 # 1e-3 # 5e-4 # increase to have more valid gaussians
+  lambda_invalid_opacity: 2e-3
+  lambda_area: 1e-3 # 1e-3 # test turning on this (TODO)
   # lambda_sky: 1e-3
-  lambda_sdf_cons: 0.2
-  lambda_sdf_normal_cons: 0.2 # rendered normal seems to be better without this loss # 0.1
-  lambda_sdf: 1.0
+  consist_shift_count: 1
+  lambda_sdf_cons: 0.02
+  lambda_sdf_normal_cons: 0.02 # rendered normal seems to be better without this loss # 0.1
+  lambda_sdf: 0.5
+  displacement_range_ratio: 4.0 
+  max_scale_ratio: 2.0
+  unit_scale_ratio: 0.5
 continual:
   batch_size_new_sample: 2000
   pool_capacity: 1e7
@@ -78,9 +88,13 @@ pgo:
 optimizer: # mappers 
   batch_size: 8192 # 16384
   iters: 15
-  learning_rate_geo: 0.001 # neural point feature lr
+  learning_rate_geo: 2e-3 # neural point geo feature lr # 0.002 # 0.005 geometry a bit worse but rendering is a bit better
+  learning_rate_color: 2e-3 # neural point color feature lr # 0.2
+  learning_rate_exposure: 1e-3
+  learning_rate_cam_dr: 3e-3
+  learning_rate_cam_dt: 1e-3
 eval:
   o3d_vis_on: True
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 18
+  mesh_min_nn: 9
   sensor_cad_path: ./cad/kitti_car.ply

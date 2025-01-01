@@ -357,7 +357,7 @@ def run_pin_slam(
             
         # TODO: check its time consuming, can be done once per x frames 
         if valid_lidar_frame_flag and mapper.sdf_train_frame_count > 5 and mapper.sdf_train_frame_count % 2 == 0 and config.gs_invalid_check_on:
-            mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
+            mapper.check_invalid_neural_points() # render_min_nn_count=config.query_nn_k
 
         T6 = get_time()
 
@@ -430,7 +430,8 @@ def run_pin_slam(
                         if not o3d_vis.vis_global: # only build the local mesh
                             # cur_mesh = mesher.recon_aabb_mesh(dataset.cur_bbx, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)
                             used_local_pcd = global_neural_pcd_down if neural_pcd is None else neural_pcd
-                            chunks_aabb = split_chunks(used_local_pcd, dataset.cur_bbx, o3d_vis.mc_res_m*100) # reconstruct in chunks
+                            # cur_bbx = used_local_pcd.get_axis_aligned_bounding_box()
+                            chunks_aabb = split_chunks(used_local_pcd, None, o3d_vis.mc_res_m*100) # reconstruct in chunks
                             cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
                         else:
                             aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()

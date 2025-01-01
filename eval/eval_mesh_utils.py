@@ -76,17 +76,17 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
     recall = np.mean((dist_r < threshold).astype('float')) * 100.0 # %
     fscore = 2 * precision * recall / (precision + recall) # %
     
-    metrics = {'MAE_accuracy (m)': dist_p_mean,
-               'MAE_completeness (m)': dist_r_mean,
-               'Chamfer_L1 (m)': chamfer_l1,
-               'Chamfer_L2 (m)': chamfer_l2, 
-               'Precision [Accuracy] (%)': precision, 
-               'Recall [Completeness] (%)': recall,
-               'F-score (%)': fscore, 
-               'Spacing (m)': down_sample_res,  # evlaution setup
-               'Inlier_threshold (m)': threshold,  # evlaution setup
-               'Outlier_truncation_acc (m)': truncation_acc, # evlaution setup
-               'Outlier_truncation_com (m)': truncation_com  # evlaution setup
+    metrics = {'MAE_accuracy(m)': dist_p_mean,
+               'MAE_completeness(m)': dist_r_mean,
+               'Chamfer_L1(m)': chamfer_l1,
+               'Chamfer_L2(m)': chamfer_l2, 
+               'Precision[Accuracy](%)': precision, 
+               'Recall[Completeness](%)': recall,
+               'F-score(%)': fscore, 
+               'Spacing(m)': down_sample_res,  # evlaution setup
+               'Inlier_threshold(m)': threshold,  # evlaution setup
+               'Outlier_truncation_acc(m)': truncation_acc, # evlaution setup
+               'Outlier_truncation_com(m)': truncation_com  # evlaution setup
                }
     return metrics
 
@@ -125,17 +125,17 @@ def eval_pair(pcd_pred, pcd_trgt,
     recall = np.mean((dist_r < threshold).astype('float')) * 100.0 # %
     fscore = 2 * precision * recall / (precision + recall) # %
 
-    metrics = {'MAE_accuracy (m)': dist_p_mean,
-               'MAE_completeness (m)': dist_r_mean,
-               'Chamfer_L1 (m)': chamfer_l1,
-               'Chamfer_L2 (m)': chamfer_l2, 
-               'Precision [Accuracy] (%)': precision, 
-               'Recall [Completeness] (%)': recall,
-               'F-score (%)': fscore, 
-               'Spacing (m)': down_sample_res,  # evlaution setup
-               'Inlier_threshold (m)': threshold,  # evlaution setup
-               'Outlier_truncation_acc (m)': truncation_acc, # evlaution setup
-               'Outlier_truncation_com (m)': truncation_com  # evlaution setup
+    metrics = {'MAE_accuracy(m)': dist_p_mean,
+               'MAE_completeness(m)': dist_r_mean,
+               'Chamfer_L1(m)': chamfer_l1,
+               'Chamfer_L2(m)': chamfer_l2, 
+               'Precision[Accuracy](%)': precision, 
+               'Recall[Completeness](%)': recall,
+               'F-score(%)': fscore, 
+               'Spacing(m)': down_sample_res,  # evlaution setup
+               'Inlier_threshold(m)': threshold,  # evlaution setup
+               'Outlier_truncation_acc(m)': truncation_acc, # evlaution setup
+               'Outlier_truncation_com(m)': truncation_com  # evlaution setup
                }
 
     return metrics

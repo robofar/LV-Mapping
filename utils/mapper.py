@@ -127,7 +127,7 @@ class Mapper:
         )
         self.weight_pool = torch.empty((0), device=self.device, dtype=self.dtype)
         self.time_pool = torch.empty((0), device=self.device, dtype=torch.int)
-
+        self.dist_mask_pool = torch.empty((0), device=self.device, dtype=torch.bool)
         # for GS
         # short-term memory
         self.cam_short_term_train_pool = []
@@ -310,7 +310,7 @@ class Mapper:
                 update_points_min_z_quantile = torch.quantile(update_points[:, 2], 0.98) + self.config.voxel_size_m # TODO # height ?
                 mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_min_z_quantile
             else: # mono depth for low z
-                update_points_max_z_quantile = torch.quantile(update_points[:, 2], 0.1) + self.config.voxel_size_m
+                update_points_max_z_quantile = torch.quantile(update_points[:, 2], 0.2) + self.config.voxel_size_m
                 mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] < update_points_max_z_quantile
 
             mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
@@ -333,8 +333,8 @@ class Mapper:
                 self.neural_points.update(
                     mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:],
                     mono_depth_point_normals_torch, frame_origin_torch, 
-                    frame_orientation_torch, frame_id, is_reliable = False
-                )
+                    frame_orientation_torch, frame_id, is_reliable = True
+                ) # is_reliable = False
 
         # TODO
         # update again with the mono_depth predicted point cloud, set another mask for these neural points
@@ -379,7 +379,7 @@ class Mapper:
         T3_1 = get_time()
 
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
-
+            
             if self.config.pool_filter_with_dist:
                 pool_relatve = self.global_coord_pool - frame_origin_torch
                 # print(pool_relatve.shape)
@@ -389,7 +389,6 @@ class Mapper:
                     pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
                 
                 dist_mask = pool_relative_dist < self.config.window_radius # keep inside
-
                 filter_mask = dist_mask
             else:
                 filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
@@ -404,10 +403,9 @@ class Mapper:
                 discarded_index = torch.randint(
                     0, pool_sample_count, (discard_count,), device=self.device
                 )
-                filter_mask[
-                    true_indices[discarded_index]
-                ] = False  # Set the elements corresponding to the discard indices to False
-
+                # Set the elements corresponding to the discard indices to False
+                filter_mask[true_indices[discarded_index]] = False
+                    
             # filter the data pool
             # self.coord_pool = self.coord_pool[filter_mask]
             # make global here
@@ -415,6 +413,7 @@ class Mapper:
             self.sdf_label_pool = self.sdf_label_pool[filter_mask]
             self.weight_pool = self.weight_pool[filter_mask]
             self.time_pool = self.time_pool[filter_mask]
+            # self.dist_mask_pool = dist_mask[filter_mask]
 
             if normal_label is not None:
                 self.normal_label_pool = self.normal_label_pool[filter_mask]
@@ -781,6 +780,7 @@ class Mapper:
         self.weight_pool = None
         self.sdf_label_pool = None
         self.time_pool = None
+        self.dist_mask_pool = None
         self.sem_label_pool = None
         self.color_pool = None
         self.normal_label_pool = None
@@ -823,6 +823,8 @@ class Mapper:
             coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(
                 global_coord=True
             )  # coord here is in global frame if no ba pose update
+
+            # FIXME: if coord outside of the local map, we do not feed it into the network
 
             T01 = get_time()
 
@@ -1100,6 +1102,8 @@ class Mapper:
         short_term_img_pool_size = len(self.cam_short_term_train_pool)
         long_term_img_pool_size = len(self.cam_long_term_train_pool)
 
+        new_shifted_position = torch.empty((0, 3), dtype=self.dtype, device=self.device)
+
         if iter_count > 0 and short_term_img_pool_size > 0:
 
             # print("GS fitting on ")
@@ -1234,10 +1238,19 @@ class Mapper:
                 gaussian_free_mask = render_pkg["gaussian_free_mask"]
                 visible_neural_point_ratio = render_pkg["visible_neural_point_ratio"]
 
+                gaussian_contributions = None
                 if "contributions" in list(render_pkg.keys()):
                     gaussian_contributions = render_pkg["contributions"]
-                else:
-                    gaussian_contributions = None
+                    
+                cur_shifted_position = None
+                if "shifted_position" in list(render_pkg.keys()) and not is_replay_mode:
+                    cur_shifted_position = render_pkg["shifted_position"]
+                    if cur_shifted_position is not None:
+                        new_shifted_position = torch.cat((new_shifted_position, cur_shifted_position), 0)
+
+                # print(gaussian_xyz.shape)
+                # print(gaussian_contributions.shape)
+                # print(gaussian_contributions)
 
                 # print(" Visible neural point ratio: {:.2f}".format(visible_neural_point_ratio))
 
@@ -1606,6 +1619,8 @@ class Mapper:
                     # with batch size bs (this is done for all the sdf samples in the local map)
                     coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
 
+                    # FIXME: if coord outside of the local map, we do not feed it into the network, because it will anyway not be used to optimize anything
+
                     valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
                     apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
@@ -1708,6 +1723,17 @@ class Mapper:
 
             # self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
+
+            # TODO: select some reliable new gaussians to update
+            if new_shifted_position.shape[0] > 0:
+                if not self.silence:
+                    print("Newly shifted point count:", new_shifted_position.shape[0])
+                new_shifted_color = -torch.ones_like(new_shifted_position)
+                self.neural_points.update(
+                    new_shifted_position.detach(), new_shifted_color, None,
+                    self.neural_points.local_position, self.neural_points.local_orientation,  
+                    self.neural_points.cur_ts, is_reliable = True
+                ) # is_reliable = False
 
             if cams_param is not None:
                 for cam_param in cams_param:

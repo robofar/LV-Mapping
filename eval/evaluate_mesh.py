@@ -121,7 +121,7 @@ gt_pcd_path = os.path.join(bath_path, "merged-cloud-1cm.pcd")
 pred_mesh_path = os.path.join(bath_path, "results", "pin_mesh_15cm.ply")
 method_name = "pin_15cm"
 
-pred_mesh_path = os.path.join(bath_path, "results", "pings_mesh_15cm.ply")
+pred_mesh_path = os.path.join(bath_path, "results", "pings_mesh_15cm_new.ply")
 method_name = "pings_15cm"
 
 
@@ -158,9 +158,9 @@ output_csv_path = os.path.join(base_output_folder, dataset_name + method_name + 
 
 # evaluation parameters (unit: m)
 down_sample_vox = 0.02
-dist_thre = 0.2
-truncation_dist_acc = 0.4 # 0.4 (used in shine-mapping)
-truncation_dist_com = 2.0
+dist_thre = 0.1
+truncation_dist_acc = 0.4
+truncation_dist_com = 0.4
 
 # evaluation
 eval_metric = eval_mesh(pred_mesh_path, gt_pcd_path, down_sample_res=down_sample_vox, threshold=dist_thre, 
@@ -172,7 +172,7 @@ print(eval_metric)
 evals = [eval_metric]
 
 csv_columns = ['MAE_accuracy(m)', 'MAE_completeness(m)', 'Chamfer_L1(m)', 'Chamfer_L2(m)', \
-        'Precision[Accuracy](%)', 'Recall[Completeness](%)', 'F-score (%)', 'Spacing(m)', \
+        'Precision[Accuracy](%)', 'Recall[Completeness](%)', 'F-score(%)', 'Spacing(m)', \
         'Inlier_threshold(m)', 'Outlier_truncation_acc(m)', 'Outlier_truncation_com(m)']
 
 try:

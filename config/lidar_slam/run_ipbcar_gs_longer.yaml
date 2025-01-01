@@ -16,7 +16,7 @@ sampler:
   free_sample_begin_ratio: 0.3
   free_front_sample_n: 2
   free_sample_end_dist_m: 0.8
-  free_behind_n: 1
+  free_behind_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.3 # 0.25
   search_alpha: 0.8 # 0.8
