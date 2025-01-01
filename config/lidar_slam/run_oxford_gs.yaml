@@ -1,5 +1,5 @@
 setting:
-  name: "test_oxford_spires"
+  name: "test_oxford_spires_gs"
   output_root: "./pings_experiments"
   deskew: False
   color_channel: 3
@@ -39,7 +39,7 @@ loss:
   weight_e: 0.1
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 3e7
+  pool_capacity: 2e7
   pool_filter_freq: 1
 # tracker:
 #   source_vox_down_m: 0.4
@@ -58,7 +58,7 @@ gs:
   cam_pose_train_on: False
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 50 # 50 # 100
-  gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
+  gaussian_bs_ratio: 1.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 40 # TODO
   long_term_img_pool_size: 80 # 200
   long_term_train_down: False
@@ -67,7 +67,7 @@ gs:
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
-  lambda_depth: 0.01 # 0.02
+  lambda_depth: 0.02 # 0.02
   lambda_mono_normal: 0.01
   lambda_opacity: 5e-4 # 1e-3 # 2e-3 # increase to have more valid gaussians
   lambda_opacity_ent: 1e-3
@@ -76,16 +76,16 @@ gs:
   # consist_normal_fixed: True
   # lambda_normal_depth: 0.01 #
   consist_shift_count: 1
-  lambda_sdf_cons: 0.05 # the weight do not need to be very large
-  lambda_sdf_normal_cons: 0.05 # the weight do not need to be very large # TODO
+  lambda_sdf_cons: 0.02 # the weight do not need to be very large
+  lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05
-  displacement_range_ratio: 2.0 
-  max_scale_ratio: 2.0
-  unit_scale_ratio: 0.5
+  # displacement_range_ratio: 2.0 
+  # max_scale_ratio: 2.0
+  # unit_scale_ratio: 0.5
 optimizer: # mapper
   iters: 15  # iterations per frame
-  batch_size: 8192
+  batch_size: 16384
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr
   learning_rate_exposure: 1e-3 # or 1e-3
@@ -95,5 +95,5 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   gs_eval_on: False
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mesh_min_nn: 15
+  mesh_min_nn: 12
   min_cluster_vertices: 1000
