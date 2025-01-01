@@ -562,10 +562,10 @@ class SLAM_GUI:
         self.opacity_chbox.set_on_checked(self._on_opacity_chbox)
         chbox_tile_gsrender_1.add_child(self.opacity_chbox)
 
-        self.elliopsoid_chbox = gui.Checkbox("Ellipsoid")
-        self.elliopsoid_chbox.checked = False
-        self.elliopsoid_chbox.set_on_checked(self._on_elliopsoid_chbox)
-        chbox_tile_gsrender_1.add_child(self.elliopsoid_chbox)
+        self.ellipsoid_chbox = gui.Checkbox("Ellipsoid")
+        self.ellipsoid_chbox.checked = False
+        self.ellipsoid_chbox.set_on_checked(self._on_ellipsoid_chbox)
+        chbox_tile_gsrender_1.add_child(self.ellipsoid_chbox)
 
         chbox_tile_gsrender_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
@@ -983,7 +983,7 @@ class SLAM_GUI:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
 
     # only one can be selected at the same time
-    def _on_elliopsoid_chbox(self, is_checked):
+    def _on_ellipsoid_chbox(self, is_checked):
         if is_checked:
             self.depth_chbox.checked = False
             self.normal_chbox.checked = False
@@ -992,14 +992,14 @@ class SLAM_GUI:
 
     def _on_depth_chbox(self, is_checked):
         if is_checked:
-            self.elliopsoid_chbox.checked = False
+            self.ellipsoid_chbox.checked = False
             self.normal_chbox.checked = False
             self.d2n_chbox.checked = False
             self.opacity_chbox.checked = False
 
     def _on_normal_chbox(self, is_checked):
         if is_checked:
-            self.elliopsoid_chbox.checked = False
+            self.ellipsoid_chbox.checked = False
             self.depth_chbox.checked = False
             self.d2n_chbox.checked = False
             self.opacity_chbox.checked = False
@@ -1008,14 +1008,14 @@ class SLAM_GUI:
 
     def _on_d2n_chbox(self, is_checked):
         if is_checked:
-            self.elliopsoid_chbox.checked = False
+            self.ellipsoid_chbox.checked = False
             self.normal_chbox.checked = False
             self.depth_chbox.checked = False
             self.opacity_chbox.checked = False
 
     def _on_opacity_chbox(self, is_checked):
         if is_checked:
-            self.elliopsoid_chbox.checked = False
+            self.ellipsoid_chbox.checked = False
             self.normal_chbox.checked = False
             self.d2n_chbox.checked = False
             self.depth_chbox.checked = False
@@ -1826,7 +1826,7 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.elliopsoid_chbox.checked:
+        elif self.ellipsoid_chbox.checked:
 
             if self.gaussian_cur is None:
                 return

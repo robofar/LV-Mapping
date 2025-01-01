@@ -44,7 +44,7 @@ continual:
 #   pgo_freq_frame: 30
 #   virtual_side_count: 6
 gs:
-  gs_type: gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
+  gs_type: 3d_gs # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
   affine_exposure_correction: True 
   cam_pose_train_on: False
