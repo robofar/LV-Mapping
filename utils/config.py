@@ -137,7 +137,7 @@ class Config:
         self.bs_new_sample: int = 2048 # number of the sample per batch for the current frame's data, half of all the data
         self.new_certainty_thre: float = 1.0
         self.pool_filter_freq: int = 10 
-        self.pool_filter_with_dist: bool = False # filter sdf sample pools based on a given radius # FIXME
+        self.pool_filter_with_dist: bool = True # filter sdf sample pools based on a given radius # FIXME
         
         # MLP decoder
         self.mlp_bias_on: bool = True

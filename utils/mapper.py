@@ -711,7 +711,7 @@ class Mapper:
             cam.set_pose(T_w_c_after_pgo)
 
     # get a batch of training samples and labels for map optimization
-    def get_batch(self, global_coord=True):
+    def get_batch(self, global_coord=True, cur_origin=None):
 
         if (
             self.config.bs_new_sample > 0
@@ -1430,7 +1430,8 @@ class Mapper:
                 # let the opacity to be ideally larger
                 opacity_loss = 0.0
                 opacity_ent_loss = 0.0
-                constraint_min_alpha = self.config.min_alpha
+                constraint_min_alpha = self.config.min_alpha # FIXME, use this
+                # constraint_min_alpha = 0.5 # FIXME
                 if self.config.lambda_opacity > 0 and alpha_all is not None: # better to use the distance to weight this value (smaller distance, larger weight) 
                     masked_alpha_mask = (alpha_all<constraint_min_alpha) # now only let those gaussians has negative opacity to increase their opacity # TODO: something weird
                     if torch.sum(masked_alpha_mask) > 0: 
@@ -1557,7 +1558,7 @@ class Mapper:
 
                         # maybe relax this a bit
 
-                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
+                        valid_grad_mask = (grad_norm < 1.4) & (grad_norm > 0.6) & (valid_nnk_mask)
                         valid_grad_mask_no_shift = valid_grad_mask[:sampled_count] # the original gaussian samples (without shift)
 
                         # valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
@@ -1630,7 +1631,7 @@ class Mapper:
                     if self.require_gradient:
                         coord.requires_grad_(True)
                         
-                    geo_feature, color_feature, weight_knn, _, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on)
+                    geo_feature, color_feature, weight_knn, nn_counts, certainty = self.neural_points.query_feature(coord, ts, query_color_feature=self.config.color_on)
                     
                     # predict the scaled sdf with the feature
                     sdf_pred = self.sdf_mlp.sdf(geo_feature) # [N, K, 1]  
@@ -1645,6 +1646,8 @@ class Mapper:
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
+                    # weight[nn_counts < 3] = 0.0 
+
                     # calculate the sdf bce loss
                     sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
 

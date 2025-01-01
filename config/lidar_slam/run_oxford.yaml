@@ -88,5 +88,9 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   gs_eval_on: False
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
+<<<<<<< HEAD
   mesh_min_nn: 12
   min_cluster_vertices: 1000
+=======
+  mesh_min_nn: 14
+>>>>>>> 260dc3a910e238b09f54151d41a6be06b05f0e08

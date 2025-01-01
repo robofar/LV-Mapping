@@ -8,15 +8,15 @@ process:
   min_range_m: 1.0
   max_range_m: 60.0
   min_z_m: -10.0
-  vox_down_m: 0.08
+  vox_down_m: 0.06
   # adaptive_range_on: True
   dynamic_sdf_ratio_thre: 0.8
 sampler:
-  surface_sample_range_m: 0.3
+  surface_sample_range_m: 0.25
   surface_sample_n: 6
   free_sample_begin_ratio: 0.3
   free_sample_end_dist_m: 0.6
-  free_front_sample_n: 2 
+  free_front_sample_n: 3 
   free_behind_sample_n: 1
 neuralpoints:
   voxel_size_m: 0.25
@@ -26,7 +26,7 @@ neuralpoints:
   color_feature_dim: 16 # 16
   weighted_first: False # not much difference True or False 
 decoder:
-  freeze_after_frame: 30 # 30
+  freeze_after_frame: 40 # 30
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128
 loss:
@@ -57,7 +57,7 @@ gs:
   learn_color_residual: False
   cam_pose_train_on: False
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 50 # 50 # 100
+  gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 1.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 40 # TODO
   long_term_img_pool_size: 80 # 200
@@ -69,8 +69,8 @@ gs:
   inverse_depth_loss: False
   lambda_depth: 0.02 # 0.02
   lambda_mono_normal: 0.01
-  lambda_opacity: 5e-4 # 1e-3 # 2e-3 # increase to have more valid gaussians
-  lambda_opacity_ent: 1e-3
+  lambda_opacity: 1e-4 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  # lambda_opacity_ent: 1e-3
   # lambda_invalid_opacity: 2e-3 # TODO
   lambda_area: 1e-3 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True
@@ -79,10 +79,10 @@ gs:
   lambda_sdf_cons: 0.02 # the weight do not need to be very large
   lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
-  min_alpha: 0.05
-  # displacement_range_ratio: 2.0 
-  # max_scale_ratio: 2.0
-  # unit_scale_ratio: 0.5
+  min_alpha: 0.1
+  displacement_range_ratio: 1.0 
+  max_scale_ratio: 1.0
+  unit_scale_ratio: 0.2
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 16384
@@ -95,5 +95,5 @@ eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   gs_eval_on: False
   mesh_freq_frame: 20 # reconstruct the mesh every x frames
-  mesh_min_nn: 12
+  mesh_min_nn: 14
   min_cluster_vertices: 1000
