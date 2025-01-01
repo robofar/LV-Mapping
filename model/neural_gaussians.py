@@ -80,9 +80,10 @@ class NeuralPoints(nn.Module):
 
         self.temporal_local_map_on = True
 
-        if not self.config.track_on:
-            # print("Not using temporal local map")
-            self.temporal_local_map_on = False
+        # FIXME
+        # if not self.config.track_on:
+        #     # print("Not using temporal local map")
+        #     self.temporal_local_map_on = False
 
         self.diff_travel_dist_local = (
             self.config.local_map_radius * self.config.local_map_travel_dist_ratio

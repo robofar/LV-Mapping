@@ -49,9 +49,10 @@ continual:
 gs:
   gs_type: 3d_gs # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False # try false
-  affine_exposure_correction: False
+  affine_exposure_correction: True
   eval_cam_refine_on: True
   view_concat_on: True
+  dist_concat_on: True
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 100 # 50 # 100
   gaussian_bs_ratio: 2.0 # 2.0 # TODO: decrease maybe
@@ -64,7 +65,7 @@ gs:
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.01 # 0.02
-  lambda_opacity: 2e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
+  lambda_opacity: 1e-3 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
   # lambda_invalid_opacity: 2e-3 # TODO
   # lambda_area: 2e-4 # 2e-4 # 1e-3 # test turning on this (TODO)
