@@ -175,39 +175,39 @@ class OxfordDataset:
                 img_cam0 = self.read_img(cur_cam0_file)                 
                 img_dict["cam0"] = img_cam0
 
-                depth_map0 = None
-                if cur_lidar_file is not None:
-                    _, depth_map0 = self.project_points_to_cam(points, points_rgb, img_cam0, self.T_c_l_mats["cam0"], self.K_mats["cam0"])
+                # depth_map0 = None
+                # if cur_lidar_file is not None:
+                #     _, depth_map0 = self.project_points_to_cam(points, points_rgb, img_cam0, self.T_c_l_mats["cam0"], self.K_mats["cam0"])
                    
-                depth_dict["cam0"] = depth_map0
+                # depth_dict["cam0"] = depth_map0
 
             cur_cam1_file = self.cam1_files[idx]
             if cur_cam1_file is not None:
                 img_cam1 = self.read_img(cur_cam1_file)                 
                 img_dict["cam1"] = img_cam1
 
-                depth_map1 = None
-                if cur_lidar_file is not None:
-                    _, depth_map1 = self.project_points_to_cam(points, points_rgb, img_cam1, self.T_c_l_mats["cam1"], self.K_mats["cam1"])
-                depth_dict["cam1"] = depth_map1
+                # depth_map1 = None
+                # if cur_lidar_file is not None:
+                #     _, depth_map1 = self.project_points_to_cam(points, points_rgb, img_cam1, self.T_c_l_mats["cam1"], self.K_mats["cam1"])
+                # depth_dict["cam1"] = depth_map1
             
             cur_cam2_file = self.cam2_files[idx]
             if cur_cam2_file is not None:
                 img_cam2 = self.read_img(cur_cam2_file)                 
                 img_dict["cam2"] = img_cam2
 
-                depth_map2 = None
-                if cur_lidar_file is not None:
-                    _, depth_map2 = self.project_points_to_cam(points, points_rgb, img_cam2, self.T_c_l_mats["cam2"], self.K_mats["cam2"])
-                depth_dict["cam2"] = depth_map2
+                # depth_map2 = None
+                # if cur_lidar_file is not None:
+                #     _, depth_map2 = self.project_points_to_cam(points, points_rgb, img_cam2, self.T_c_l_mats["cam2"], self.K_mats["cam2"])
+                # depth_dict["cam2"] = depth_map2
     
             if len(img_dict.keys())>0: # at least one img got associated to this timestamp
                 
                 # print("Img loaded: ", len(img_dict.keys()))
                 frame_data["img"] = img_dict
 
-                if cur_lidar_file is not None:
-                    frame_data["depth"] = depth_dict
+                # if cur_lidar_file is not None:
+                #     frame_data["depth"] = depth_dict
 
             if cur_lidar_file is not None:
                 points = np.hstack((points[:,:3], points_rgb[:,:3]))

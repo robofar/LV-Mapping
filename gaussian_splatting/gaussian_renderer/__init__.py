@@ -646,7 +646,6 @@ def spawn_gaussians(neural_points_data: Dict,
     # if neural_point_free_mask is not None:
     #     displacement_range[neural_point_free_mask] = 3.0 * displacement_range_ratio * neural_point_resolution
 
-    # test this scale here, better to not be too large (FIXME)
     xyz_displacement = displacement_range * torch.tanh(gaussian_xyz_mlp.mlp_batch(geo_feature_in)) # N, 3K # [-1,1]        
     # print(xyz_displacement)
 
@@ -654,15 +653,27 @@ def spawn_gaussians(neural_points_data: Dict,
     gaussian_count_per_point = gaussian_xyz_mlp.out_k # K
     local_gaussian_count = local_point_count * gaussian_count_per_point
     
-    mean_xyz_displacement = (xyz_displacement.view(local_point_count, 3, gaussian_count_per_point)).mean(dim=2) # Nx3
-    # print(mean_xyz_displacement)
+    # FIXME: initialize more neural points from the spawned gaussians
+    # xyz_displacement_all = xyz_displacement.view(local_point_count, 3, gaussian_count_per_point) # Nx3xK
+    # mean_xyz_displacement = xyz_displacement_all.mean(dim=2) # Nx3
+    # abs_displacement = torch.norm(xyz_displacement_all, dim=1)  # NxK
+    # max_displacement, max_idx = torch.max(abs_displacement, dim=1) # N
+    # max_idx_expanded = max_idx.unsqueeze(1).expand(-1, 3)  # Shape: N x 3
+    # xyz_displacement_max = torch.gather(xyz_displacement_all, dim=2, index=max_idx_expanded.unsqueeze(2)).squeeze(2) 
 
-    mean_displacement = torch.norm(mean_xyz_displacement, dim=1)  
-    large_displacement_flag = mean_displacement > 1.5 * neural_point_resolution
-    # if neural_point_stability is not None:
-    #     large_displacement_flag = large_displacement_flag & (neural_point_stability > 1.0)
-    # shift_mean_xyz_displacement = mean_xyz_displacement[large_displacement_flag]
-    shifted_position = neural_point_position[large_displacement_flag] + mean_xyz_displacement[large_displacement_flag]
+    # # print(max_displacement)
+
+    # mean_displacement = torch.norm(mean_xyz_displacement, dim=1)  
+
+    # large_displacement_flag = max_displacement > 2.0 * neural_point_resolution 
+    # # large_displacement_flag = mean_displacement > 5.0 * neural_point_resolution # FIXME
+    # # if neural_point_stability is not None:
+    # #     large_displacement_flag = large_displacement_flag & (neural_point_stability > 5.0)
+    # # shift_mean_xyz_displacement = mean_xyz_displacement[large_displacement_flag]
+    # # shifted_position = neural_point_position[large_displacement_flag] + mean_xyz_displacement[large_displacement_flag]
+
+    # shifted_position = neural_point_position[large_displacement_flag] + xyz_displacement_max[large_displacement_flag]
+    shifted_position = None
 
     # print(torch.sum(large_displacement_flag))
 

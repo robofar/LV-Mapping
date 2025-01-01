@@ -357,7 +357,7 @@ def run_pin_slam(
             
         # TODO: check its time consuming, can be done once per x frames 
         if valid_lidar_frame_flag and mapper.sdf_train_frame_count > 5 and mapper.sdf_train_frame_count % 2 == 0 and config.gs_invalid_check_on:
-            mapper.check_invalid_neural_points(render_min_nn_count=config.query_nn_k)
+            mapper.check_invalid_neural_points() # render_min_nn_count=config.query_nn_k
 
         T6 = get_time()
 

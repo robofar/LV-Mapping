@@ -1245,7 +1245,8 @@ class Mapper:
                 cur_shifted_position = None
                 if "shifted_position" in list(render_pkg.keys()) and not is_replay_mode:
                     cur_shifted_position = render_pkg["shifted_position"]
-                    new_shifted_position = torch.cat((new_shifted_position, cur_shifted_position), 0)
+                    if cur_shifted_position is not None:
+                        new_shifted_position = torch.cat((new_shifted_position, cur_shifted_position), 0)
 
                 # print(gaussian_xyz.shape)
                 # print(gaussian_contributions.shape)

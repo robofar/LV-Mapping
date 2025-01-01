@@ -113,7 +113,7 @@ class Config:
 
         # local map
         self.diff_ts_local: float = 400.0 # deprecated (use travel distance instead)
-        self.local_map_travel_dist_ratio: float = 4.0
+        self.local_map_travel_dist_ratio: float = 5.0
         self.local_map_radius: float = 50.0
         self.sorrounding_map_radius: float = 100.0
 
