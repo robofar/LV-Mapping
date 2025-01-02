@@ -1646,7 +1646,7 @@ class Mapper:
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
-                    # weight[nn_counts < 3] = 0.0 
+                    weight[nn_counts == 0] = 0.0 # FIXME
 
                     # calculate the sdf bce loss
                     sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
