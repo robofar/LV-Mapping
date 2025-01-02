@@ -1,5 +1,5 @@
 setting:
-  name: "test_oxford_spires"
+  name: "test_oxford_spires_gs"
   output_root: "./pings_experiments"
   deskew: False
   color_channel: 3
@@ -67,7 +67,7 @@ gs:
   gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
-  lambda_depth: 0.01 # 0.02
+  lambda_depth: 0.02 # 0.02
   lambda_mono_normal: 0.01
   lambda_opacity: 1e-4 # 1e-3 # 2e-3 # increase to have more valid gaussians
   # lambda_opacity_ent: 1e-3
