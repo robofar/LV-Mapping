@@ -80,9 +80,9 @@ gs:
   lambda_sdf_normal_cons: 0.02 # the weight do not need to be very large # TODO
   lambda_sdf: 1.0 # 0.1 # what should this value be like # I don't know # 1.0
   min_alpha: 0.1
-  displacement_range_ratio: 1.0 
-  max_scale_ratio: 1.0
-  unit_scale_ratio: 0.2
+  # displacement_range_ratio: 1.0 
+  # max_scale_ratio: 1.0
+  # unit_scale_ratio: 0.2
 optimizer: # mapper
   iters: 15  # iterations per frame
   batch_size: 16384

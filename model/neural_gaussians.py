@@ -1444,7 +1444,7 @@ class NeuralPoints(nn.Module):
                 self.neural_points, cur_resolution, ts_diff
             )
         else:
-            # take the point that has a larger certainity
+            # take the point that has a larger stability
             sample_idx = voxel_down_sample_min_value_torch(
                 self.neural_points,
                 cur_resolution,
