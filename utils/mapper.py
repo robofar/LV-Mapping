@@ -128,6 +128,9 @@ class Mapper:
         self.weight_pool = torch.empty((0), device=self.device, dtype=self.dtype)
         self.time_pool = torch.empty((0), device=self.device, dtype=torch.int)
         self.dist_mask_pool = torch.empty((0), device=self.device, dtype=torch.bool)
+
+        self.local_sample_indices = None
+
         # for GS
         # short-term memory
         self.cam_short_term_train_pool = []
@@ -380,18 +383,20 @@ class Mapper:
 
         if (frame_id + 1) % self.config.pool_filter_freq == 0:
             
-            if self.config.pool_filter_with_dist:
-                pool_relatve = self.global_coord_pool - frame_origin_torch
-                # print(pool_relatve.shape)
-                if self.config.range_filter_2d:
-                    pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
-                else:
-                    pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+            # if self.config.pool_filter_with_dist:
+            #     pool_relatve = self.global_coord_pool - frame_origin_torch
+            #     # print(pool_relatve.shape)
+            #     if self.config.range_filter_2d:
+            #         pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
+            #     else:
+            #         pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
                 
-                dist_mask = pool_relative_dist < self.config.window_radius # keep inside
-                filter_mask = dist_mask
-            else:
-                filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
+            #     dist_mask = pool_relative_dist < self.config.window_radius # keep inside
+            #     filter_mask = dist_mask
+            # else:
+            #    filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
+
+            filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
 
             true_indices = torch.nonzero(filter_mask).squeeze()
 
@@ -433,9 +438,22 @@ class Mapper:
             self.cur_sample_count = coord.shape[0]
             self.pool_sample_count = self.global_coord_pool.shape[0]
 
+
+        pool_relatve = self.global_coord_pool - frame_origin_torch
+        # print(pool_relatve.shape)
+        if self.config.range_filter_2d:
+            pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
+        else:
+            pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+        
+        dist_mask = pool_relative_dist < self.config.window_radius # keep inside
+        true_indices = torch.nonzero(dist_mask).squeeze()
+        self.local_sample_indices = true_indices
+
         if not self.silence:
             print("# Total sample in pool: ", self.pool_sample_count)
             print("# Current sample      : ", self.cur_sample_count)
+            print("# Local sample        : ", self.local_sample_indices.shape[0])
 
         T3_2 = get_time()
 
@@ -711,7 +729,13 @@ class Mapper:
             cam.set_pose(T_w_c_after_pgo)
 
     # get a batch of training samples and labels for map optimization
-    def get_batch(self, global_coord=True, cur_origin=None):
+    def get_batch(self, global_coord=True):
+        
+
+        if self.local_sample_indices is not None:
+            pool_sample_count = self.local_sample_indices.shape[0]
+        else:
+            pool_sample_count = self.pool_sample_count
 
         if (
             self.config.bs_new_sample > 0
@@ -724,9 +748,13 @@ class Mapper:
             if new_idx_count > 0:
                 bs_new = min(new_idx_count, self.config.bs_new_sample)
                 bs_history = self.config.bs - bs_new
+
                 index_history = torch.randint(
-                    0, self.pool_sample_count, (bs_history,), device=self.device
+                    0, pool_sample_count, (bs_history,), device=self.device
                 )
+                if self.local_sample_indices is not None:
+                    index_history = self.local_sample_indices[index_history]
+                
                 index_new_batch = torch.randint(
                     0, new_idx_count, (bs_new,), device=self.device
                 )
@@ -738,8 +766,11 @@ class Mapper:
                 )
         else:  # uniformly sample the pool
             index = torch.randint(
-                0, self.pool_sample_count, (self.config.bs,), device=self.device
+                0, pool_sample_count, (self.config.bs,), device=self.device
             )
+
+            if self.local_sample_indices is not None:
+                index = self.local_sample_indices[index]
 
         coord = self.global_coord_pool[index, :]
 
@@ -871,14 +902,15 @@ class Mapper:
                 if not self.config.weighted_first:
                     color_pred = torch.sum(color_pred * weight_knn[valid_color_mask], dim=1)  # N, C
 
+            coord_for_eikonal = coord[apply_eikonal_mask]
+            sdf_pred_for_eikonal = sdf_pred[apply_eikonal_mask]
             if self.require_gradient:
-                g = get_gradient(coord, sdf_pred)  # to unit m
-            elif (
-                self.config.numerical_grad
-            ):  # do not use this for the tracking, still analytical grad for tracking
+                g = get_gradient(coord_for_eikonal, sdf_pred_for_eikonal)  # to unit m
+            elif self.config.numerical_grad:
+                # do not use this for the tracking, still analytical grad for tracking
                 g = self.get_numerical_gradient(
-                    coord[:: self.config.gradient_decimation],
-                    sdf_pred[:: self.config.gradient_decimation],
+                    coord_for_eikonal[:: self.config.gradient_decimation],
+                    sdf_pred_for_eikonal[:: self.config.gradient_decimation],
                     self.config.voxel_size_m * self.config.num_grad_step_ratio,
                 )  #
 
@@ -954,22 +986,13 @@ class Mapper:
             if (
                 self.config.ekional_loss_on and self.config.weight_e > 0
             ):  # MSE with regards to 1
-                apply_eikonal_mask = apply_eikonal_mask[
-                    :: self.config.gradient_decimation
-                ] # decimated if needed
-                # weight_used = (weight.clone())[::self.config.gradient_decimation] # point-wise weight not used
-                if self.config.ekional_add_to == "freespace":
-                    g_used = g[~apply_eikonal_mask]
-                    # weight_used = weight_used[~apply_eikonal_mask]
-                elif self.config.ekional_add_to == "surface":
-                    g_used = g[apply_eikonal_mask]
-                    # weight_used = weight_used[apply_eikonal_mask]
-                else:  # "all"  # both the surface and the freespace, used here # [used]
-                    g_used = g
                 eikonal_loss = (
-                    (g_used.norm(2, dim=-1) - 1.0) ** 2
+                    (g.norm(2, dim=-1) - 1.0) ** 2
                 ).mean()  # both the surface and the freespace
                 cur_loss += self.config.weight_e * eikonal_loss
+
+            if not self.silence:
+                print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
 
             # optional semantic loss
             sem_loss = 0.0
@@ -1646,7 +1669,7 @@ class Mapper:
 
                     # weight's sign indicate the sample is around the surface or in the free space
                     weight = torch.abs(weight).detach() 
-                    weight[nn_counts == 0] = 0.0 # FIXME
+                    # weight[nn_counts == 0] = 0.0 # FIXME
 
                     # calculate the sdf bce loss
                     sdf_loss = sdf_bce_loss(sdf_pred, sdf_label, self.sdf_scale, weight, self.config.loss_weight_on)
