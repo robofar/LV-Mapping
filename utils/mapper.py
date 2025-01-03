@@ -1263,7 +1263,8 @@ class Mapper:
 
                 gaussian_contributions = None
                 if "contributions" in list(render_pkg.keys()):
-                    gaussian_contributions = render_pkg["contributions"]
+                    gaussian_contributions = (render_pkg["contributions"])[:gaussian_xyz.shape[0]]
+                    # print("contribution mean:" , gaussian_contributions.mean())
                     
                 cur_shifted_position = None
                 if "shifted_position" in list(render_pkg.keys()) and not is_replay_mode:
@@ -1488,6 +1489,9 @@ class Mapper:
                 # print(large_alpha_mask.shape)
                 constraint_mask = constraint_mask & large_alpha_mask
 
+                if gaussian_contributions is not None:
+                    constraint_mask = constraint_mask & (gaussian_contributions > self.config.gs_contribution_threshold)
+
                 # TODO: consider to add again the depth distortion loss
 
                 if gaussian_free_mask is not None:
@@ -1581,7 +1585,7 @@ class Mapper:
 
                         # maybe relax this a bit
 
-                        valid_grad_mask = (grad_norm < 1.4) & (grad_norm > 0.6) & (valid_nnk_mask)
+                        valid_grad_mask = (grad_norm < 1.5) & (grad_norm > 0.5) & (valid_nnk_mask)
                         valid_grad_mask_no_shift = valid_grad_mask[:sampled_count] # the original gaussian samples (without shift)
 
                         # valid_opacity_loss = (1.0 - sampled_guassians_alpha[valid_grad_mask_no_shift].mean()) 
