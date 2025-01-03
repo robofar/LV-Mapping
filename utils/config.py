@@ -89,6 +89,7 @@ class Config:
         self.dynamic_min_grad_norm_thre: float = 0.25 # type2 dynamic
 
         # neural points
+        self.temporal_local_map_off: bool = False # default on
         self.voxel_size_m: float = 0.3 # we use the voxel hashing structure to maintain the neural points, the voxel size is set as this value      
         self.weighted_first: bool = True # weighted the neighborhood feature before decoding to sdf or do the weighting of the decoded sdf afterwards
         self.layer_norm_on: bool = False # apply layer norm to the features
@@ -532,6 +533,7 @@ class Config:
         # neural point map
         if "neuralpoints" in config_args:
             self.buffer_size = int(float(config_args["neuralpoints"].get("buffer_size", self.buffer_size)))
+            self.temporal_local_map_off = config_args["neuralpoints"].get("temporal_local_map_off", self.temporal_local_map_off)
 
             self.voxel_size_m = config_args["neuralpoints"].get("voxel_size_m", self.vox_down_m * 5.0)
             self.query_nn_k = config_args["neuralpoints"].get("query_nn_k", self.query_nn_k)

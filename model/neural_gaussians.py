@@ -81,7 +81,7 @@ class NeuralPoints(nn.Module):
         self.temporal_local_map_on = True
 
         # FIXME
-        if not self.config.track_on:
+        if not self.config.track_on and self.config.temporal_local_map_off:
             # print("Not using temporal local map")
             self.temporal_local_map_on = False
 
