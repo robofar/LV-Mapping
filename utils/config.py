@@ -319,6 +319,8 @@ class Config:
         self.gs_consist_depth_fixed: bool = False
         self.gs_consist_normal_fixed: bool = False # fixed normal to guide depth
 
+        self.gs_contribution_threshold: float = 1.0 # 1.0
+
         self.learn_color_residual: bool = False
 
         self.min_alpha: float = 0.01
@@ -744,6 +746,8 @@ class Config:
 
             self.gs_consist_normal_fixed = config_args["gs"].get("consist_normal_fixed", self.gs_consist_normal_fixed)
             self.gs_consist_depth_fixed = config_args["gs"].get("consist_depth_fixed", self.gs_consist_depth_fixed)
+
+            self.gs_contribution_threshold = float(config_args["gs"].get("contribution_threshold", self.gs_contribution_threshold))
 
             self.min_alpha = config_args["gs"].get("min_alpha", self.min_alpha) # this is the per-gaussian alpha
             self.depth_min_accu_alpha = config_args["gs"].get("depth_min_accu_alpha", self.depth_min_accu_alpha) # this is the rendered accumulated alpha for valid depth
