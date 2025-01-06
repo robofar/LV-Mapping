@@ -509,7 +509,7 @@ class Mesher:
                 estimate_sem,
                 estimate_color,
                 mesh_normal,
-                filter_isolated_mesh,
+                False,
                 filter_free_space_vertices,
                 mesh_min_nn,
                 use_torch_mc,
@@ -517,6 +517,9 @@ class Mesher:
             mesh_merged += cur_mesh
 
         mesh_merged.remove_duplicated_vertices()
+
+        if filter_isolated_mesh:
+            mesh_merged = filter_isolated_vertices(mesh_merged, self.config.min_cluster_vertices)
 
         if mesh_normal:
             mesh_merged.compute_vertex_normals()
