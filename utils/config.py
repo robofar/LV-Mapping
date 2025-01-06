@@ -320,7 +320,7 @@ class Config:
         self.gs_consist_depth_fixed: bool = False
         self.gs_consist_normal_fixed: bool = False # fixed normal to guide depth
 
-        self.gs_contribution_threshold: float = 1.0 # 1.0
+        self.gs_contribution_threshold: float = 0.1 # 1.0
 
         self.learn_color_residual: bool = False
 
