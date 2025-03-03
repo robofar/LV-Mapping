@@ -174,7 +174,7 @@ python pings.py ./config/lidar_slam/run_ss3dm_gs_rgbd.yaml ss3dm rgbd -i ./data/
 ## Run on R3Live dataset
 
 ```
-python pings.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -vl
+python pings.py ./config/lidar_slam/run_r3live_gs.yaml r3live -i ./data/r3live/hku_campus_seq_00_kitti_format/ -vlg
 ```
 
 **pass**

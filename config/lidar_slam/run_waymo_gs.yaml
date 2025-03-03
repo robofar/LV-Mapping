@@ -22,7 +22,7 @@ neuralpoints:
   voxel_size_m: 0.3
   search_alpha: 0.8
 gs:
-  monodepth_on: True # True
+  monodepth_on: False # True
   gs_iters: 50 # 100 has good results
   n_gaussian: 8
   gaussian_bs_ratio: 1.0
