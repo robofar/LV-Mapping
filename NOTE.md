@@ -49,7 +49,7 @@ python pings.py ./config/lidar_slam/run_kitti360_gs.yaml kitti360 03 -i ./data/k
 ## Run on KITTI MOT dataset
 
 ```
-python pings.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -vl
+python pings.py ./config/lidar_slam/run_kitti_mot_gs.yaml kitti_mot 02 -i ./data/kitti/kitti_mot/training -vlg
 
 ```
 
@@ -72,8 +72,6 @@ python pings.py ./config/lidar_slam/run_vkitti_gs.yaml vkitti 01 -i ./data/vkitt
 ```
 python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -vlg
 
-
-python pings.py ./config/lidar_slam/run_nuscenes_gs.yaml nuscenes 0061 -i ./data/nuscenes/v1.0-mini/ -vlg
 
 ```
 
@@ -117,13 +115,13 @@ scene-1100, Night, peds in sidewalk, peds cross cro... [18-11-21 11:49:47]   19s
 
 
 ```
-python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10588771936253546636_2300_000_2320_000/10588771936253546636_2300_000_2320_000/ -vlg
 
-python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_8398516118967750070_3958_000_3978_000/8398516118967750070_3958_000_3978_000/ -vlg
 
-python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_10448102132863604198_472_000_492_000/10448102132863604198_472_000_492_000/ -vlg
 
-python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -vl
+python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waymo_2094681306939952000_2972_300_2992_300/2094681306939952000_2972_300_2992_300/ -vlg
 ```
 
 **pass**
@@ -132,9 +130,9 @@ python pings.py ./config/lidar_slam/run_waymo_gs.yaml waymo -i ./data/waymo/waym
 
 ```
 
-python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vl --range 50 150 1
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/pings_test_seq/ -vlg --range 50 150 1
 
-python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vl --range 50 500 1
+python pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vlg --range 50 500 1
 
 ```
 
@@ -193,7 +191,7 @@ python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg1_de
 
 rgbd_dataset_freiburg2_xyz
 
-python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_long_office_household -i ./data/TUM/ -vl --range 0 500 2
+python pings.py ./config/rgbd_slam/run_tum_gs.yaml tum rgbd_dataset_freiburg3_long_office_household -i ./data/TUM/ -vlg --range 0 500 2
 
 ```
 
