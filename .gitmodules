@@ -1,21 +1,9 @@
-[submodule "submodules/diff-surfel-rasterization"]
-	path = submodules/diff-surfel-rasterization
-	url = https://github.com/hbb1/diff-surfel-rasterization
-[submodule "submodules/diff-gaussian-surfel-rasterization"]
-	path = submodules/diff-gaussian-surfel-rasterization
-	url = https://gitlab.ipb.uni-bonn.de/yue.pan/diff-gaussian-surfel-rasterization
-[submodule "submodules/diff-gaussian-rasterization"]
-	path = submodules/diff-gaussian-rasterization
-	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization
-[submodule "submodules/diff-gaussian-rasterization-w-pose"]
-	path = submodules/diff-gaussian-rasterization-w-pose
-	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose
 [submodule "submodules/fused-ssim"]
 	path = submodules/fused-ssim
 	url = https://github.com/rahul-goel/fused-ssim
-[submodule "submodules/stopthepop-rasterization"]
-	path = submodules/stopthepop-rasterization
-	url = https://github.com/r4dl/StopThePop-Rasterization/
 [submodule "submodules/diff-gaussian-surfel-rasterization-w-pose"]
 	path = submodules/diff-gaussian-surfel-rasterization-w-pose
 	url = https://gitlab.ipb.uni-bonn.de/yue.pan/diff-gaussian-surfel-rasterization-w-pose
+[submodule "submodules/diff-gaussian-rasterization-w-pose"]
+	path = submodules/diff-gaussian-rasterization-w-pose
+	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose
