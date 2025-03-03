@@ -16,11 +16,10 @@ import open3d.visualization.rendering as rendering
 import torch
 import torch.nn.functional as F
 from OpenGL import GL as gl
-from brisque import BRISQUE
+# from brisque import BRISQUE
 
 from pickle import load, dump
 
-# import pycg # TODO
 
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
@@ -35,7 +34,7 @@ from gs_gui.gui_utils import (
     get_latest_queue,
 )
 # from utils.camera_utils import Camera
-from gaussian_splatting.scene.cameras import CamImage
+from gaussian_splatting.utils.cameras import CamImage
 # from utils.logging_utils import Log
 
 from utils.tools import colorize_depth_maps, seed_anything, get_time, remove_gpu_cache
@@ -115,7 +114,7 @@ class SLAM_GUI:
 
         self.gaussian_nums = []
 
-        self.brisque_scorer = BRISQUE(url=False)
+        # self.brisque_scorer = BRISQUE(url=False)
 
         self.recorded_poses = []
 

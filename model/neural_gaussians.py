@@ -25,7 +25,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from rich import print
-from plyfile import PlyData, PlyElement
 
 from utils.config import Config
 from utils.tools import (

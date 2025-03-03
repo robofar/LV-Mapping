@@ -20,7 +20,7 @@ from rich import print
 from tqdm import tqdm
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
-import vdbfusion # for baseline only
+# import vdbfusion # for baseline only
 
 from dataset.slam_dataset import SLAMDataset
 from model.decoder import Decoder
@@ -50,7 +50,7 @@ from gaussian_splatting.utils.graphics_utils import focal2fov
 from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
 from gaussian_splatting.utils.sh_utils import RGB2SH, SH2RGB
-from gaussian_splatting.scene.cameras import CamImage
+from gaussian_splatting.utils.cameras import CamImage
 
 from fused_ssim import fused_ssim
 
@@ -1885,13 +1885,13 @@ class Mapper:
         eval_down_scale = 2**(eval_down_rate)
 
 
-        if rerender_tsdf_fusion_on:
-            tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
-            sdf_trunc = tsdf_fusion_voxel_size * 4.0
-            space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
-            vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
-                                            sdf_trunc,
-                                            space_carving_on)
+        # if rerender_tsdf_fusion_on:
+        #     tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
+        #     sdf_trunc = tsdf_fusion_voxel_size * 4.0
+        #     space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
+        #     vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+        #                                     sdf_trunc,
+        #                                     space_carving_on)
 
         # skip_end_count means that we will skip the last n frames because the incremental mapping haven't done much mapping in such areas
         for frame_id in tqdm(range(0, self.dataset.processed_frame - skip_end_count, 1), desc="GS evaluation"):
@@ -2224,10 +2224,10 @@ class Mapper:
                     self.test_cd_list.append(cur_cd)
                     self.test_f1_list.append(cur_f1)
 
-            if rerender_tsdf_fusion_on:
-                cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(self.config.vox_down_m)
-                cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.transform(T_w_l_cam_ts_np)
-                vdb_volume.integrate(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), lidar_position_np)
+            # if rerender_tsdf_fusion_on:
+            #     cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(self.config.vox_down_m)
+            #     cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.transform(T_w_l_cam_ts_np)
+            #     vdb_volume.integrate(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), lidar_position_np)
                 
             if q_main2vis is not None:
                 # add the eval frame to vis
@@ -2248,31 +2248,31 @@ class Mapper:
                     while q_vis2main.get().flag_pause:
                         continue
         
-        if rerender_tsdf_fusion_on:
+        # if rerender_tsdf_fusion_on:
 
-            # Extract triangle mesh (numpy arrays)
-            vert, tri = vdb_volume.extract_triangle_mesh()
+        #     # Extract triangle mesh (numpy arrays)
+        #     vert, tri = vdb_volume.extract_triangle_mesh()
 
-            mesh_rendered_tsdf_fusion = o3d.geometry.TriangleMesh(
-                o3d.utility.Vector3dVector(vert),
-                o3d.utility.Vector3iVector(tri),
-            )
+        #     mesh_rendered_tsdf_fusion = o3d.geometry.TriangleMesh(
+        #         o3d.utility.Vector3dVector(vert),
+        #         o3d.utility.Vector3iVector(tri),
+        #     )
 
-            if filter_isolated_mesh:
-                mesh_rendered_tsdf_fusion = filter_isolated_vertices(mesh_rendered_tsdf_fusion, self.config.min_cluster_vertices)
+        #     if filter_isolated_mesh:
+        #         mesh_rendered_tsdf_fusion = filter_isolated_vertices(mesh_rendered_tsdf_fusion, self.config.min_cluster_vertices)
 
-            mesh_rendered_tsdf_fusion.compute_vertex_normals()
+        #     mesh_rendered_tsdf_fusion.compute_vertex_normals()
 
-            if self.config.run_path is not None:
-                mesh_save_path = os.path.join(self.config.run_path, "mesh", "mesh_rerendered_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
-                o3d.io.write_triangle_mesh(mesh_save_path, mesh_rendered_tsdf_fusion)
-                print(f"save the tsdf fusion mesh rerendered from GS to {mesh_save_path}")
+        #     if self.config.run_path is not None:
+        #         mesh_save_path = os.path.join(self.config.run_path, "mesh", "mesh_rerendered_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
+        #         o3d.io.write_triangle_mesh(mesh_save_path, mesh_rendered_tsdf_fusion)
+        #         print(f"save the tsdf fusion mesh rerendered from GS to {mesh_save_path}")
                 
-                # vdb_grid_file = os.path.join(self.config.run_path, "map", "mesh_rerendered_vdb_grid.npy")
-                # vdb_volume.extract_vdb_grids(vdb_grid_file)
-                # print(f"save the vdb volume to {vdb_grid_file}")
+        #         # vdb_grid_file = os.path.join(self.config.run_path, "map", "mesh_rerendered_vdb_grid.npy")
+        #         # vdb_volume.extract_vdb_grids(vdb_grid_file)
+        #         # print(f"save the vdb volume to {vdb_grid_file}")
 
-            vdb_volume = None
+        #     vdb_volume = None
 
 
     def gs_eval_out(self):

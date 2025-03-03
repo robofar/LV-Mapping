@@ -22,7 +22,7 @@ import torch
 import torch.multiprocessing as mp
 from tqdm import tqdm
 from rich import print
-import vdbfusion
+# import vdbfusion
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import typer
@@ -39,8 +39,8 @@ from utils.campose_utils import update_pose
 
 from eval.eval_mesh_utils import eval_pair
 
-from gaussian_splatting.scene.cameras import CamImage
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
+from gaussian_splatting.utils.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gaussian_splatting.utils.loss_utils import l1_loss, tukey_loss
 from gaussian_splatting.utils.image_utils import psnr
@@ -376,14 +376,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         recon_3d_on = True
 
     # TODO:
-    if recon_3d_tsdf_on:
-        if tsdf_fusion_voxel_size is None:
-            tsdf_fusion_voxel_size = config.voxel_size_m*0.6 # use the default value
-        sdf_trunc = tsdf_fusion_voxel_size * 3.0
-        space_carving_on = tsdf_fusion_space_carving_on # False: fast, cannot deal with dynamics, True: slow, can deal with dynamics, may also remove thin objects
-        vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
-                                        sdf_trunc,
-                                        space_carving_on)
+    # if recon_3d_tsdf_on:
+    #     if tsdf_fusion_voxel_size is None:
+    #         tsdf_fusion_voxel_size = config.voxel_size_m*0.6 # use the default value
+    #     sdf_trunc = tsdf_fusion_voxel_size * 3.0
+    #     space_carving_on = tsdf_fusion_space_carving_on # False: fast, cannot deal with dynamics, True: slow, can deal with dynamics, may also remove thin objects
+    #     vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+    #                                     sdf_trunc,
+    #                                     space_carving_on)
 
 
     rendered_rgb_cam_dict = {}

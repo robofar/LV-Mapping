@@ -24,7 +24,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from PIL import Image
 
-import vdbfusion # for debugging, comparison with the baseline
+# import vdbfusion # for debugging, comparison with the baseline
 
 from dataset.dataloaders import dataset_factory
 from eval.eval_traj_utils import absolute_error, plot_trajectories, relative_error
@@ -44,7 +44,7 @@ from utils.tools import (
 )
 from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
-from gaussian_splatting.scene.cameras import CamImage
+from gaussian_splatting.utils.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
 class SLAMDataset():
@@ -1240,14 +1240,14 @@ class SLAMDataset():
         map_intensity_np = np.empty(0)
         map_color_np = np.empty((0, 3))
 
-        if tsdf_fusion_on:
-            # tsdf_fusion_voxel_size = self.config.voxel_size_m*0.6
-            tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
-            sdf_trunc = tsdf_fusion_voxel_size * 4.0
-            space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
-            vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
-                                            sdf_trunc,
-                                            space_carving_on)
+        # if tsdf_fusion_on:
+        #     # tsdf_fusion_voxel_size = self.config.voxel_size_m*0.6
+        #     tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
+        #     sdf_trunc = tsdf_fusion_voxel_size * 4.0
+        #     space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
+        #     vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+        #                                     sdf_trunc,
+        #                                     space_carving_on)
 
         for frame_id in tqdm(
             range(0, self.total_pc_count, frame_step), desc="Merge map point cloud"
@@ -1333,8 +1333,8 @@ class SLAMDataset():
 
             cur_position_np = (cur_pose_torch.detach().cpu().numpy())[:3, 3]
 
-            if tsdf_fusion_on:
-                vdb_volume.integrate(frame_points_np, cur_position_np)
+            # if tsdf_fusion_on:
+            #     vdb_volume.integrate(frame_points_np, cur_position_np)
 
 
         print("Replay done")
@@ -1365,28 +1365,28 @@ class SLAMDataset():
 
         map_out_o3d = None
         
-        if tsdf_fusion_on:
+        # if tsdf_fusion_on:
 
-            # Extract triangle mesh (numpy arrays)
-            vert, tri = vdb_volume.extract_triangle_mesh()
+        #     # Extract triangle mesh (numpy arrays)
+        #     vert, tri = vdb_volume.extract_triangle_mesh()
 
-            mesh_tsdf_fusion = o3d.geometry.TriangleMesh(
-                o3d.utility.Vector3dVector(vert),
-                o3d.utility.Vector3iVector(tri),
-            )
+        #     mesh_tsdf_fusion = o3d.geometry.TriangleMesh(
+        #         o3d.utility.Vector3dVector(vert),
+        #         o3d.utility.Vector3iVector(tri),
+        #     )
 
-            mesh_tsdf_fusion.compute_vertex_normals()
+        #     mesh_tsdf_fusion.compute_vertex_normals()
 
-            if self.run_path is not None:
-                mesh_save_path = os.path.join(self.run_path, "mesh", "mesh_original_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
-                o3d.io.write_triangle_mesh(mesh_save_path, mesh_tsdf_fusion)
-                print(f"save the tsdf fusion mesh from the original point cloud to {mesh_save_path}")
+        #     if self.run_path is not None:
+        #         mesh_save_path = os.path.join(self.run_path, "mesh", "mesh_original_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
+        #         o3d.io.write_triangle_mesh(mesh_save_path, mesh_tsdf_fusion)
+        #         print(f"save the tsdf fusion mesh from the original point cloud to {mesh_save_path}")
                 
-                vdb_grid_file = os.path.join(self.run_path, "map", "vdb_grid.npy")
-                vdb_volume.extract_vdb_grids(vdb_grid_file)
-                print(f"save the vdb volume to {vdb_grid_file}")
+        #         vdb_grid_file = os.path.join(self.run_path, "map", "vdb_grid.npy")
+        #         vdb_volume.extract_vdb_grids(vdb_grid_file)
+        #         print(f"save the vdb volume to {vdb_grid_file}")
 
-            vdb_volume = None
+        #     vdb_volume = None
 
     # TODO
     def o3d_tsdf_fusion(self, frame_step = 1, output_path = None, vox_size = 0.02, trunc_dist = 0.06):

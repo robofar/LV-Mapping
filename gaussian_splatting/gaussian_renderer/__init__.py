@@ -18,7 +18,7 @@ import torch
 from gaussian_splatting.utils.sh_utils import eval_sh
 from gaussian_splatting.utils.point_utils import depth_to_normal, depth2normal
 from gaussian_splatting.utils.graphics_utils import getWorld2View
-from gaussian_splatting.scene.cameras import CamImage
+from gaussian_splatting.utils.cameras import CamImage
 
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
