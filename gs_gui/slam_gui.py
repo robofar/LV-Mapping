@@ -88,6 +88,8 @@ class SLAM_GUI:
 
         self.brisque_score_on = False # turn this off for now
 
+        self.neural_point_vis_down_rate = 1
+
         if params_gui is not None:
             self.decoders = params_gui.decoders
             self.background = params_gui.background
@@ -101,7 +103,9 @@ class SLAM_GUI:
             self.mesh_default_on = params_gui.mesh_default_on
             self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
             self.is_rgbd = params_gui.is_rgbd
-        
+            self.neural_point_vis_down_rate = params_gui.neural_point_vis_down_rate
+
+            
         if self.config is not None:
             seed_anything(self.config.seed)
 
@@ -114,6 +118,8 @@ class SLAM_GUI:
         self.brisque_scorer = BRISQUE(url=False)
 
         self.recorded_poses = []
+
+        
 
         self.view_save_base_path = os.path.expanduser("~/.viewpoints")
         os.makedirs(self.view_save_base_path, 0o755, exist_ok=True)
@@ -173,7 +179,7 @@ class SLAM_GUI:
         # not used now
         self.lit = rendering.MaterialRecord()
         self.lit.shader = "unlitLine"
-        self.lit.line_width = 3 * self.window.scaling  # note that this is scaled with respect to pixels,
+        self.lit.line_width = 4 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         self.lit_geo = rendering.MaterialRecord()
         self.lit_geo.shader = "defaultUnlit"
@@ -214,7 +220,7 @@ class SLAM_GUI:
         # trajectory
         self.traj_render = rendering.MaterialRecord()
         self.traj_render.shader = "unlitLine"
-        self.traj_render.line_width = 4 * self.window.scaling  # note that this is scaled with respect to pixels,
+        self.traj_render.line_width = 6 * self.window.scaling  # note that this is scaled with respect to pixels,
 
         # cur frame frustrum
         self.cur_frame_render = rendering.MaterialRecord()
@@ -359,7 +365,7 @@ class SLAM_GUI:
         ##Combo panels for preset views 
         combo_tile3 = gui.Vert(0.5 * em, gui.Margins(margin))
         self.combo_preset_cams = gui.Combobox()
-        for i in range(10):
+        for i in range(30):
             self.combo_preset_cams.add_item(str(i))
 
         # self.combo_preset_cams.set_on_selection_changed(self._on_combo_preset_cams) 
@@ -655,8 +661,8 @@ class SLAM_GUI:
         self.freq_info = gui.Label("Render FPS: ")
         tab_info.add_child(self.freq_info)
 
-        self.brisque_score_info = gui.Label("Current view BRISQUE score: ")
-        tab_info.add_child(self.brisque_score_info)
+        # self.brisque_score_info = gui.Label("Current view BRISQUE score: ")
+        # tab_info.add_child(self.brisque_score_info)
 
         tabs.add_tab("Info", tab_info)
         self.panel.add_child(tabs)
@@ -681,18 +687,21 @@ class SLAM_GUI:
         self.cur_view_info = gui.Label("Camera: ")
         tab_input.add_child(self.cur_view_info)
 
-        self.cur_view_psnr_info = gui.Label("PSNR: ")
-        tab_input.add_child(self.cur_view_psnr_info)
+        # self.cur_view_psnr_info = gui.Label("PSNR: ")
+        # tab_input.add_child(self.cur_view_psnr_info)
 
-        self.cur_view_depthl1_info = gui.Label("Depth L1 (m): ")
-        tab_input.add_child(self.cur_view_depthl1_info)
+        # self.cur_view_depthl1_info = gui.Label("Depth L1 (m): ")
+        # tab_input.add_child(self.cur_view_depthl1_info)
 
-        self.cur_exposure_info = gui.Label("Exposure: ")
-        tab_input.add_child(self.cur_exposure_info)
+        # self.cur_exposure_info = gui.Label("Exposure: ")
+        # tab_input.add_child(self.cur_exposure_info)
     
         # tab_input.add_child(view_info_tile)
 
-        tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
+        # TODO: add it back
+        # tab_input.add_child(gui.Label("GT Color | Rendered Color | Projected Depth"))
+        
+        # tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
 
         # view_info_tile2 = gui.Horiz(1.5 * em, gui.Margins(margin)) # empty one
 
@@ -700,13 +709,13 @@ class SLAM_GUI:
 
         tab_input.add_child(self.in_rgb_widget)
 
-        tab_input.add_child(self.rendered_rgb_widget)
+        # tab_input.add_child(self.rendered_rgb_widget) # TODO: add it back
         
         tab_input.add_child(self.in_depth_widget)
 
-        tab_input.add_child(self.rendered_depth_error_widget)
+        # tab_input.add_child(self.rendered_depth_error_widget)
         
-        tab_input.add_child(self.in_normal_widget)
+        # tab_input.add_child(self.in_normal_widget)
 
         tabs2.add_tab("Input", tab_input)
         self.panel.add_child(tabs2)
@@ -799,7 +808,7 @@ class SLAM_GUI:
 
     def _on_layout(self, layout_context):
         contentRect = self.window.content_rect
-        # self.widget3d_width_ratio = 0.6 # 0.7 # FIXME
+        #self.widget3d_width_ratio = 0.6 # 0.7 # FIXME
         self.widget3d_width_ratio = self.config.visualizer_split_width_ratio
         self.widget3d_width = int(
             self.window.size.width * self.widget3d_width_ratio
@@ -1235,7 +1244,7 @@ class SLAM_GUI:
                 elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
                     neural_point_colors = gaussian_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
                 elif "ts" in dict_keys and self.neuralpoint_ts_chbox.checked:
-                    max_ts = torch.max(gaussian_packet.neural_points_data["ts"])* 1.0
+                    max_ts = torch.max(gaussian_packet.neural_points_data["ts"]) * 1.0
                     ts_np = (gaussian_packet.neural_points_data["ts"]/max_ts).detach().cpu().numpy()
                     color_map = cm.get_cmap("jet")
                     neural_point_colors = color_map(ts_np)[:, :3].astype(np.float64)
@@ -1252,16 +1261,16 @@ class SLAM_GUI:
                 valid_neural_point_position = neural_point_position[neural_point_valid_mask]                
                 invalid_neural_point_position = neural_point_position[~neural_point_valid_mask]
 
-                self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position)
-                self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position)
+                self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position[::self.neural_point_vis_down_rate, :])
+                self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position[::self.neural_point_vis_down_rate, :])
 
                 if neural_point_colors is not None:
                     valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
                     invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
                     invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis
 
-                    self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color)                
-                    self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color)
+                    self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color[::self.neural_point_vis_down_rate, :])                
+                    self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color[::self.neural_point_vis_down_rate, :])
 
                 self.widget3d.scene.remove_geometry(self.neural_point_name)
                 self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
@@ -1391,7 +1400,7 @@ class SLAM_GUI:
                     self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
                     gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
                     self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
-                    self.gt_traj.paint_uniform_color(BLACK)
+                    self.gt_traj.paint_uniform_color(RED) # Black
                 
                 if self.gt_traj_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.gt_traj_name)
@@ -1627,13 +1636,13 @@ class SLAM_GUI:
             train_view_info = "test"
 
         self.cur_view_info.text = "Camera: {} [{}]".format(cur_frame_cam.uid, train_view_info)
-        self.cur_exposure_info.text = "Exposure: ({:.3f} , {:.3f})".format(cur_frame_cam.exposure_a.item(), cur_frame_cam.exposure_b.item())
+        # self.cur_exposure_info.text = "Exposure: ({:.3f} , {:.3f})".format(cur_frame_cam.exposure_a.item(), cur_frame_cam.exposure_b.item())
         
-        if cur_psnr is not None:
-            self.cur_view_psnr_info.text = "PSNR: {:.3f}".format(cur_psnr)
+        # if cur_psnr is not None:
+        #     self.cur_view_psnr_info.text = "PSNR: {:.3f}".format(cur_psnr)
         
-        if cur_depthl1 is not None:
-            self.cur_view_depthl1_info.text = "Depth L1 (m): {:.3f}".format(cur_depthl1)
+        # if cur_depthl1 is not None:
+        #     self.cur_view_depthl1_info.text = "Depth L1 (m): {:.3f}".format(cur_depthl1)
 
     
     def overlaid_img(self, foreground_img_np, background_img_np, alpha_foreground: float = 0.7):
@@ -1738,7 +1747,7 @@ class SLAM_GUI:
     # main rendering function for the 3D visualizer
     def render_o3d_image(self, results, current_cam, normal_in_world_frame: bool = True, normal_with_alpha: bool = True):
 
-        if not self.gs_chbox.checked:
+        if (not self.gs_chbox.checked) or (not self.config.gs_on):
             return None # don't show gs rendering results
 
         rgb = (
@@ -1750,9 +1759,9 @@ class SLAM_GUI:
                 .numpy()
             )
 
-        if self.step % 300 == 0 and self.brisque_score_on:  # 3 second
-            cur_brisque_score = self.brisque_scorer.score(img=rgb)
-            self.brisque_score_info.text = ("Current view BRISQUE score: {:.3f}".format(cur_brisque_score))
+        # if self.step % 300 == 0 and self.brisque_score_on:  # 3 second
+        #     cur_brisque_score = self.brisque_scorer.score(img=rgb)
+        #     self.brisque_score_info.text = ("Current view BRISQUE score: {:.3f}".format(cur_brisque_score))
         
         if self.depth_chbox.checked:
             depth = results["surf_depth"]
@@ -1971,7 +1980,7 @@ class SLAM_GUI:
 
         current_cam = self.get_current_cam()
 
-        if not self.gs_chbox.checked:
+        if (not self.gs_chbox.checked) or (not self.config.gs_on):
             if self.render_img is None:
                 return
             self.render_img = None

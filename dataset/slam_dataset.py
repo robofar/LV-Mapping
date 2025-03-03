@@ -1241,9 +1241,10 @@ class SLAMDataset():
         map_color_np = np.empty((0, 3))
 
         if tsdf_fusion_on:
-            tsdf_fusion_voxel_size = self.config.voxel_size_m*0.6
-            sdf_trunc = tsdf_fusion_voxel_size * 3.0
-            space_carving_on = True
+            # tsdf_fusion_voxel_size = self.config.voxel_size_m*0.6
+            tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
+            sdf_trunc = tsdf_fusion_voxel_size * 4.0
+            space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
             vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
                                             sdf_trunc,
                                             space_carving_on)
@@ -1380,7 +1381,11 @@ class SLAMDataset():
                 mesh_save_path = os.path.join(self.run_path, "mesh", "mesh_original_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
                 o3d.io.write_triangle_mesh(mesh_save_path, mesh_tsdf_fusion)
                 print(f"save the tsdf fusion mesh from the original point cloud to {mesh_save_path}")
-        
+                
+                vdb_grid_file = os.path.join(self.run_path, "map", "vdb_grid.npy")
+                vdb_volume.extract_vdb_grids(vdb_grid_file)
+                print(f"save the vdb volume to {vdb_grid_file}")
+
             vdb_volume = None
 
     # TODO

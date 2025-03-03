@@ -5,8 +5,9 @@
 import open3d as o3d
 import numpy as np
 
-def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, truncation_acc=0.50, truncation_com=0.50, gt_bbx_mask_on= True, 
-              mesh_sample_point=10000000, possion_sample_init_factor=5):
+def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05,
+               truncation_acc=0.50, truncation_com=0.50, gt_bbx_mask_on= True, 
+              mesh_sample_point=20000000, possion_sample_on=True, possion_sample_init_factor=5):
     """ Compute Mesh metrics between prediction and target.
     Opens the Meshs and runs the metrics
     Args:
@@ -18,6 +19,7 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
         truncation_com: points whose nearest neighbor is farther than the distance would not be taken into account (take trgt as reference)
         gt_bbx_mask_on: use the bounding box of the trgt as a mask of the pred mesh
         mesh_sample_point: number of the sampling points from the mesh
+        possion_sample_on: use possion sampling or uniform sampling
         possion_sample_init_factor: used for possion uniform sampling, check open3d for more details (deprecated)
     Returns:
 
@@ -25,8 +27,11 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
         Dict of mesh metrics (chamfer distance, precision, recall, f1 score, etc.)
     """
 
+
+    print("Load the predicted mesh from:", file_pred)
     mesh_pred = o3d.io.read_triangle_mesh(file_pred)
 
+    print("Load the ground truth point cloud from:", file_trgt)
     pcd_trgt = o3d.io.read_point_cloud(file_trgt)
 
     # (optional) filter the prediction outside the gt bounding box (since gt sometimes is not complete enough)
@@ -40,11 +45,13 @@ def eval_mesh(file_pred, file_trgt, down_sample_res=0.02, threshold=0.05, trunca
         mesh_pred = mesh_pred.crop(trgt_bbx)
         # pcd_sample_pred = pcd_sample_pred.crop(trgt_bbx)
 
-    # pcd_sample_pred = mesh_pred.sample_points_poisson_disk(number_of_points=mesh_sample_point, init_factor=possion_sample_init_factor)
-    # mesh uniform sampling
-    pcd_sample_pred = mesh_pred.sample_points_uniformly(number_of_points=mesh_sample_point)
+    if possion_sample_on:
+        pcd_sample_pred = mesh_pred.sample_points_poisson_disk(number_of_points=mesh_sample_point, init_factor=possion_sample_init_factor)
+    else:
+        pcd_sample_pred = mesh_pred.sample_points_uniformly(number_of_points=mesh_sample_point)
 
     if down_sample_res > 0:
+        print("Down sample the predicted mesh and ground truth point cloud")
         pred_pt_count_before = len(pcd_sample_pred.points)
         pcd_pred = pcd_sample_pred.voxel_down_sample(down_sample_res)
         pcd_trgt = pcd_trgt.voxel_down_sample(down_sample_res)

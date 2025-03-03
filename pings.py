@@ -206,7 +206,7 @@ def run_pin_slam(
     # save merged point cloud map from gt pose as a reference map
     if config.save_merged_pc and dataset.gt_pose_provided:
         dataset.write_merged_point_cloud(use_gt_pose=True, out_file_name='merged_gt_pc', 
-            frame_step=1, merged_downsample=True, tsdf_fusion_on=False)
+            frame_step=1, merged_downsample=True, tsdf_fusion_on=True)
     
     gs_time_table = []
 
@@ -234,9 +234,10 @@ def run_pin_slam(
             q_main2vis=q_main2vis,
             q_vis2main=q_vis2main,
             config=config,
-            is_rgbd=dataset.is_rgbd
+            is_rgbd=dataset.is_rgbd,
+            neural_point_vis_down_rate=config.neural_point_vis_down_rate,
         )
-        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something wrong here
+        gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
         gui_process.start()
         time.sleep(3) # second
 
@@ -430,8 +431,8 @@ def run_pin_slam(
                         if not o3d_vis.vis_global: # only build the local mesh
                             # cur_mesh = mesher.recon_aabb_mesh(dataset.cur_bbx, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)
                             used_local_pcd = global_neural_pcd_down if neural_pcd is None else neural_pcd
-                            # cur_bbx = used_local_pcd.get_axis_aligned_bounding_box()
-                            chunks_aabb = split_chunks(used_local_pcd, None, o3d_vis.mc_res_m*100) # reconstruct in chunks
+                            cur_bbx = used_local_pcd.get_axis_aligned_bounding_box()
+                            chunks_aabb = split_chunks(used_local_pcd, cur_bbx, o3d_vis.mc_res_m*100) # reconstruct in chunks
                             cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, o3d_vis.mc_res_m, mesh_path, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=o3d_vis.mesh_min_nn)    
                         else:
                             aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
@@ -529,15 +530,17 @@ def run_pin_slam(
         pgm.write_loops(os.path.join(run_path, "loop_log.txt"))
         pgm.plot_loops(os.path.join(run_path, "loop_plot.png"), vis_now=False)  
     
-    # gs eval 
+    # gs eval # TODO: better put after map pruning and hash recreating 
     if config.gs_on and config.gs_eval_on: 
         print("Begin rendering evaluation")
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on) # FIXME
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, 
+                               lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
         mapper.gs_eval_out()
 
     neural_points.prune_map(config.max_prune_certainty, 0) # prune uncertain points for the final output     
     neural_points.recreate_hash(dataset.cur_pose_torch[:3,3], None, False, False) # merge the final neural point map
-    
+    print("Final Gaussian count:", neural_points.count(valid_gs_only=True)) # FIXME
+
     color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output, vis_free_gaussians=False)
     if config.save_map:

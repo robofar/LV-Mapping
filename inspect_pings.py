@@ -77,6 +77,8 @@ parser.add_argument('--mesh_mc_m', type=float, default=-1, help='Marching cubes 
 parser.add_argument('--mesh_min_nn_k', type=int, default=-1, help='SDF querying min neighbor neural point count for mesh reconstruction')
 parser.add_argument('--sorrounding_map_r_m', type=float, default=-1, help='Radius of the sorrounding map in meter for far-away stuff rendering')
 parser.add_argument('--tsdf_fusion_max_range_m', type=float, default=-1, help='Maximum range for doing the TSDF fusion')
+parser.add_argument('--neural_point_vis_down_rate', type=int, default=1, help='Down rate for visualizing the neural points')
+parser.add_argument('--render_down_rate', type=int, default=-1, help='Down rate of image resolution for rendering')
 
 args, unknown = parser.parse_known_args()
 
@@ -140,6 +142,8 @@ def inspect_pings_map():
         config.gs_eval_cam_refine_on = True
         config.learning_rate_cam_dr = 3e-3
         config.learning_rate_cam_dr = 1e-3
+    else:
+        config.gs_eval_cam_refine_on = False
 
     mp.set_start_method("spawn") # don't forget this
     
@@ -184,6 +188,9 @@ def inspect_pings_map():
         config.sorrounding_map_radius = args.sorrounding_map_r_m
         neural_points.sorrounding_map_radius = args.sorrounding_map_r_m
 
+    if args.render_down_rate >= 0:
+        config.gs_vis_down_rate = args.render_down_rate
+
     # Load the map, decoders are then freezed
     # load decoders
     load_decoders(loaded_model, mlp_dict) 
@@ -207,6 +214,7 @@ def inspect_pings_map():
             neural_point_default_on=False,
             mesh_default_on=True,
             neural_point_color_default_mode=args.neural_point_color_mode, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
+            neural_point_vis_down_rate=args.neural_point_vis_down_rate, # better to be a prime number
         )
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
@@ -233,6 +241,12 @@ def inspect_pings_map():
         print("Evaluate the map built by the experiment {}".format(experiment_path))
     else:
         poses_for_render = poses_used
+
+    if args.range is not None:
+        frame_begin, frame_end, frame_step = args.range
+        poses_for_render_show = poses_for_render[frame_begin:frame_end]
+    else:
+        poses_for_render_show = poses_for_render
 
     # reset neural points
     center_frame_id = int(args.center_frame_id)
@@ -273,12 +287,7 @@ def inspect_pings_map():
             packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
             packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
             
-            if args.range is not None:
-                frame_begin, frame_end, frame_step = args.range
-                poses_for_render_show = poses_for_render[frame_begin:frame_end]
-                packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
-            else:
-                packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render))
+            packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
 
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
             
@@ -312,7 +321,7 @@ def inspect_pings_map():
     if not args.vis_off:
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
         packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
-        packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render))
+        packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
         if cur_mesh is not None:
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))    
         q_main2vis.put(packet_to_vis)
@@ -337,6 +346,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                       mesh_save_base_path: str = None,
                       eval_down_rate: int = 0, 
                       normal_in_world_frame: bool = True,
+                      normal_with_alpha: bool = True,
                       tsdf_fusion_voxel_size: float = None,
                       tsdf_fusion_max_range: float = None,
                       tsdf_fusion_space_carving_on: bool = False,
@@ -672,25 +682,29 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 if rendered_alpha is not None:
                     alpha_mask = rendered_alpha > config.eval_depth_min_accu_alpha
 
-                # depth
-                if rendered_depth is not None:
-                    if alpha_mask is not None:
-                        rendered_depth[~alpha_mask] = 0.0
+                # # depth
+                # if rendered_depth is not None:
+                #     if alpha_mask is not None:
+                #         rendered_depth[~alpha_mask] = 0.0
                         
-                    color_map_used = "inferno_r"
-                    rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
-                    rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
-                    rendered_depth_color_np = np.ascontiguousarray(np.transpose(rendered_depth_color_np, (1, 2, 0))) # H, W, 3
-                    if save_video_on:
-                        rendered_depth_cam_dict[cur_cam_name].append(rendered_depth_color_np)
+                #     color_map_used = "inferno_r"
+                #     rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
+                #     rendered_depth_color_np = (colorize_depth_maps(rendered_depth_np, 0.1, config.max_range, cmap=color_map_used)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+                #     rendered_depth_color_np = np.ascontiguousarray(np.transpose(rendered_depth_color_np, (1, 2, 0))) # H, W, 3
+                #     if save_video_on:
+                #         rendered_depth_cam_dict[cur_cam_name].append(rendered_depth_color_np)
                 
                 if rendered_normal is not None:
                     if normal_in_world_frame: 
                         rendered_normal = -1.0 * (rendered_normal.permute(1,2,0) @ (cur_view_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
 
-                    normal_norm = rendered_normal.norm(2, dim=0) 
-                    rendered_normal_show = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
-                    # rendered_normal_show = 0.5 * (1 - rendered_normal)
+                    if normal_with_alpha:
+                        normal_norm = rendered_normal.norm(2, dim=0) 
+                        rendered_normal_show = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
+                    else:
+                        rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+                        rendered_normal_show = 0.5 * (1 - rendered_normal)
+                    
                     rendered_normal_np = (rendered_normal_show.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8) 
                     rendered_normal_np = np.ascontiguousarray(rendered_normal_np)
                     if save_video_on:
@@ -926,16 +940,16 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         for cur_cam_name in cam_list: 
             cur_rendered_rgb_list = rendered_rgb_cam_dict[cur_cam_name]
-            cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
+            # cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
             cur_rendered_normal_list = rendered_normal_cam_dict[cur_cam_name]
 
             if len(cur_rendered_rgb_list) > 0:
                 cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}_{}.mp4".format(cur_cam_name, dt))
                 save_video_np(cur_rendered_rgb_list, cur_rgb_video_save_path)
 
-            if len(cur_rendered_depth_list) > 0:
-                cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}_{}.mp4".format(cur_cam_name, dt))
-                save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
+            # if len(cur_rendered_depth_list) > 0:
+            #     cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}_{}.mp4".format(cur_cam_name, dt))
+            #     save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
 
             if len(cur_rendered_normal_list) > 0:    
                 cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}_{}.mp4".format(cur_cam_name, dt))
@@ -943,7 +957,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             # free the lists
             rendered_rgb_cam_dict[cur_cam_name] = []
-            rendered_depth_cam_dict[cur_cam_name] = []
+            # rendered_depth_cam_dict[cur_cam_name] = []
             rendered_normal_cam_dict[cur_cam_name] = []
 
     # NOTE: CPU memory might not be enough for all of these videos, maybe output it one by one

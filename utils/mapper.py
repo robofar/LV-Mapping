@@ -20,6 +20,8 @@ from rich import print
 from tqdm import tqdm
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
+import vdbfusion # for baseline only
+
 from dataset.slam_dataset import SLAMDataset
 from model.decoder import Decoder
 from model.neural_gaussians import NeuralPoints
@@ -38,6 +40,7 @@ from utils.tools import (
     slerp_pose,
 )
 from utils.campose_utils import update_pose
+from utils.mesher import filter_isolated_vertices
 
 from eval.eval_mesh_utils import eval_pair
 
@@ -52,6 +55,7 @@ from gaussian_splatting.scene.cameras import CamImage
 from fused_ssim import fused_ssim
 
 from gs_gui.gui_utils import VisPacket
+
 
 class Mapper:
     def __init__(
@@ -863,8 +867,9 @@ class Mapper:
             origins = poses[:, :3, 3]
 
             # surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
-
-            valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
+            valid_color_mask = None
+            if self.config.color_on and color_label is not None:
+                valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
             apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
             if self.ba_done_flag:
@@ -897,7 +902,7 @@ class Mapper:
                 sem_pred = self.sem_mlp.sem_label_prob(geo_feature)
                 if not self.config.weighted_first:
                     sem_pred = torch.sum(sem_pred * weight_knn, dim=1)  # N, S
-            if self.config.color_on:
+            if self.config.color_on and valid_color_mask is not None:
                 color_pred = self.color_mlp.regress_color(color_feature[valid_color_mask])  # [N, K, C]
                 if not self.config.weighted_first:
                     color_pred = torch.sum(color_pred * weight_knn[valid_color_mask], dim=1)  # N, C
@@ -991,8 +996,8 @@ class Mapper:
                 ).mean()  # both the surface and the freespace
                 cur_loss += self.config.weight_e * eikonal_loss
 
-            if not self.silence:
-                print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
+            # if not self.silence:
+            #     print(" SDF BCE loss:", sdf_loss.item(), " SDF Eikonal loss:", eikonal_loss.item())
 
             # optional semantic loss
             sem_loss = 0.0
@@ -1854,7 +1859,9 @@ class Mapper:
                         eval_down_rate=0, skip_end_count: int = 0, 
                         sorrounding_map_radius = None,
                         lpips_eval_on: bool = False,
-                        pc_cd_eval_on: bool = False):
+                        pc_cd_eval_on: bool = False,
+                        rerender_tsdf_fusion_on: bool = False,
+                        filter_isolated_mesh: bool = True):
         
         # NOTE: there are some randomness of Guassian Splatting's optimization even with random seed fixed
         # This is mainly due to the randomness in GPU schedule in the differentiable rasterizer (according to the author of 3DGS)
@@ -1867,7 +1874,7 @@ class Mapper:
 
         # with torch.no_grad():
             
-        self.record_per_cam_param()
+        self.record_per_cam_param() # TODO: also record the refined/updated camera poses
 
         if sorrounding_map_radius is not None:
             self.neural_points.sorrounding_map_radius = sorrounding_map_radius
@@ -1877,8 +1884,28 @@ class Mapper:
 
         eval_down_scale = 2**(eval_down_rate)
 
+
+        if rerender_tsdf_fusion_on:
+            tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
+            sdf_trunc = tsdf_fusion_voxel_size * 4.0
+            space_carving_on = self.config.tsdf_fusion_space_carving_on # TODO
+            vdb_volume = vdbfusion.VDBVolume(tsdf_fusion_voxel_size,
+                                            sdf_trunc,
+                                            space_carving_on)
+
         # skip_end_count means that we will skip the last n frames because the incremental mapping haven't done much mapping in such areas
         for frame_id in tqdm(range(0, self.dataset.processed_frame - skip_end_count, 1), desc="GS evaluation"):
+            
+            self.dataset.init_temp_data()
+
+            # load the cam datas to cur_cam_img
+            self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
+            
+            # should at least have cam images
+            if self.dataset.cur_cam_img is None: 
+                continue
+            
+            # print(frame_id)
 
             remove_gpu_cache()
             
@@ -1891,6 +1918,7 @@ class Mapper:
             
             neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
 
+            # spawning gaussians for sorrounding map
             sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
                 self.decoders, None, T_w_l[:3,3],
                 dist_concat_on=self.config.dist_concat_on, 
@@ -1903,22 +1931,27 @@ class Mapper:
                 max_scale_ratio=self.config.max_scale_ratio,
                 unit_scale_ratio=self.config.unit_scale_ratio)
 
-            # load the cam datas to cur_cam_img
-            self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
+            # in lidar frame
+            cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
+            cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
-            # crop frames and possibly do LiDAR intrinsic corrections
-            self.dataset.filter_and_correct()
+            if pc_cd_eval_on and self.dataset.cur_point_cloud_torch is not None:
+                
+                 # deal with no point cloud
 
-            # deskew and reset depth map
-            tran_in_frame = None
-            if self.config.deskew and frame_id > 0:
-                tran_in_frame = self.dataset.get_tran_in_frame(frame_id)
-                self.dataset.deskew_at_frame(tran_in_frame)
-            
-            if not self.dataset.is_rgbd:
-                self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) # self.config.learn_color_residual)
+                # crop frames and possibly do LiDAR intrinsic corrections
+                self.dataset.filter_and_correct()
 
-            if pc_cd_eval_on:
+                # deskew and reset depth map
+                tran_in_frame = None
+                if self.config.deskew and frame_id > 0:
+                    tran_in_frame = self.dataset.get_tran_in_frame(frame_id)
+                    self.dataset.deskew_at_frame(tran_in_frame)
+                
+                if not self.dataset.is_rgbd:
+                    self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) # self.config.learn_color_residual)
+
+                # in lidar frame
                 cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
 
                 cur_frame_measured_xyz_np = (
@@ -1931,8 +1964,7 @@ class Mapper:
                 cur_frame_measured_pcd_o3d.points = o3d.utility.Vector3dVector(cur_frame_measured_xyz_np)
                 cur_frame_measured_pcd_o3d.colors = o3d.utility.Vector3dVector(cur_frame_measured_color_np)
 
-                cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
-
+               
             cur_cam_names = list(self.dataset.cur_cam_img.keys())
             
             eval_depth_max = self.config.max_range * 0.8
@@ -1966,6 +1998,9 @@ class Mapper:
 
                 T_w_l_cam_ts = T_w_l @ diff_pose_l_c_ts
                 T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
+
+                T_w_l_cam_ts_np = T_w_l_cam_ts.detach().cpu().numpy()
+                lidar_position_np = T_w_l_cam_ts_np[:3,3]
 
                 # you need to also load the camera exposure coefficients here
                 cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
@@ -2014,7 +2049,7 @@ class Mapper:
                     gt_rgb_image_for_eval = gt_rgb_image[:,:pixel_h_used,:]
 
                     gt_depth_image = None
-                    if cur_view_cam.depth_on is not None: 
+                    if cur_view_cam.depth_on: 
                         gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
                         valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
 
@@ -2034,6 +2069,10 @@ class Mapper:
                             displacement_range_ratio=self.config.displacement_range_ratio,
                             max_scale_ratio=self.config.max_scale_ratio,
                             unit_scale_ratio=self.config.unit_scale_ratio)
+                        
+                        if render_pkg is None:
+                            print("No render pkg, skip")
+                            break
 
                         # rendered results
                         rendered_rgb_image, rendered_depth, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
@@ -2092,11 +2131,11 @@ class Mapper:
                         if self.config.exposure_correction_on and not self.config.affine_exposure_correction:
                             print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
                         
+                    accu_alpha_mask = None
 
                     if gt_depth_image is not None and rendered_depth is not None: 
                         valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
                         
-                        accu_alpha_mask = None
                         if rendered_alpha is not None:
                             accu_alpha_mask = rendered_alpha > self.config.eval_depth_min_accu_alpha
                             valid_depth_mask = valid_depth_mask & accu_alpha_mask
@@ -2111,36 +2150,36 @@ class Mapper:
                             print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
 
 
-                        if pc_cd_eval_on: 
+                    if pc_cd_eval_on or rerender_tsdf_fusion_on: 
 
-                            rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).detach().contiguous().cpu().numpy().astype(np.uint8) 
-                            rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
-                            
-                            if accu_alpha_mask is not None:
-                                rendered_depth[~accu_alpha_mask] = 0.0
+                        rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).detach().contiguous().cpu().numpy().astype(np.uint8) 
+                        rgb_img_o3d = o3d.geometry.Image(rendered_rgb_np)
+                        
+                        if accu_alpha_mask is not None:
+                            rendered_depth[~accu_alpha_mask] = 0.0
 
-                            rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
-                            rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
+                        rendered_depth_np = rendered_depth.detach().cpu().numpy().astype(np.float32) 
+                        rendered_depth_np = np.transpose(rendered_depth_np, (1, 2, 0))
 
-                            depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
+                        depth_img_o3d = o3d.geometry.Image(rendered_depth_np)
 
-                            cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
-                                                                                    depth_img_o3d, 
-                                                                                    depth_scale=1.0, 
-                                                                                    depth_trunc=eval_depth_max, 
-                                                                                    convert_rgb_to_intensity=False)
+                        cur_rgbd_o3d = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_img_o3d, 
+                                                                                depth_img_o3d, 
+                                                                                depth_scale=1.0, 
+                                                                                depth_trunc=eval_depth_max, 
+                                                                                convert_rgb_to_intensity=False)
 
-                            # use updated pose instead (TODO)
+                        # use updated pose instead (TODO)
 
-                            # T_cw = cur_view_cam.world_view_transform.T
-                            # T_cl = T_cw @ T_wl
+                        # T_cw = cur_view_cam.world_view_transform.T
+                        # T_cl = T_cw @ T_wl
 
-                            cur_cam_rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
-                                                                cur_rgbd_o3d, 
-                                                                cur_intrinsic_o3d, 
-                                                                T_c_l_np)
+                        cur_cam_rendered_pcd_o3d = o3d.geometry.PointCloud.create_from_rgbd_image(
+                                                            cur_rgbd_o3d, 
+                                                            cur_intrinsic_o3d, 
+                                                            T_c_l_np)
 
-                            cur_frame_rendered_pcd_o3d += cur_cam_rendered_pcd_o3d # already under lidar frame
+                        cur_frame_rendered_pcd_o3d += cur_cam_rendered_pcd_o3d # already under lidar frame
 
 
                     if cur_view_cam.uid in self.train_cam_uid:
@@ -2185,6 +2224,11 @@ class Mapper:
                     self.test_cd_list.append(cur_cd)
                     self.test_f1_list.append(cur_f1)
 
+            if rerender_tsdf_fusion_on:
+                cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(self.config.vox_down_m)
+                cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.transform(T_w_l_cam_ts_np)
+                vdb_volume.integrate(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), lidar_position_np)
+                
             if q_main2vis is not None:
                 # add the eval frame to vis
                 
@@ -2193,9 +2237,6 @@ class Mapper:
                     img_down_rate=self.config.gs_vis_down_rate)
                 
                 packet_to_vis.add_neural_points_data(self.neural_points)
-
-                if pc_cd_eval_on: 
-                    packet_to_vis.add_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
 
                 odom_poses, gt_poses, pgo_poses = self.dataset.get_poses_np_for_vis(frame_id)
                 packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
@@ -2206,6 +2247,32 @@ class Mapper:
                 if not q_vis2main.empty():
                     while q_vis2main.get().flag_pause:
                         continue
+        
+        if rerender_tsdf_fusion_on:
+
+            # Extract triangle mesh (numpy arrays)
+            vert, tri = vdb_volume.extract_triangle_mesh()
+
+            mesh_rendered_tsdf_fusion = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(vert),
+                o3d.utility.Vector3iVector(tri),
+            )
+
+            if filter_isolated_mesh:
+                mesh_rendered_tsdf_fusion = filter_isolated_vertices(mesh_rendered_tsdf_fusion, self.config.min_cluster_vertices)
+
+            mesh_rendered_tsdf_fusion.compute_vertex_normals()
+
+            if self.config.run_path is not None:
+                mesh_save_path = os.path.join(self.config.run_path, "mesh", "mesh_rerendered_pc_tsdf_fusion_{}cm.ply".format(str(round(tsdf_fusion_voxel_size*1e2))))
+                o3d.io.write_triangle_mesh(mesh_save_path, mesh_rendered_tsdf_fusion)
+                print(f"save the tsdf fusion mesh rerendered from GS to {mesh_save_path}")
+                
+                # vdb_grid_file = os.path.join(self.config.run_path, "map", "mesh_rerendered_vdb_grid.npy")
+                # vdb_volume.extract_vdb_grids(vdb_grid_file)
+                # print(f"save the vdb volume to {vdb_grid_file}")
+
+            vdb_volume = None
 
 
     def gs_eval_out(self):
@@ -2323,6 +2390,7 @@ class Mapper:
 
     # TODO: deal with local and global map
     # better to use vdb fusion instead
+    # deprecated for now
     def gs_tsdf_fusion(self, render_frame_step = 1, vox_size = 0.1, down_rate = 0, depth_trunc = 10.0, output_path = None):
         # render depth and color from GS map and do tsdf fusion to build mesh
 

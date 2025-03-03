@@ -260,7 +260,7 @@ class NeuralPoints(nn.Module):
         # feature plus neural point position and orientation
         point_dim = self.geo_feature_dim + 3 + 4    
         if self.color_features is not None:
-            point_dim += (self.color_feature_dim + 3)  # also include the color feature
+            point_dim += self.color_feature_dim  # also include the color feature
         self.cur_memory_mb = neural_point_count * point_dim * 4 / 1024 / 1024  # as float32 # TODO: add memory consumption of gausssian parameters
         if verbose:
             print("Current map memory consumption: %f (MB)" % self.cur_memory_mb)

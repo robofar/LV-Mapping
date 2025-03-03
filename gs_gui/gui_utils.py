@@ -38,7 +38,9 @@ class Frustum:
         cameraeye = cameraeye[0:3, :].transpose()
         eye = cameraeye[0, :]
 
-        base_behind = np.array([[0.0, -2.5, -30.0]]) * self.size # original z -30.0
+        # base_behind = np.array([[0.0, -2.5, -30.0]]) * self.size # original z -30.0
+        base_behind = np.array([[0.0, -2.0, -40.0]]) * self.size 
+
         base_behind_hmg = np.hstack([base_behind, np.ones((base_behind.shape[0], 1))])
         cameraeye_behind = pose @ base_behind_hmg.transpose()
         cameraeye_behind = cameraeye_behind[0:3, :].transpose()
@@ -436,6 +438,7 @@ class ParamsGUI:
         neural_point_default_on: bool = False,
         mesh_default_on: bool = False,
         neural_point_color_default_mode: int = 0, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
+        neural_point_vis_down_rate: int = 1,
     ):
         self.decoders = decoders # dict of MLPs
         
@@ -450,3 +453,5 @@ class ParamsGUI:
         self.neural_point_default_on = neural_point_default_on
         self.mesh_default_on = mesh_default_on
         self.neural_point_color_default_mode = neural_point_color_default_mode
+        self.neural_point_vis_down_rate = neural_point_vis_down_rate
+        

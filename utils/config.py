@@ -116,7 +116,7 @@ class Config:
         self.diff_ts_local: float = 400.0 # deprecated (use travel distance instead)
         self.local_map_travel_dist_ratio: float = 4.0
         self.local_map_radius: float = 50.0
-        self.sorrounding_map_radius: float = 100.0
+        self.sorrounding_map_radius: float = 120.0 
 
         # map management
         self.prune_map_on: bool = False
@@ -245,7 +245,7 @@ class Config:
         self.gs_type: str = "gaussian_surfel" # now we support 3d_gs, 2d_gs and gaussian_surfel
 
         self.monodepth_on: bool = False
-        self.monodepth_gaussian_res: float = self.voxel_size_m * 2.0
+        self.monodepth_gaussian_res: float = self.voxel_size_m * 4.0
 
         self.exposure_correction_on: bool = False
         self.affine_exposure_correction: bool = True
@@ -420,7 +420,12 @@ class Config:
         self.min_cluster_vertices: int = 500 # if a connected's vertices number is smaller than this value, it would get filtered (as a postprocessing to filter outliers)
         self.keep_local_mesh: bool = False # keep the local mesh in the visualizer or not (don't delete them could cause a too large memory consumption)
         self.infer_bs: int = 4096 # batch size for inference
-
+        
+        # for baseline only
+        self.tsdf_fusion_voxel_size: float = 0.2 
+        self.tsdf_fusion_space_carving_on: bool = False
+        self.rerender_tsdf_fusion_on: bool = False # rerender the tsdf fusion mesh or not
+        
         # o3d visualization
         self.mesh_vis_normal: bool = False # normal colorization
         self.vis_frame_axis_len: float = 0.8 # sensor frame axis length, for visualization, unit: m
@@ -432,6 +437,7 @@ class Config:
         self.gs_vis_on: bool = True # gs visualizer
         self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer
+        self.neural_point_vis_down_rate: int = 1 # downrate for the rendered view
 
         # result saving settings
         self.save_map: bool = False # save the neural point map model and decoders or not
@@ -787,6 +793,11 @@ class Config:
             self.min_cluster_vertices = config_args["eval"].get('min_cluster_vertices', self.min_cluster_vertices)
             self.mc_res_m = config_args["eval"].get('mc_res_m', self.voxel_size_m*0.6) # initial marching cubes grid sampling interval (unit: m)
             
+            # for baseline only
+            self.tsdf_fusion_voxel_size = config_args["eval"].get('tsdf_fusion_voxel_size', self.tsdf_fusion_voxel_size)
+            self.tsdf_fusion_space_carving_on = config_args["eval"].get('tsdf_fusion_space_carving_on', self.tsdf_fusion_space_carving_on)
+            self.rerender_tsdf_fusion_on = config_args["eval"].get('rerender_tsdf_fusion_on', self.rerender_tsdf_fusion_on) # use the rerendered depth from radiance field for tsdf fusion as used in 2DGS
+
             # save the map or not
             self.save_map = config_args["eval"].get('save_map', self.save_map)
             self.save_merged_pc = config_args["eval"].get('save_merged_pc', self.save_merged_pc)
@@ -798,10 +809,13 @@ class Config:
             self.gs_eval_on = config_args["eval"].get("gs_eval_on", self.gs_eval_on)
             self.rendered_pc_eval_on = config_args["eval"].get('rendered_pc_eval_on', self.rendered_pc_eval_on)
 
+            self.neural_point_vis_down_rate = config_args["eval"].get('neural_point_vis_down_rate', self.neural_point_vis_down_rate)  
+
+
         # associated parameters
         self.infer_bs = self.bs * 8
         self.consistency_count = int(self.bs / 4)
         self.local_map_radius = min(self.max_range*1.05, self.max_range+5.0) # for the local neural points
         self.window_radius = max(self.local_map_radius+self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small # FIXME
-        self.sorrounding_map_radius = self.local_map_radius * 1.8
+        self.sorrounding_map_radius = self.local_map_radius * 2.0 # FIXME too large
         self.vis_frame_axis_len = self.max_range / 50.0
