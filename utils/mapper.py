@@ -2104,7 +2104,7 @@ class Mapper:
 
                         # print("Camera refinement loss:", total_loss.item())
 
-                        total_loss.backward()
+                        total_loss.backward(retain_graph=True)
                     
                         with torch.no_grad():
                             opt.step()

@@ -76,6 +76,17 @@ python pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-S
 python pings.py ./config/lidar_slam/run_oxford_gs_raw.yaml oxford_raw -i ./data/Oxford-Spires-Dataset/2024-03-18-christ-church-02/ -vmsg
 ```
 
+### To run on your own data
+
+You may add your own data loader in `dataset/dataloaders/`. You may take `ipb_car.py`, `kitti.py`, `kitti360.py`, `waymo.py`, etc. as the templates. 
+
+Then, you can run PINGS likewise:
+
+```
+python3 pings.py ./config/[your_config].yaml [your_dataset] -i ./data/path_to_your_data/ -vmsg
+```
+
+Check `python pings.py -h` for more details for usage.
 
 
 ### Inspect the results afterwards
