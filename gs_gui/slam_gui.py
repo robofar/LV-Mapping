@@ -28,7 +28,7 @@ from gs_gui.gl_render import util, util_gau
 from gs_gui.gl_render.render_ogl import OpenGLRenderer
 from gs_gui.gui_utils import (
     VisPacket,
-    Packet_vis2main,
+    ControlPacket,
     create_frustum,
     cv_gl,
     get_latest_queue,
@@ -1059,46 +1059,17 @@ class SLAM_GUI:
     #     self.widget3d.enable_back_face_culling(is_checked) 
     #     # self.mesh_render.show_back_face = is_checked
 
-    # def _on_kf_window_chbox(self, is_checked):
-    #     if self.kf_window is None:
-    #         return
-    #     edge_cnt = 0
-    #     for key in self.kf_window.keys():
-    #         for kf_idx in self.kf_window[key]:
-    #             name = "kf_edge_{}".format(edge_cnt)
-    #             edge_cnt += 1
-    #             if "keyframe_{}".format(key) not in self.frustum_dict.keys():
-    #                 continue
-    #             test1 = self.frustum_dict["keyframe_{}".format(key)].view_dir[1]
-    #             kf = self.frustum_dict["keyframe_{}".format(kf_idx)].view_dir[1]
-    #             points = [test1, kf]
-    #             lines = [[0, 1]]
-    #             colors = [[0, 1, 0]] # green camera frame
-
-    #             line_set = o3d.geometry.LineSet()
-    #             line_set.points = o3d.utility.Vector3dVector(points)
-    #             line_set.lines = o3d.utility.Vector2iVector(lines)
-    #             line_set.colors = o3d.utility.Vector3dVector(colors)
-
-    #             if is_checked:
-    #                 self.widget3d.scene.remove_geometry(name)
-    #                 self.widget3d.scene.add_geometry(name, line_set, self.traj_render)
-    #             else:
-    #                 self.widget3d.scene.remove_geometry(name)
-
     def _on_slam_slider(self, is_on):
-        packet = Packet_vis2main()
-        packet.flag_pause = not self.slider_slam.is_on
-        self.q_vis2main.put(packet)
-
-    def _on_slider(self, value):
-        packet = self.prepare_viz2main_packet()
-        self.q_vis2main.put(packet)
-
-    def _on_render_btn(self):
-        packet = Packet_vis2main()
-        packet.flag_nextbatch = True
-        self.q_vis2main.put(packet)
+        if is_on:
+            print("[GUI] SLAM resumed")
+        else:
+            print("[GUI] SLAM paused")
+    
+    def _on_vis_slider(self, is_on):
+        if is_on:
+            print("[GUI] Visualization resumed")
+        else:
+            print("[GUI] Visualization paused")
 
     def _on_screenshot_btn(self):
         
@@ -1200,6 +1171,24 @@ class SLAM_GUI:
         except Exception as e:
             print("[GUI] Can't find file", e)
             return False
+        
+    def send_data(self):
+        packet = ControlPacket()
+        packet.flag_pause = not self.slider_slam.is_on
+        # packet.flag_vis = self.slider_vis.is_on
+        # packet.flag_source = self.scan_regis_color_chbox.checked
+        packet.flag_mesh = self.mesh_chbox.checked
+        packet.flag_sdf = self.sdf_chbox.checked
+        # packet.flag_global = not self.local_map_chbox.checked
+        # packet.mc_res_m = self.mesh_mc_res_slider.int_value / 100.0
+        # packet.mesh_min_nn = self.mesh_min_nn_slider.int_value
+        # packet.mesh_freq_frame = self.mesh_freq_frame_slider.int_value
+        # packet.sdf_freq_frame = self.sdf_freq_frame_slider.int_value
+        # packet.sdf_slice_height = self.sdf_slice_height_slider.double_value
+        # packet.sdf_res_m = self.sdf_res_slider.int_value / 100.0
+        packet.cur_frame_id = self.cur_frame_id
+
+        self.q_vis2main.put(packet)
     
 
     def receive_data(self, q):
@@ -2021,6 +2010,9 @@ class SLAM_GUI:
 
                     if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis) # this is also slow
+
+                    if self.step % 30 == 0:
+                        self.send_data()
 
                     if self.step % 50 == 0: # per 0.5s
                         remove_gpu_cache() # remove cache regularly

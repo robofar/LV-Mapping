@@ -33,7 +33,7 @@ loss:
   ekional_loss_on: True
   weight_e: 0.5
 gs:
-  monodepth_on: True
+  monodepth_on: False
   gs_iters: 20 # 20
   gs_bs: 5 # 5 # train more
   gaussian_bs_ratio: 4.0

@@ -18,7 +18,7 @@ neuralpoints:
   voxel_size_m: 0.2 # 0.5
   search_alpha: 0.5
 gs:
-  monodepth_on: True
+  monodepth_on: False
   gs_iters: 5000
   gs_bs: 10
   gs_keyframe_interval: 1

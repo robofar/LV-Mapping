@@ -39,7 +39,7 @@ loss:
   weight_e: 0.1
 gs:
   gs_type: gaussian_surfel # gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
-  monodepth_on: True # True
+  monodepth_on: False # True
   exposure_correction_on: True
   affine_exposure_correction: False
   cam_pose_train_on: True

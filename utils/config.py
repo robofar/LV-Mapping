@@ -405,10 +405,13 @@ class Config:
         self.o3d_vis_on: bool = False # visualize the mesh in-the-fly using o3d visualzier or not [press space to pasue/resume]
         self.o3d_vis_raw: bool = False # visualize the raw point cloud or the weight source point cloud
         self.log_freq_frame: int = 0 # save the result log per x frames
+        self.mesh_default_on: bool = False
         self.mesh_freq_frame: int = 20  # do the reconstruction per x frames
+        self.sdf_default_on: bool = False # visualize the SDF slice or not
         self.sdfslice_freq_frame: int = 1 # visualize the SDF slice per x frames
         self.vis_sdf_slice_v: bool = False # also visualize the vertical SDF slice or not (default only horizontal slice)
         self.sdf_slice_height: float = -1.0 # initial height of the horizontal SDF slice (m) in sensor frame
+        self.vis_sdf_res_m: float = 0.2 # resolution for the SDF slice for visualization (m)
         self.eval_traj_align: bool = True # do the SE3 alignment of the trajectory when evaluating the absolute error
         
         # mesh reconstruction, marching cubes related
@@ -434,6 +437,8 @@ class Config:
         self.cam_cad_path = "./cad/camera.ply"
 
         # GS visualizer
+        self.local_map_default_on: bool = True
+        self.neural_point_map_default_on: bool = True
         self.gs_vis_on: bool = True # gs visualizer
         self.visualizer_split_width_ratio: float = 0.6 # left 0.6, right 0.4
         self.vis_in_cv2: bool = False # visualize rendered view in cv2 visualizer or 3d visualizer

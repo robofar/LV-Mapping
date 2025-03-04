@@ -417,12 +417,20 @@ def get_latest_queue(q):
     return message
 
 
-class Packet_vis2main:
-    flag_pause = None
-    flag_nextbatch = None
-    cur_cam = None
-    flag_mesh = None
-
+class ControlPacket:
+    flag_pause = False
+    flag_vis = True
+    flag_mesh = False
+    flag_sdf = False
+    flag_global = False
+    flag_source = False
+    mc_res_m = 0.2
+    mesh_min_nn = 10
+    mesh_freq_frame = 50
+    sdf_freq_frame = 50
+    sdf_slice_height = 0.2
+    sdf_res_m = 0.2
+    cur_frame_id = 0
 
 class ParamsGUI:
     def __init__(
