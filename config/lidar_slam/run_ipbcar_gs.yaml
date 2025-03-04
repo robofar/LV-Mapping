@@ -35,14 +35,14 @@ loss:
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
-# now test a mapping mode
-# tracker:
-#   source_vox_down_m: 0.6
-#   iter_n: 100
-# pgo:
-#   map_context: True
-#   pgo_freq_frame: 30
-#   virtual_side_count: 6
+# when test a mapping mode, comment out the tracker and pgo 
+tracker:
+  source_vox_down_m: 0.6
+  iter_n: 100
+pgo:
+  map_context: True
+  pgo_freq_frame: 30
+  virtual_side_count: 6
 gs:
   gs_type: gaussian_surfel # 3d_gs, 2d_gs, gaussian_surfel
   exposure_correction_on: True # verified to be better than False
@@ -50,7 +50,7 @@ gs:
   cam_pose_train_on: False
   eval_cam_refine_on: True
   view_concat_on: True
-  dist_concat_on: True
+  dist_concat_on: False
   n_gaussian: 8 # not worth to increase it, a little improvement #
   gs_iters: 100
   gaussian_bs_ratio: 2.0

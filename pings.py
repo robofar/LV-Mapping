@@ -37,6 +37,7 @@ from utils.tools import (
     freeze_decoders,
     get_time,
     load_decoder,
+    create_bbx_o3d,
     save_implicit_map,
     setup_experiment,
     split_chunks,
@@ -438,20 +439,15 @@ def run_pin_slam(
                             chunks_aabb = split_chunks(global_neural_pcd_down, aabb, vis_mesh_mc_res_m*100) # reconstruct in chunks
                             cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, vis_mesh_mc_res_m, None, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=vis_mesh_min_nn)    
                     
-                    # if config.sdfslice_freq_frame > 0:
-                    #     if o3d_vis.render_sdf and (sdf_train_frame_id == 1 or frame_id == last_frame or sdf_train_frame_id % config.sdfslice_freq_frame == 0):
-                    #         slice_res_m = config.voxel_size_m * 0.6 # better be larger (to save time) # TODO: add to config
-                    #         sdf_bound = config.surface_sample_range_m * 4.0
-                    #         query_sdf_locally = True
-                    #         if o3d_vis.vis_global:
-                    #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.map_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
-                    #         else:
-                    #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.cur_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
-                    #         if config.vis_sdf_slice_v:
-                    #             cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.cur_pose_ref[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
-                    #             cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
-                    #         else:
-                    #             cur_sdf_slice = cur_sdf_slice_h
+                    if vis_sdf_on and (frame_id == 0 or frame_id == last_frame or (frame_id + 1) % vis_sdf_freq_frame == 0):
+                        sdf_bound = config.surface_sample_range_m * 4.0
+                        vis_sdf_bbx = create_bbx_o3d(dataset.cur_pose_ref[:3,3], config.max_range/2)
+                        cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(vis_sdf_bbx, dataset.cur_pose_ref[2,3] + vis_sdf_slice_height, vis_sdf_res_m, True, -sdf_bound, sdf_bound) # horizontal slice (local)
+                        if config.vis_sdf_slice_v:
+                            cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.cur_pose_ref[0,3], vis_sdf_res_m, True, -sdf_bound, sdf_bound) # vertical slice (local)
+                            cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
+                        else:
+                            cur_sdf_slice = cur_sdf_slice_h
                                         
                     pool_pcd = mapper.get_data_pool_o3d(down_rate=37)
 
@@ -489,7 +485,7 @@ def run_pin_slam(
                     if pool_pcd is not None:
                         packet_to_vis.add_sdf_training_pool(np.array(pool_pcd.points, dtype=np.float64), np.array(pool_pcd.colors, dtype=np.float64))
 
-                    packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
+                    packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses, loop_edges)
 
                     q_main2vis.put(packet_to_vis)
 

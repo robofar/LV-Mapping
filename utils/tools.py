@@ -536,6 +536,9 @@ def remove_gpu_cache():
     if cuda_available:
         torch.cuda.empty_cache()
 
+def create_bbx_o3d(center, half_size):
+    return o3d.geometry.AxisAlignedBoundingBox(center - half_size, center + half_size)
+
 def get_time():
     """
     :return: get timing statistics

@@ -361,10 +361,15 @@ class VisPacket:
         self.mesh_verts_rgb = mesh_verts_rgb
 
     # TODO: add loop edges
-    def add_traj(self, odom_poses=None, gt_poses=None, slam_poses=None):
+    def add_traj(self, odom_poses=None, gt_poses=None, slam_poses=None, loop_edges=None):
         self.odom_poses = odom_poses
         self.gt_poses = gt_poses
         self.slam_poses = slam_poses
+
+        if slam_poses is None:
+            self.slam_poses = odom_poses
+
+        self.loop_edges = loop_edges
 
     def resize_img(self, img, resize_width = None, is_sparse: bool = False):
         if img is None:
@@ -428,8 +433,8 @@ class ControlPacket:
     mesh_min_nn = 10
     mesh_freq_frame = 10
     sdf_freq_frame = 1
-    sdf_slice_height = 0.2
-    sdf_res_m = 0.2
+    sdf_slice_height = -1.0
+    sdf_res_m = 0.1
     cur_frame_id = 0
 
 class ParamsGUI:

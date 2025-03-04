@@ -263,6 +263,7 @@ class SLAM_GUI:
         self.odom_traj = o3d.geometry.LineSet()
         self.slam_traj = o3d.geometry.LineSet()
         self.gt_traj = o3d.geometry.LineSet()
+        self.loop_edges = o3d.geometry.LineSet()
 
         # range circles
         self.range_circle = o3d.geometry.LineSet()
@@ -496,6 +497,11 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
         self.slam_traj_name = "slam_trajectory"
 
+        self.loop_edges_chbox = gui.Checkbox("Loops")
+        self.loop_edges_chbox.checked = False
+        chbox_tile_3dobj_2.add_child(self.loop_edges_chbox)
+        self.loop_edges_name = "loop_edges"
+
         self.range_circle_chbox = gui.Checkbox("Ring")
         self.range_circle_chbox.checked = False
         self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
@@ -654,6 +660,9 @@ class SLAM_GUI:
 
         self.frame_info = gui.Label("Frame: ")
         tab_info.add_child(self.frame_info)
+
+        self.loop_info = gui.Label("# Loop Closures: 0")
+        tab_info.add_child(self.loop_info)
 
         self.neural_points_info = gui.Label("# Neural points: ")
         tab_info.add_child(self.neural_points_info)
@@ -1432,6 +1441,22 @@ class SLAM_GUI:
                     
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
+                
+                if data_packet.loop_edges is not None:
+                    loop_count = len(data_packet.loop_edges)
+                    self.loop_info.text = f"# Loop Closures: {loop_count}"
+
+                    if loop_count > 0:
+                        self.loop_edges.points = o3d.utility.Vector3dVector(slam_position_np)
+                        self.loop_edges.lines = o3d.utility.Vector2iVector(np.array(data_packet.loop_edges))
+                        self.loop_edges.paint_uniform_color(GREEN)
+
+                        if self.ego_chbox.checked:
+                            self.loop_edges.transform(np.linalg.inv(self.cur_pose))
+
+                        self.widget3d.scene.remove_geometry(self.loop_edges_name)
+                        self.widget3d.scene.add_geometry(self.loop_edges_name, self.loop_edges, self.traj_render)
+                        self.widget3d.scene.show_geometry(self.loop_edges_name, self.loop_edges_chbox.checked)
 
 
         # set up inital camera # no camera
