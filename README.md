@@ -5,11 +5,15 @@
 
 **SLAM process**
 
-![pings_demo_hku_dataset](https://github.com/user-attachments/assets/c481cf2b-7011-4711-a0e4-70aef5e3fe74)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c481cf2b-7011-4711-a0e4-70aef5e3fe74" alt="pings_demo_hku_dataset">
+</p>
 
 **Rendering from the PINGS map**
 
-![pings_demo_ipbcar_rendering](https://github.com/user-attachments/assets/7b5ebf77-93fe-43b0-8766-13e6451d8770)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7b5ebf77-93fe-43b0-8766-13e6451d8770" alt="pings_demo_ipbcar_rendering">
+</p>
 
 
 ## Installation

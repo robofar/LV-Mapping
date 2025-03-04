@@ -294,16 +294,17 @@ class SLAM_GUI:
         slider_line = gui.Horiz(1.0 * em, gui.Margins(margin))
         
         # these are not button, but rather switch
-        self.slider_slam = gui.ToggleSwitch("Resume / Pause SLAM")
+        self.slider_slam = gui.ToggleSwitch("Pause / Resume SLAM")
         self.slider_slam.is_on = True # default on
         self.slider_slam.set_on_clicked(self._on_slam_slider)
         slider_line.add_child(self.slider_slam)
 
-        self.slider_render = gui.ToggleSwitch("Resume / Pause Rendering")
+        self.slider_render = gui.ToggleSwitch("Pause / Resume Rendering")
         self.slider_render.is_on = True # default on
+        self.slider_render.set_on_clicked(self._on_vis_slider)
         slider_line.add_child(self.slider_render)
 
-        self.slider_recording = gui.ToggleSwitch("Resume / Pause Recording")
+        self.slider_recording = gui.ToggleSwitch("Pause / Resume Recording")
         self.slider_recording.is_on = False # default off
         slider_line.add_child(self.slider_recording)
 
