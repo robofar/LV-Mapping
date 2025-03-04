@@ -72,7 +72,7 @@ class SLAM_GUI:
         self.model_dict = {}
 
         self.q_main2vis = None
-        self.gaussian_cur = None
+        self.cur_data_packet = None
 
         self.cur_base_gaussians = None # Dict: these are background gaussians stored in the visualizer
 
@@ -158,8 +158,8 @@ class SLAM_GUI:
         self.window_w, self.window_h = 2560, 1600
 
         self.window = gui.Application.instance.create_window(
-           "PINGS Viewer for {}".format(self.config.name), self.window_w, self.window_h
-        ) # open3d gui #FIXME, now this is crashing
+           "📍 PINGS Viewer", self.window_w, self.window_h
+        )
         self.window.set_on_layout(self._on_layout)
         self.window.set_on_close(self._on_close)
 
@@ -648,6 +648,9 @@ class SLAM_GUI:
         tabs = gui.TabControl()
         tab_info = gui.Vert(0, tab_margins)
 
+        run_name_info = gui.Label("Mission: {}".format(self.config.run_name))
+        tab_info.add_child(run_name_info)
+
         self.frame_info = gui.Label("Frame: ")
         tab_info.add_child(self.frame_info)
 
@@ -941,11 +944,7 @@ class SLAM_GUI:
 
 
     def _on_scan_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.scan_name)
-            self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
-        else:
-            self.widget3d.scene.remove_geometry(self.scan_name)
+        self.visualize_scan()
 
     def _on_rendered_scan_chbox(self, is_checked):
         if is_checked:
@@ -1138,7 +1137,7 @@ class SLAM_GUI:
     # disable this now
     # def add_ids(self):
     #     indices = (
-    #         torch.unique(self.gaussian_cur.unique_kfIDs).cpu().numpy().astype(int)
+    #         torch.unique(self.cur_data_packet.unique_kfIDs).cpu().numpy().astype(int)
     #     ).tolist()
     #     for idx in indices:
     #         if idx in self.gaussian_id_dict.keys():
@@ -1175,7 +1174,7 @@ class SLAM_GUI:
     def send_data(self):
         packet = ControlPacket()
         packet.flag_pause = not self.slider_slam.is_on
-        # packet.flag_vis = self.slider_vis.is_on
+        packet.flag_vis = self.slider_render.is_on
         # packet.flag_source = self.scan_regis_color_chbox.checked
         packet.flag_mesh = self.mesh_chbox.checked
         packet.flag_sdf = self.sdf_chbox.checked
@@ -1195,56 +1194,56 @@ class SLAM_GUI:
         if q is None:
             return
 
-        gaussian_packet = get_latest_queue(q)
+        data_packet = get_latest_queue(q)
 
-        if gaussian_packet is None:
+        if data_packet is None:
             return
 
-        # if gaussian_packet.frame_id != self.cur_frame_id:
+        # if data_packet.frame_id != self.cur_frame_id:
             # only update with new data (once)
 
         if True:    
-            self.cur_frame_id = gaussian_packet.frame_id
+            self.cur_frame_id = data_packet.frame_id
 
-            self.gaussian_cur = gaussian_packet
+            self.cur_data_packet = data_packet
 
-            if gaussian_packet.frame_id is not None:
-                self.frame_info.text = "Frame: {}".format(gaussian_packet.frame_id)
+            if data_packet.frame_id is not None:
+                self.frame_info.text = "Frame: {}".format(data_packet.frame_id)
                     
-            if gaussian_packet.has_neural_points:
+            if data_packet.has_neural_points:
                 self.neural_points_info.text = "# Neural points: {} (local {}), # Valid: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
-                    gaussian_packet.neural_points_data["count"],
-                    gaussian_packet.neural_points_data["local_count"],
-                    gaussian_packet.neural_points_data["valid_count"],
-                    gaussian_packet.neural_points_data["valid_local_count"],
-                    gaussian_packet.neural_points_data["map_memory_mb"]
+                    data_packet.neural_points_data["count"],
+                    data_packet.neural_points_data["local_count"],
+                    data_packet.neural_points_data["valid_count"],
+                    data_packet.neural_points_data["valid_local_count"],
+                    data_packet.neural_points_data["map_memory_mb"]
                 )
                 # done every time, could be a bit time consuming here
                 
-                neural_point_position = gaussian_packet.neural_points_data["position"].detach().cpu().numpy()
+                neural_point_position = data_packet.neural_points_data["position"].detach().cpu().numpy()
                 
-                dict_keys = list(gaussian_packet.neural_points_data.keys())
+                dict_keys = list(data_packet.neural_points_data.keys())
 
                 neural_point_colors = None
 
                 if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
-                    neural_point_colors = gaussian_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
+                    neural_point_colors = data_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
                 elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
-                    neural_point_colors = gaussian_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
+                    neural_point_colors = data_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
                 elif "ts" in dict_keys and self.neuralpoint_ts_chbox.checked:
-                    max_ts = torch.max(gaussian_packet.neural_points_data["ts"]) * 1.0
-                    ts_np = (gaussian_packet.neural_points_data["ts"]/max_ts).detach().cpu().numpy()
+                    max_ts = torch.max(data_packet.neural_points_data["ts"]) * 1.0
+                    ts_np = (data_packet.neural_points_data["ts"]/max_ts).detach().cpu().numpy()
                     color_map = cm.get_cmap("jet")
                     neural_point_colors = color_map(ts_np)[:, :3].astype(np.float64)
                 elif "stability" in dict_keys and self.neuralpoint_stability_chbox.checked:
-                    stability_vis_np = (1.0 - gaussian_packet.neural_points_data["stability"]/1000.0).detach().cpu().numpy()
+                    stability_vis_np = (1.0 - data_packet.neural_points_data["stability"]/1000.0).detach().cpu().numpy()
                     certainty_np = np.clip(stability_vis_np, 0.0, 1.0)
                     neural_point_colors = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
                 elif "color" in dict_keys:
-                    neural_point_colors = gaussian_packet.neural_points_data["color"].detach().cpu().numpy()
+                    neural_point_colors = data_packet.neural_points_data["color"].detach().cpu().numpy()
                 
                 
-                neural_point_valid_mask = gaussian_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
+                neural_point_valid_mask = data_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
 
                 valid_neural_point_position = neural_point_position[neural_point_valid_mask]                
                 invalid_neural_point_position = neural_point_position[~neural_point_valid_mask]
@@ -1269,13 +1268,13 @@ class SLAM_GUI:
                     self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
 
 
-            if gaussian_packet.has_sorrounding_points:
-                cur_center_position = gaussian_packet.sorrounding_neural_points_data["center"]
+            if data_packet.has_sorrounding_points:
+                cur_center_position = data_packet.sorrounding_neural_points_data["center"]
                 
                 # spawn gaussians for the sorrounding map
                 # self.cur_base_gaussians are stored in GPU, might take some memory
 
-                self.cur_base_gaussians = spawn_gaussians(gaussian_packet.sorrounding_neural_points_data, 
+                self.cur_base_gaussians = spawn_gaussians(data_packet.sorrounding_neural_points_data, 
                     self.decoders, None, cur_center_position,
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
@@ -1290,14 +1289,14 @@ class SLAM_GUI:
             frustum_size = self.config.max_range*0.008
 
             # load cameras
-            if gaussian_packet.current_frames is not None and len(gaussian_packet.cam_list)>0: # as Camera class
+            if data_packet.current_frames is not None and len(data_packet.cam_list)>0: # as Camera class
                 
                 for cam_name in list(self.frustum_dict.keys()): 
                     self.widget3d.scene.remove_geometry(cam_name)
 
-                for cam in gaussian_packet.cam_list:
+                for cam in data_packet.cam_list:
                     frustum = self.add_camera(
-                        gaussian_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
+                        data_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
                     )
                     # print("Cam added")
                 if self.followcam_chbox.checked:
@@ -1315,7 +1314,7 @@ class SLAM_GUI:
                     # print("Update now")
                     self.update_img_show(selected_cam)                           
 
-            if gaussian_packet.keyframes is not None: # as Camera class
+            if data_packet.keyframes is not None: # as Camera class
                 
                 # remove old stuff from last frame
                 for keyframe_name in list(self.keyframe_dict.keys()): 
@@ -1325,8 +1324,8 @@ class SLAM_GUI:
                 self.combo_train_cams.clear_items() # set back to empty
 
                 # add new stuff from this frame
-                for cam in gaussian_packet.keyframe_list:
-                    cur_keyframe =  gaussian_packet.keyframes[cam]
+                for cam in data_packet.keyframe_list:
+                    cur_keyframe =  data_packet.keyframes[cam]
                     if cur_keyframe.in_long_term_memory:
                         frustum_color = [0.5, 0.5, 0]
                     else:
@@ -1335,55 +1334,49 @@ class SLAM_GUI:
                         cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=frustum_size
                     ) 
 
-            if gaussian_packet.current_pointcloud_xyz is not None:
-                self.scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_xyz)
-                if gaussian_packet.current_pointcloud_rgb is not None:
-                    self.scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_pointcloud_rgb)
-                if self.scan_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.scan_name)
-                    self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
+            self.visualize_scan(data_packet)
 
-            if gaussian_packet.current_rendered_xyz is not None:
-                self.rendered_scan.points = o3d.utility.Vector3dVector(gaussian_packet.current_rendered_xyz)
-                if gaussian_packet.current_rendered_rgb is not None:
-                    self.rendered_scan.colors = o3d.utility.Vector3dVector(gaussian_packet.current_rendered_rgb)
+            if data_packet.current_rendered_xyz is not None:
+                self.rendered_scan.points = o3d.utility.Vector3dVector(data_packet.current_rendered_xyz)
+                if data_packet.current_rendered_rgb is not None:
+                    self.rendered_scan.colors = o3d.utility.Vector3dVector(data_packet.current_rendered_rgb)
                 if self.rendered_scan_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.rendered_scan_name)
                     self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
 
-            if gaussian_packet.sdf_slice_xyz is not None:
+            if data_packet.sdf_slice_xyz is not None:
                 if self.sdf_chbox.checked:
-                    self.sdf_slice.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_xyz)
-                    if gaussian_packet.sdf_slice_rgb is not None:
-                        self.sdf_slice.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_slice_rgb)
+                    self.sdf_slice.points = o3d.utility.Vector3dVector(data_packet.sdf_slice_xyz)
+                    if data_packet.sdf_slice_rgb is not None:
+                        self.sdf_slice.colors = o3d.utility.Vector3dVector(data_packet.sdf_slice_rgb)
 
                     self.widget3d.scene.remove_geometry(self.sdf_name)
                     self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
 
-            if gaussian_packet.sdf_pool_xyz is not None:
+            if data_packet.sdf_pool_xyz is not None:
                 if self.sdf_pool_chbox.checked:
-                    self.sdf_pool.points = o3d.utility.Vector3dVector(gaussian_packet.sdf_pool_xyz)
-                    if gaussian_packet.sdf_pool_rgb is not None:
-                        self.sdf_pool.colors = o3d.utility.Vector3dVector(gaussian_packet.sdf_pool_rgb)
+                    self.sdf_pool.points = o3d.utility.Vector3dVector(data_packet.sdf_pool_xyz)
+                    if data_packet.sdf_pool_rgb is not None:
+                        self.sdf_pool.colors = o3d.utility.Vector3dVector(data_packet.sdf_pool_rgb)
 
                     self.widget3d.scene.remove_geometry(self.sdf_pool_name)
                     self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
 
-            if gaussian_packet.mesh_verts is not None and gaussian_packet.mesh_faces is not None:
+            if data_packet.mesh_verts is not None and data_packet.mesh_faces is not None:
                 self.mesh = o3d.geometry.TriangleMesh(
-                    o3d.utility.Vector3dVector(gaussian_packet.mesh_verts),
-                    o3d.utility.Vector3iVector(gaussian_packet.mesh_faces),
+                    o3d.utility.Vector3dVector(data_packet.mesh_verts),
+                    o3d.utility.Vector3iVector(data_packet.mesh_faces),
                     )
-                if gaussian_packet.mesh_verts_rgb is not None:    
-                    self.mesh.vertex_colors = o3d.utility.Vector3dVector(gaussian_packet.mesh_verts_rgb)
+                if data_packet.mesh_verts_rgb is not None:    
+                    self.mesh.vertex_colors = o3d.utility.Vector3dVector(data_packet.mesh_verts_rgb)
                 self.mesh.compute_vertex_normals()
 
                 if self.mesh_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.mesh_name)
                     self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
 
-            if gaussian_packet.gt_poses is not None:
-                gt_position_np = gaussian_packet.gt_poses[:, :3, 3]
+            if data_packet.gt_poses is not None:
+                gt_position_np = data_packet.gt_poses[:, :3, 3]
                 if gt_position_np.shape[0] > 1:
                     self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
                     gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
@@ -1394,25 +1387,25 @@ class SLAM_GUI:
                     self.widget3d.scene.remove_geometry(self.gt_traj_name)
                     self.widget3d.scene.add_geometry(self.gt_traj_name, self.gt_traj, self.traj_render)
 
-                if gaussian_packet.slam_poses is None:
+                if data_packet.slam_poses is None:
                     
                     self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                    self.sensor_cad.transform(gaussian_packet.gt_poses[-1])
+                    self.sensor_cad.transform(data_packet.gt_poses[-1])
                     
                     if self.cad_chbox.checked:
                         self.widget3d.scene.remove_geometry(self.cad_name)
                         self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
                     
                     self.range_circle = copy.deepcopy(self.range_circle_origin)
-                    self.range_circle.transform(gaussian_packet.gt_poses[-1])  
+                    self.range_circle.transform(data_packet.gt_poses[-1])  
 
                     if self.range_circle_chbox.checked: 
                         self.widget3d.scene.remove_geometry(self.range_circle_name)
                         self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
 
-            if gaussian_packet.slam_poses is not None:
+            if data_packet.slam_poses is not None:
                 
-                slam_position_np = gaussian_packet.slam_poses[:, :3, 3]
+                slam_position_np = data_packet.slam_poses[:, :3, 3]
                 if slam_position_np.shape[0] > 1:
                     self.slam_traj.points = o3d.utility.Vector3dVector(slam_position_np)
                     slam_edges = np.array([[i, i + 1] for i in range(slam_position_np.shape[0] - 1)])
@@ -1424,7 +1417,7 @@ class SLAM_GUI:
                     self.widget3d.scene.add_geometry(self.slam_traj_name, self.slam_traj, self.traj_render)
                 
                 self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
-                self.sensor_cad.transform(gaussian_packet.slam_poses[-1])
+                self.sensor_cad.transform(data_packet.slam_poses[-1])
 
                 if self.cad_chbox.checked:
                     
@@ -1432,7 +1425,7 @@ class SLAM_GUI:
                     self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
 
                 self.range_circle = copy.deepcopy(self.range_circle_origin)
-                self.range_circle.transform(gaussian_packet.slam_poses[-1])
+                self.range_circle.transform(data_packet.slam_poses[-1])
                 
                 if self.range_circle_chbox.checked: 
                     
@@ -1441,12 +1434,12 @@ class SLAM_GUI:
 
 
         # set up inital camera # no camera
-        if len(gaussian_packet.cam_list) == 0 and not self.init:
+        if len(data_packet.cam_list) == 0 and not self.init:
             self.center_bev()
 
         self.init = True
 
-        if gaussian_packet.finish:
+        if data_packet.finish:
             print("[GUI] Received terminate signal")
             # clean up the pipe
             while not self.q_main2vis.empty():
@@ -1469,13 +1462,13 @@ class SLAM_GUI:
                         show_depth_error: bool = False,
                         alpha_foreground: float = 0.7):
 
-        if self.gaussian_cur.current_frames is None:
+        if self.cur_data_packet.current_frames is None:
             return 
 
-        if cam_name in list(self.gaussian_cur.gtcolor.keys()):
-            selected_gtcolor = self.gaussian_cur.gtcolor[cam_name]
-            selected_gtdepth = self.gaussian_cur.gtdepth[cam_name]
-            selected_gtnormal = self.gaussian_cur.gtnormal[cam_name]
+        if cam_name in list(self.cur_data_packet.gtcolor.keys()):
+            selected_gtcolor = self.cur_data_packet.gtcolor[cam_name]
+            selected_gtdepth = self.cur_data_packet.gtdepth[cam_name]
+            selected_gtnormal = self.cur_data_packet.gtnormal[cam_name]
         else:
             selected_gtcolor = selected_gtdepth = selected_gtnormal = None
 
@@ -1528,12 +1521,12 @@ class SLAM_GUI:
         cur_depthl1 = None
 
         if from_cur_frame:
-            if cam_name in list(self.gaussian_cur.current_frames.keys()):
-                cur_frame_cam: CamImage = self.gaussian_cur.current_frames[cam_name]
+            if cam_name in list(self.cur_data_packet.current_frames.keys()):
+                cur_frame_cam: CamImage = self.cur_data_packet.current_frames[cam_name]
             else:
                 return
         else:
-            cur_frame_cam: CamImage = self.gaussian_cur.keyframes[cam_name]
+            cur_frame_cam: CamImage = self.cur_data_packet.keyframes[cam_name]
 
         down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
@@ -1552,7 +1545,7 @@ class SLAM_GUI:
 
             with torch.no_grad():
                 render_results = render(cur_frame_cam, 
-                    None, self.gaussian_cur.neural_points_data, 
+                    None, self.cur_data_packet.neural_points_data, 
                     self.decoders, self.cur_base_gaussians, self.background,
                     scaling_modifier=self.scaling_slider.double_value, 
                     down_rate=down_rate_used,
@@ -1730,6 +1723,34 @@ class SLAM_GUI:
         # print(current_cam.camera_center)
                                                         
         return current_cam
+    
+    def visualize_scan(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
+
+        if self.scan_chbox.checked and data_packet.current_pointcloud_xyz is not None:
+            self.scan.points = o3d.utility.Vector3dVector(data_packet.current_pointcloud_xyz)
+            if data_packet.current_pointcloud_rgb is not None:
+                self.scan.colors = o3d.utility.Vector3dVector(data_packet.current_pointcloud_rgb)
+        
+            # if not (self.config.color_on or self.config.semantic_on or self.scan_regis_color_chbox.checked):
+            #     self.scan.paint_uniform_color(SILVER)
+
+            # if self.scan_height_color_chbox.checked:
+            #     z_values = data_packet.current_pointcloud_xyz[:, 2]
+            #     z_min, z_max = z_values.min(), z_values.max()
+            #     z_normalized = (z_values - z_min) / (z_max - z_min + 1e-6)
+            #     color_map = cm.get_cmap("jet")
+            #     scan_colors_np = color_map(z_normalized)[:, :3].astype(np.float64)
+            #     self.scan.colors = o3d.utility.Vector3dVector(scan_colors_np)
+
+            # if self.ego_chbox.checked:
+            #     self.scan.transform(np.linalg.inv(self.cur_pose))
+
+            self.widget3d.scene.remove_geometry(self.scan_name)
+            self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
+
+        self.widget3d.scene.show_geometry(self.scan_name, self.scan_chbox.checked)
 
 
     # main rendering function for the 3D visualizer
@@ -1825,7 +1846,7 @@ class SLAM_GUI:
 
         elif self.ellipsoid_chbox.checked:
 
-            if self.gaussian_cur is None:
+            if self.cur_data_packet is None:
                 return
             
 
@@ -1867,22 +1888,22 @@ class SLAM_GUI:
 
             # TODO
             # here all the gaussians in the global map
-            # self.gaussians_gl.xyz = self.gaussian_cur.get_xyz.cpu().numpy()
-            # self.gaussians_gl.opacity = self.gaussian_cur.get_opacity.cpu().numpy()
-            # self.gaussians_gl.scale = self.gaussian_cur.get_scaling.cpu().numpy()
-            # self.gaussians_gl.rot = self.gaussian_cur.get_rotation.cpu().numpy()
-            # self.gaussians_gl.sh = self.gaussian_cur.get_features.cpu().numpy()[:, 0, :]
+            # self.gaussians_gl.xyz = self.cur_data_packet.get_xyz.cpu().numpy()
+            # self.gaussians_gl.opacity = self.cur_data_packet.get_opacity.cpu().numpy()
+            # self.gaussians_gl.scale = self.cur_data_packet.get_scaling.cpu().numpy()
+            # self.gaussians_gl.rot = self.cur_data_packet.get_rotation.cpu().numpy()
+            # self.gaussians_gl.sh = self.cur_data_packet.get_features.cpu().numpy()[:, 0, :]
 
             # local map only
-            # self.gaussians_gl.xyz = self.gaussian_cur.gaussian_xyz.cpu().numpy()
-            # self.gaussians_gl.opacity = self.gaussian_cur.gaussian_alpha.cpu().numpy() + 1.0
-            # self.gaussians_gl.scale = self.gaussian_cur.gaussian_scale.cpu().numpy()
-            # self.gaussians_gl.rot = self.gaussian_cur.gaussian_rot.cpu().numpy()
+            # self.gaussians_gl.xyz = self.cur_data_packet.gaussian_xyz.cpu().numpy()
+            # self.gaussians_gl.opacity = self.cur_data_packet.gaussian_alpha.cpu().numpy() + 1.0
+            # self.gaussians_gl.scale = self.cur_data_packet.gaussian_scale.cpu().numpy()
+            # self.gaussians_gl.rot = self.cur_data_packet.gaussian_rot.cpu().numpy()
 
-            # gaussians_gl_rgb = self.gaussian_cur.gaussian_color.cpu().numpy()
+            # gaussians_gl_rgb = self.cur_data_packet.gaussian_color.cpu().numpy()
             # self.gaussians_gl.sh = (gaussians_gl_rgb - 0.5) / 0.28209479177387814 # C0
 
-            # # self.gaussians_gl.sh = self.gaussian_cur.gaussian_color.cpu().numpy()[:, 0, :]
+            # # self.gaussians_gl.sh = self.cur_data_packet.gaussian_color.cpu().numpy()[:, 0, :]
 
             if self.elliopsoid_2d_chbox.checked:
                 render_mode = -3 # 2D surfel
@@ -1910,10 +1931,10 @@ class SLAM_GUI:
 
     def rasterise(self, current_cam):
 
-        if self.gaussian_cur is None:
+        if self.cur_data_packet is None:
             return None
 
-        if self.gaussian_cur.neural_points_data is None:
+        if self.cur_data_packet.neural_points_data is None:
             return None
 
         # print("# Local neural point:", self.neural_points.local_count())
@@ -1925,7 +1946,7 @@ class SLAM_GUI:
             render_tic = get_time()
 
             rendering_data = render(current_cam, None, 
-                self.gaussian_cur.neural_points_data, 
+                self.cur_data_packet.neural_points_data, 
                 self.decoders, self.cur_base_gaussians, self.background, 
                 scaling_modifier=self.scaling_slider.double_value, 
                 down_rate=self.scaling_slider_downrate.int_value, 
@@ -2008,13 +2029,13 @@ class SLAM_GUI:
                             cam_pose = np.linalg.inv(cur_extrinsic)
                             self.recorded_poses.append(cam_pose)
 
-                    if self.step % 20 == 0: # per 0.2s # 5 Hz # receive latest data
+                    if self.step % 10 == 0: # per 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis) # this is also slow
 
-                    if self.step % 30 == 0:
+                    if self.step % 20 == 0:
                         self.send_data()
 
-                    if self.step % 50 == 0: # per 0.5s
+                    if self.step % 100 == 0: 
                         remove_gpu_cache() # remove cache regularly
                 
                 else:

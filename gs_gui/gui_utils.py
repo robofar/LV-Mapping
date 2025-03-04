@@ -412,7 +412,7 @@ def get_latest_queue(q):
                 del message
             message = message_latest
         except queue.Empty:
-            if q.qsize() < 1:
+            if q.empty():
                 break
     return message
 
@@ -426,8 +426,8 @@ class ControlPacket:
     flag_source = False
     mc_res_m = 0.2
     mesh_min_nn = 10
-    mesh_freq_frame = 50
-    sdf_freq_frame = 50
+    mesh_freq_frame = 10
+    sdf_freq_frame = 1
     sdf_slice_height = 0.2
     sdf_res_m = 0.2
     cur_frame_id = 0

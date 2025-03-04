@@ -11,8 +11,8 @@ import time
 import numpy as np
 import open3d as o3d
 import torch
-# import torch.multiprocessing as mp
-import multiprocessing as mp
+import torch.multiprocessing as mp
+# import multiprocessing as mp
 import wandb
 from rich import print
 from tqdm import tqdm
@@ -46,7 +46,7 @@ from utils.tools import (
 from utils.tracker import Tracker
 
 from gs_gui import slam_gui
-from gs_gui.gui_utils import VisPacket, ParamsGUI, ControlPacket
+from gs_gui.gui_utils import VisPacket, ParamsGUI, ControlPacket, get_latest_queue
 
 '''
     📍PINGS
@@ -62,8 +62,10 @@ docstring = f"""
 
 [bold green]Examples: [/bold green]
 
+# Use a more specific dataloader: select from {", ".join(_available_dl_help)}
+
 # Run on IPB Car data sequence
-$ python3 pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/2024-04-30_cheap_car/extracted/ -vmsg
+$ python3 pings.py ./config/lidar_slam/run_ipbcar_gs.yaml ipb_car -i ./data/ipb_car/ipbcar_test_subset/ -vmsg
 
 # Run on Oxford Spires dataset
 $ python3 pings.py ./config/lidar_slam/run_oxford_gs.yaml oxford -i ./data/Oxford-Spires-Dataset/2024-03-12-keble-college-04/ -vmsg
@@ -80,7 +82,6 @@ def run_pin_slam(
     frame_range: Optional[Tuple[int, int, int]] = typer.Option(None, '--range', help='Specify the start, end and step of the processed frame, e.g. "10 1000 1"'),
     data_loader_on: bool = typer.Option(True, '--data-loader-on', '-d', help='Use specific data loader (rosbag, pcap, mcap dataloaders and typical supported datasets)'),
     visualize: bool = typer.Option(False, '--visualize', '-v', help='Turn on the GS visualizer (could make the SLAM processing slower)'),
-    cpu_only: bool = typer.Option(False, '--cpu-only', '-c', help='Run only on CPU'),
     log_on: bool = typer.Option(False, '--log-on', '-l', help='Turn on the logs printing'),
     wandb_on: bool = typer.Option(False, '--wandb-on', '-w', help='Turn on the weight & bias logging'),
     save_map: bool = typer.Option(False, '--save-map', '-s', help='Save the PIN map after SLAM'),
@@ -109,9 +110,6 @@ def run_pin_slam(
     if frame_range:
         config.begin_frame, config.end_frame, config.step_frame = frame_range
         
-    if cpu_only:
-        config.device = 'cpu'
-        
     if input_path:
         config.pc_path = input_path
         
@@ -126,7 +124,7 @@ def run_pin_slam(
 
     argv = sys.argv
     run_path = setup_experiment(config, argv)
-    print("[bold green]PIN-SLAM starts[/bold green]")
+    print("[bold green]PINGS starts[/bold green]")
 
     mp.set_start_method("spawn")
 
@@ -217,7 +215,7 @@ def run_pin_slam(
     if config.o3d_vis_on:
         # communicator between the processes
         q_main2vis = mp.Queue() 
-        q_vis2main = mp.Queue(maxsize=1)
+        q_vis2main = mp.Queue()
 
         params_gui = ParamsGUI(
             decoders=mlp_dict,
@@ -227,6 +225,7 @@ def run_pin_slam(
             config=config,
             is_rgbd=dataset.is_rgbd,
             neural_point_vis_down_rate=config.neural_point_vis_down_rate,
+            gs_default_on=gs_on,
         )
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
         gui_process.start()
@@ -384,7 +383,7 @@ def run_pin_slam(
             if config.o3d_vis_on: # if visualizer is off, there's no need to reconstruct the mesh
 
                 if not q_vis2main.empty():
-                    control_packet: ControlPacket = q_vis2main.get()
+                    control_packet: ControlPacket = get_latest_queue(q_vis2main)
 
                     vis_visualize_on = control_packet.flag_vis
                     vis_global_on = control_packet.flag_global
@@ -401,103 +400,104 @@ def run_pin_slam(
                     while control_packet.flag_pause:
                         time.sleep(0.1)
                         if not q_vis2main.empty():
-                            control_packet = q_vis2main.get()
+                            control_packet = get_latest_queue(q_vis2main)
                             if not control_packet.flag_pause:
                                 break
 
-                # set the point cloud for visualization
-                dataset.update_o3d_map() # this is after downsampling
-                frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
+                if vis_visualize_on:
 
-                T7 = get_time()
+                    # set the point cloud for visualization
+                    dataset.update_o3d_map() # this is after downsampling
+                    frame_point_cloud_for_vis = dataset.cur_frame_o3d # already in world frame
 
-                neural_pcd = None
-                # if o3d_vis.render_neural_points or (frame_id == last_frame): # last frame also vis
-                #     neural_pcd = neural_points.get_neural_points_o3d(query_global=o3d_vis.vis_global, color_mode=o3d_vis.neural_points_vis_mode, 
-                #                                                     random_down_ratio=1, cur_sensor_position=dataset.cur_pose_ref[:3,3], 
-                #                                                     vis_normals=o3d_vis.vis_gaussian_normal,
-                #                                                     vis_free_gaussians=o3d_vis.vis_free_gaussian) # select from geo_feature, ts and certainty
-                
-                sdf_train_frame_id = mapper.sdf_train_frame_count
+                    T7 = get_time()
 
-                # reconstruction by marching cubes
-                if vis_mesh_on and (frame_id == 0 or frame_id == last_frame or (frame_id+1) % vis_mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):            
-                    # update map bbx
-                    global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=31) # prime number
-                    dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+                    neural_pcd = None
+                    # if o3d_vis.render_neural_points or (frame_id == last_frame): # last frame also vis
+                    #     neural_pcd = neural_points.get_neural_points_o3d(query_global=o3d_vis.vis_global, color_mode=o3d_vis.neural_points_vis_mode, 
+                    #                                                     random_down_ratio=1, cur_sensor_position=dataset.cur_pose_ref[:3,3], 
+                    #                                                     vis_normals=o3d_vis.vis_gaussian_normal,
+                    #                                                     vis_free_gaussians=o3d_vis.vis_free_gaussian) # select from geo_feature, ts and certainty
                     
-                    # figure out how to do it efficiently
-                    if not vis_global_on: # only build the local mesh
-                        used_local_pcd = global_neural_pcd_down if neural_pcd is None else neural_pcd
-                        cur_bbx = used_local_pcd.get_axis_aligned_bounding_box()
-                        chunks_aabb = split_chunks(used_local_pcd, cur_bbx, vis_mesh_mc_res_m*100) # reconstruct in chunks
-                        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, vis_mesh_mc_res_m, None, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=vis_mesh_min_nn)    
-                    else:
-                        aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
-                        chunks_aabb = split_chunks(global_neural_pcd_down, aabb, vis_mesh_mc_res_m*100) # reconstruct in chunks
-                        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, vis_mesh_mc_res_m, None, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=vis_mesh_min_nn)    
-                
-                # if config.sdfslice_freq_frame > 0:
-                #     if o3d_vis.render_sdf and (sdf_train_frame_id == 1 or frame_id == last_frame or sdf_train_frame_id % config.sdfslice_freq_frame == 0):
-                #         slice_res_m = config.voxel_size_m * 0.6 # better be larger (to save time) # TODO: add to config
-                #         sdf_bound = config.surface_sample_range_m * 4.0
-                #         query_sdf_locally = True
-                #         if o3d_vis.vis_global:
-                #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.map_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
-                #         else:
-                #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.cur_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
-                #         if config.vis_sdf_slice_v:
-                #             cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.cur_pose_ref[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
-                #             cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
-                #         else:
-                #             cur_sdf_slice = cur_sdf_slice_h
-                                    
-                pool_pcd = mapper.get_data_pool_o3d(down_rate=37)
+                    sdf_train_frame_id = mapper.sdf_train_frame_count
 
-                odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
-                loop_edges = pgm.loop_edges_vis if config.pgo_on else None
+                    # reconstruction by marching cubes
+                    if vis_mesh_on and (frame_id == 0 or frame_id == last_frame or (frame_id+1) % vis_mesh_freq_frame == 0 or pgm.last_loop_idx == frame_id):            
+                        # update map bbx
+                        global_neural_pcd_down = neural_points.get_neural_points_o3d(query_global=True, random_down_ratio=31) # prime number
+                        dataset.map_bbx = global_neural_pcd_down.get_axis_aligned_bounding_box()
+                        
+                        # figure out how to do it efficiently
+                        if not vis_global_on: # only build the local mesh
+                            used_local_pcd = global_neural_pcd_down if neural_pcd is None else neural_pcd
+                            cur_bbx = used_local_pcd.get_axis_aligned_bounding_box()
+                            chunks_aabb = split_chunks(used_local_pcd, cur_bbx, vis_mesh_mc_res_m*100) # reconstruct in chunks
+                            cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, vis_mesh_mc_res_m, None, True, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=vis_mesh_min_nn)    
+                        else:
+                            aabb = global_neural_pcd_down.get_axis_aligned_bounding_box()
+                            chunks_aabb = split_chunks(global_neural_pcd_down, aabb, vis_mesh_mc_res_m*100) # reconstruct in chunks
+                            cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, vis_mesh_mc_res_m, None, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=vis_mesh_min_nn)    
+                    
+                    # if config.sdfslice_freq_frame > 0:
+                    #     if o3d_vis.render_sdf and (sdf_train_frame_id == 1 or frame_id == last_frame or sdf_train_frame_id % config.sdfslice_freq_frame == 0):
+                    #         slice_res_m = config.voxel_size_m * 0.6 # better be larger (to save time) # TODO: add to config
+                    #         sdf_bound = config.surface_sample_range_m * 4.0
+                    #         query_sdf_locally = True
+                    #         if o3d_vis.vis_global:
+                    #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.map_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, False, -sdf_bound, sdf_bound) # horizontal slice
+                    #         else:
+                    #             cur_sdf_slice_h = mesher.generate_bbx_sdf_hor_slice(dataset.cur_bbx, dataset.cur_pose_ref[2,3] + o3d_vis.sdf_slice_height, slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # horizontal slice (local)
+                    #         if config.vis_sdf_slice_v:
+                    #             cur_sdf_slice_v = mesher.generate_bbx_sdf_ver_slice(dataset.cur_bbx, dataset.cur_pose_ref[0,3], slice_res_m, query_sdf_locally, -sdf_bound, sdf_bound) # vertical slice (local)
+                    #             cur_sdf_slice = cur_sdf_slice_h + cur_sdf_slice_v
+                    #         else:
+                    #             cur_sdf_slice = cur_sdf_slice_h
+                                        
+                    pool_pcd = mapper.get_data_pool_o3d(down_rate=37)
 
-                # if o3d_vis.vis_mono_depth_frame:
-                #     frame_point_cloud_for_vis = dataset.cur_frame_mono_depth_o3d 
-                #     if o3d_vis.debug_mode == 1: # show mono depth and lidar together, lidar as red color
-                #         dataset.cur_frame_o3d.paint_uniform_color(np.array([1.0, 0, 0])) # RED
-                #         frame_point_cloud_for_vis += dataset.cur_frame_o3d
+                    odom_poses, gt_poses, pgo_poses = dataset.get_poses_np_for_vis(dataset.processed_frame)
+                    loop_edges = pgm.loop_edges_vis if config.pgo_on else None
 
-                # add the most recent train frame for vis
-                # we have either Lidar point cloud or camera images loaded
-                packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
-                    current_frames=dataset.cur_cam_img, 
-                    keyframes=mapper.cur_frame_train_views, # None
-                    img_down_rate=config.gs_vis_down_rate)
+                    # if o3d_vis.vis_mono_depth_frame:
+                    #     frame_point_cloud_for_vis = dataset.cur_frame_mono_depth_o3d 
+                    #     if o3d_vis.debug_mode == 1: # show mono depth and lidar together, lidar as red color
+                    #         dataset.cur_frame_o3d.paint_uniform_color(np.array([1.0, 0, 0])) # RED
+                    #         frame_point_cloud_for_vis += dataset.cur_frame_o3d
 
-                # spawn gaussians in the current local map
-                # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
-                # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
-                if not neural_points.is_empty():
-                    packet_to_vis.add_neural_points_data(neural_points, only_local_map=True, add_sorrounding_points=config.gs_on, pca_color_on=config.decoder_freezed)
+                    # add the most recent train frame for vis
+                    # we have either Lidar point cloud or camera images loaded
+                    packet_to_vis: VisPacket = VisPacket(frame_id=dataset.processed_frame,
+                        current_frames=dataset.cur_cam_img, 
+                        keyframes=mapper.cur_frame_train_views, # None
+                        img_down_rate=config.gs_vis_down_rate)
 
-                if frame_point_cloud_for_vis is not None:
-                    packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
+                    # spawn gaussians in the current local map
+                    # gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color, _ = mapper.spawn_gaussians()
+                    # packet_to_vis.add_gaussians(gaussian_xyz, gaussian_scale, gaussian_rot, gaussian_alpha, gaussian_color)
+                    if not neural_points.is_empty():
+                        packet_to_vis.add_neural_points_data(neural_points, only_local_map=True, add_sorrounding_points=config.gs_on, pca_color_on=config.decoder_freezed)
 
-                if cur_mesh is not None:
-                    packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
+                    if frame_point_cloud_for_vis is not None:
+                        packet_to_vis.add_scan(np.array(frame_point_cloud_for_vis.points, dtype=np.float64), np.array(frame_point_cloud_for_vis.colors, dtype=np.float64))
 
-                if cur_sdf_slice is not None:
-                    packet_to_vis.add_sdf_slice(np.array(cur_sdf_slice.points, dtype=np.float64), np.array(cur_sdf_slice.colors, dtype=np.float64))
-                
-                if pool_pcd is not None:
-                    packet_to_vis.add_sdf_training_pool(np.array(pool_pcd.points, dtype=np.float64), np.array(pool_pcd.colors, dtype=np.float64))
+                    if cur_mesh is not None:
+                        packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
 
-                packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
+                    if cur_sdf_slice is not None:
+                        packet_to_vis.add_sdf_slice(np.array(cur_sdf_slice.points, dtype=np.float64), np.array(cur_sdf_slice.colors, dtype=np.float64))
+                    
+                    if pool_pcd is not None:
+                        packet_to_vis.add_sdf_training_pool(np.array(pool_pcd.points, dtype=np.float64), np.array(pool_pcd.colors, dtype=np.float64))
 
-                q_main2vis.put(packet_to_vis)
+                    packet_to_vis.add_traj(odom_poses, gt_poses, pgo_poses)
 
-                T8 = get_time()
+                    q_main2vis.put(packet_to_vis)
 
-                if not config.silence:
-                    print("time for o3d update             (ms): {:.2f}".format((T7-T6)*1e3))
-                    print("time for gs visualizer update   (ms): {:.2f}".format((T8-T7)*1e3))
+                    T8 = get_time()
 
+                    if not config.silence:
+                        print("time for o3d update             (ms): {:.2f}".format((T7-T6)*1e3))
+                        print("time for gs visualizer update   (ms): {:.2f}".format((T8-T7)*1e3))
                 
         if valid_lidar_frame_flag:
             cur_frame_process_time = np.array([T2-T1, T3-T2, T5-T4, T6-T5, T4-T3]) # loop & pgo in the end, visualization and I/O time excluded

@@ -16,6 +16,7 @@ class Config:
 
         # settings
         self.name: str = "dummy"  # experiment name
+        self.run_name: str = self.name # this would also include an unique timestamp
 
         self.run_path: str = ""
         self.output_root: str = "experiments"  # output root folder

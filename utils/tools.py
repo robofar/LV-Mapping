@@ -48,6 +48,7 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
     warnings.filterwarnings("ignore", category=FutureWarning) 
 
     run_name = config.name + "_" + ts  # modified to a name that is easier to index
+    config.run_name = run_name
 
     run_path = os.path.join(config.output_root, run_name)
 
@@ -83,7 +84,6 @@ def setup_experiment(config: Config, argv=None, debug_mode: bool = False):
         os.makedirs(model_path, access, exist_ok=True)
         os.makedirs(log_path, access, exist_ok=True)
         os.makedirs(meta_data_path, access, exist_ok=True)
-
 
         if config.wandb_vis_on:
             # set up wandb
