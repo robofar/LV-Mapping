@@ -227,6 +227,7 @@ def run_pin_slam(
             is_rgbd=dataset.is_rgbd,
             neural_point_vis_down_rate=config.neural_point_vis_down_rate,
             gs_default_on=gs_on,
+            frustum_size=config.vis_frame_axis_len,
         )
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,))
         gui_process.start()
@@ -391,9 +392,9 @@ def run_pin_slam(
                     vis_mesh_on = control_packet.flag_mesh   
                     vis_sdf_on = control_packet.flag_sdf
                     vis_source_pc_weight = control_packet.flag_source
-                    vis_mesh_mc_res_m = control_packet.mc_res_m
-                    vis_mesh_min_nn = control_packet.mesh_min_nn
-                    vis_mesh_freq_frame = control_packet.mesh_freq_frame
+                    # vis_mesh_mc_res_m = control_packet.mc_res_m
+                    # vis_mesh_min_nn = control_packet.mesh_min_nn
+                    # vis_mesh_freq_frame = control_packet.mesh_freq_frame
                     vis_sdf_slice_height = control_packet.sdf_slice_height
                     vis_sdf_freq_frame = control_packet.sdf_freq_frame
                     vis_sdf_res_m = control_packet.sdf_res_m

@@ -1,14 +1,14 @@
 setting:
-  name: "test_tum_gs"
+  name: "test_homa_gs"
   output_root: "./experiments"
   # select from freiburg1_desk, freiburg2_xyz, freiburg3_office
   color_channel: 3
 process:
-  min_z_m: 0.1
-  max_z_m: 3.0
-  min_range_m: 0.05
-  max_range_m: 3.0
-  vox_down_m: 0.005 # TODO
+  min_z_m: 0.5
+  max_z_m: 1.5
+  min_range_m: 0.1
+  max_range_m: 2.0
+  vox_down_m: 0.003 # TODO
   dynamic_sdf_ratio_thre: 1.0
 sampler:
   surface_sample_range_m: 0.03
@@ -18,7 +18,7 @@ sampler:
   free_front_sample_n: 2
   free_behind_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.04
+  voxel_size_m: 0.03
   search_alpha: 0.5
   feature_dim: 32
   color_feature_dim: 16
@@ -27,28 +27,26 @@ gs:
   exposure_correction_on: False
   cam_pose_train_on: False
   eval_cam_refine_on: False # True
-  view_concat_on: False
   dist_concat_on: False
   gs_iters: 10
   gaussian_bs_ratio: 2.0
-  gs_keyframe_interval: 4
   img_pool_size: 20
   gs_down_rate: 0
   gs_vis_down_rate: 0
   inverse_depth_loss: False
   lambda_depth: 5.0 # 10.0
-  lambda_normal_depth: 0.05
+  lambda_normal_depth: 0.01
   # lambda_isotropic: 100.0
   lambda_area: 1e-4 # 1e-3
   lambda_opacity: 5e-3
   consist_shift_count: 0
-  lambda_sdf_cons: 0.05
-  lambda_sdf_normal_cons: 0.05 # rendered normal seems to be better without this loss # 0.1
+  lambda_sdf_cons: 0.02
+  lambda_sdf_normal_cons: 0.1 # rendered normal seems to be better without this loss # 0.1
   lambda_sdf: 0.5
 decoder:
   freeze_after_frame: 40
   gs_mlp_level: 1
-  gs_mlp_hidden_dim: 128
+  gs_mlp_hidden_dim: 128 
 loss:
   sigma_sigmoid_m: 0.02
   loss_weight_on: False # False
@@ -79,9 +77,8 @@ optimizer:
   learning_rate_cam_dt: 1e-3
 eval:
   o3d_vis_on: True
-  gs_eval_on: True
   mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 19
+  mesh_min_nn: 22
   # sensor_cad_path: ./cad/camera.ply
   skip_top_voxel: 0
   vis_frame_len: 0.1

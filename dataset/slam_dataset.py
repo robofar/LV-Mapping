@@ -77,7 +77,7 @@ class SLAMDataset():
         self.is_rgbd: bool = False # by default, lidar dataset
 
         self.loader = None
-        if config.use_dataloader: 
+        if config.use_dataloader: # the only option for now
 
             self.loader = dataset_factory(
                 dataloader=config.data_loader_name, # a specific dataset or data format
@@ -800,7 +800,7 @@ class SLAMDataset():
                 self.config.max_z,
                 self.config.min_range,
                 self.crop_max_range,
-                self.config.range_filter_2d,
+                self.config.range_filter_2d and (not self.is_rgbd),
             )
 
         self.cur_point_cloud_torch = self.cur_point_cloud_torch[filter_idx]
@@ -1068,7 +1068,7 @@ class SLAMDataset():
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)
 
             points_rgb_torch, depth_map_torch = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
-                cam_rgb_torch, cur_T_c_l, cur_K_mat)
+                cam_rgb_torch, cur_T_c_l, cur_K_mat, min_depth=self.config.min_range)
 
             cam_img.set_depth_img(depth_map_torch)
         
@@ -1472,7 +1472,7 @@ class SLAMDataset():
             odom_poses = self.odom_poses[:self.processed_frame+1]
             odom_poses_out = apply_kitti_format_calib(odom_poses, self.calib["Tr"])
             write_kitti_format_poses(os.path.join(self.run_path, "odom_poses"), odom_poses_out)
-            write_tum_format_poses(os.path.join(self.run_path, "odom_poses"), odom_poses_out, self.poses_ts, 0.1*self.config.step_frame)
+            # write_tum_format_poses(os.path.join(self.run_path, "odom_poses"), odom_poses_out, self.poses_ts, 0.1*self.config.step_frame)
             write_traj_as_o3d(odom_poses, os.path.join(self.run_path, "odom_poses.ply"))
 
             if self.config.pgo_on:
@@ -1481,9 +1481,9 @@ class SLAMDataset():
                 write_kitti_format_poses(
                     os.path.join(self.run_path, "slam_poses"), slam_poses_out
                 )
-                write_tum_format_poses(
-                    os.path.join(self.run_path, "slam_poses"), slam_poses_out, self.poses_ts, 0.1*self.config.step_frame
-                )
+                # write_tum_format_poses(
+                #     os.path.join(self.run_path, "slam_poses"), slam_poses_out, self.poses_ts, 0.1*self.config.step_frame
+                # )
                 write_traj_as_o3d(pgo_poses, os.path.join(self.run_path, "slam_poses.ply"))
         
         # timing report
@@ -1510,7 +1510,7 @@ class SLAMDataset():
             gt_poses = self.gt_poses[:self.processed_frame+1]
             gt_poses_out = apply_kitti_format_calib(gt_poses, self.calib["Tr"])
             write_kitti_format_poses(os.path.join(self.run_path, "gt_poses"), gt_poses_out)
-            write_tum_format_poses(os.path.join(self.run_path, "gt_poses"), gt_poses_out, self.poses_ts, 0.1*self.config.step_frame)
+            # write_tum_format_poses(os.path.join(self.run_path, "gt_poses"), gt_poses_out, self.poses_ts, 0.1*self.config.step_frame)
             write_traj_as_o3d(gt_poses, os.path.join(self.run_path, "gt_poses.ply"))
 
             if self.config.track_on:

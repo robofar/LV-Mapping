@@ -89,6 +89,8 @@ class SLAM_GUI:
 
         self.neural_point_vis_down_rate = 1
 
+        self.frustum_size = 0.05
+
         if params_gui is not None:
             self.decoders = params_gui.decoders
             self.background = params_gui.background
@@ -103,6 +105,7 @@ class SLAM_GUI:
             self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
             self.is_rgbd = params_gui.is_rgbd
             self.neural_point_vis_down_rate = params_gui.neural_point_vis_down_rate
+            self.frustum_size = params_gui.frustum_size
 
             
         if self.config is not None:
@@ -186,7 +189,7 @@ class SLAM_GUI:
         # scan
         self.scan_render = rendering.MaterialRecord()
         self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
-        self.scan_render.point_size = 4 * self.window.scaling
+        self.scan_render.point_size = 2 * self.window.scaling
         self.scan_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # neural points
@@ -1295,8 +1298,6 @@ class SLAM_GUI:
                     displacement_range_ratio=self.config.displacement_range_ratio,
                     max_scale_ratio=self.config.max_scale_ratio,
                     unit_scale_ratio=self.config.unit_scale_ratio)
-            
-            frustum_size = self.config.max_range*0.008
 
             # load cameras
             if data_packet.current_frames is not None and len(data_packet.cam_list)>0: # as Camera class
@@ -1306,7 +1307,7 @@ class SLAM_GUI:
 
                 for cam in data_packet.cam_list:
                     frustum = self.add_camera(
-                        data_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=frustum_size
+                        data_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=self.frustum_size
                     )
                     # print("Cam added")
                 if self.followcam_chbox.checked:
@@ -1341,7 +1342,7 @@ class SLAM_GUI:
                     else:
                         frustum_color = [1, 1, 0]
                     frustum = self.add_keyframe(
-                        cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=frustum_size
+                        cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=self.frustum_size
                     ) 
 
             self.visualize_scan(data_packet)

@@ -452,6 +452,7 @@ class ParamsGUI:
         mesh_default_on: bool = False,
         neural_point_color_default_mode: int = 0, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         neural_point_vis_down_rate: int = 1,
+        frustum_size: float = 0.05,
     ):
         self.decoders = decoders # dict of MLPs
         
@@ -468,3 +469,4 @@ class ParamsGUI:
         self.neural_point_color_default_mode = neural_point_color_default_mode
         self.neural_point_vis_down_rate = neural_point_vis_down_rate
         
+        self.frustum_size = frustum_size

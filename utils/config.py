@@ -816,7 +816,8 @@ class Config:
             self.rendered_pc_eval_on = config_args["eval"].get('rendered_pc_eval_on', self.rendered_pc_eval_on)
 
             self.neural_point_vis_down_rate = config_args["eval"].get('neural_point_vis_down_rate', self.neural_point_vis_down_rate)  
-
+            
+            self.vis_frame_axis_len = config_args["eval"].get('vis_frame_len', self.max_range / 50.0)
 
         # associated parameters
         self.infer_bs = self.bs * 8
@@ -824,4 +825,3 @@ class Config:
         self.local_map_radius = min(self.max_range*1.05, self.max_range+5.0) # for the local neural points
         self.window_radius = max(self.local_map_radius+self.voxel_size_m*2, 6.0) # for the sampling data pool, should not be too small # FIXME
         self.sorrounding_map_radius = self.local_map_radius * 2.0 # FIXME too large
-        self.vis_frame_axis_len = self.max_range / 50.0

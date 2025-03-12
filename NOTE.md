@@ -232,9 +232,11 @@ python pings.py ./config/rgbd_slam/run_azure_gs.yaml azure -i ./data/azure/hotel
 
 ## Run on CKA greenhouse dataset
 ```
-python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -vlg
+python pings.py ./config/rgbd_slam/run_homa_gs.yaml cka -i ./data/CKA/shape_completion_challenge/test/p1/input/ -vlg
 
-python pings.py ./config/rgbd_slam/run_cka_pepper.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -vlg
+python pings.py ./config/rgbd_slam/run_homa_gs.yaml cka -i ./data/CKA/shape_completion_challenge/test/p10/input/ -vlg
+
+python pings.py ./config/rgbd_slam/run_homa_gs.yaml cka -i ./data/CKA/CKA_fruit/processed/2022_09_05/row1/before/realsense/ -vlg
 ```
 
 **pass**
