@@ -1392,7 +1392,7 @@ class SLAM_GUI:
                     self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
                     gt_edges = np.array([[i, i + 1] for i in range(gt_position_np.shape[0] - 1)])
                     self.gt_traj.lines = o3d.utility.Vector2iVector(gt_edges)
-                    self.gt_traj.paint_uniform_color(RED) # Black
+                    self.gt_traj.paint_uniform_color(BLACK) # Black
                 
                 if self.gt_traj_chbox.checked:
                     self.widget3d.scene.remove_geometry(self.gt_traj_name)
