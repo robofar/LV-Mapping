@@ -450,7 +450,7 @@ class ParamsGUI:
         robot_default_on: bool = True,
         neural_point_default_on: bool = False,
         mesh_default_on: bool = False,
-        neural_point_color_default_mode: int = 0, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
+        neural_point_color_default_mode: int = 1, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         neural_point_vis_down_rate: int = 1,
         frustum_size: float = 0.05,
     ):

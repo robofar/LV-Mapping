@@ -13,17 +13,17 @@ process:
   dynamic_sdf_ratio_thre: 0.8
 sampler:
   surface_sample_range_m: 0.25
-  surface_sample_n: 8
+  surface_sample_n: 5
   free_sample_begin_ratio: 0.5
   free_sample_end_dist_m: 0.6
-  free_front_sample_n: 3 
+  free_front_sample_n: 2 
   free_behind_sample_n: 1
 neuralpoints:
-  voxel_size_m: 0.25
+  voxel_size_m: 0.3
   search_alpha: 0.8
   query_nn_k: 6 # 6 # changed
-  feature_dim: 32 # 32 # not worth further improving this
-  color_feature_dim: 16 # 16
+  feature_dim: 16 # 32 # not worth further improving this
+  color_feature_dim: 8 # 16
   weighted_first: False # not much difference True or False 
 decoder:
   freeze_after_frame: 40 # 30
@@ -39,7 +39,7 @@ loss:
   weight_e: 0.1
 continual:
   batch_size_new_sample: 1000
-  pool_capacity: 2e7
+  pool_capacity: 1e7
   pool_filter_freq: 1
 # tracker:
 #   source_vox_down_m: 0.4
@@ -57,14 +57,14 @@ gs:
   learn_color_residual: False
   cam_pose_train_on: False
   n_gaussian: 8 # not worth to increase it, a little improvement #
-  gs_iters: 100 # 50 # 100
+  gs_iters: 50 # 50 # 100
   gaussian_bs_ratio: 1.0 # 2.0 # TODO: decrease maybe
   img_pool_size: 40 # TODO
-  long_term_img_pool_size: 80 # 200
+  long_term_img_pool_size: 40 # 200
   long_term_train_down: False
   short_term_train_prob: 0.5
-  gs_down_rate: 0
-  gs_vis_down_rate: 0
+  gs_down_rate: 1
+  gs_vis_down_rate: 1
   gs_keyframe_accu_dist: 1.0 # unit: m
   inverse_depth_loss: False
   lambda_depth: 0.02 # 0.02
@@ -85,7 +85,7 @@ gs:
   # unit_scale_ratio: 0.2
 optimizer: # mapper
   iters: 15  # iterations per frame
-  batch_size: 16384
+  batch_size: 8192
   learning_rate_geo: 0.002 # neural point geo feature lr # 0.002 0.005 geometry a bit worse but rendering is a bit better
   learning_rate_color: 0.002 # neural point color feature lr
   learning_rate_exposure: 1e-3 # or 1e-3
@@ -94,6 +94,6 @@ optimizer: # mapper
 eval:
   o3d_vis_on: True # if false, mesh vis is also disabled
   gs_eval_on: False
-  mesh_freq_frame: 10 # reconstruct the mesh every x frames
-  mesh_min_nn: 14
+  mesh_freq_frame: 5 # reconstruct the mesh every x frames
+  mesh_min_nn: 15
   min_cluster_vertices: 1000

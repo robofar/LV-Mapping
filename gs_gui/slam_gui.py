@@ -61,6 +61,8 @@ FromGLGamera = np.linalg.inv(ToGLCamera)
 
 os.environ["PYOPENGL_PLATFORM"] = "osmesa"
 
+no_gl_issue = False
+
 class SLAM_GUI:
     def __init__(self, params_gui=None):
         self.step = 0
@@ -121,32 +123,32 @@ class SLAM_GUI:
 
         self.recorded_poses = []
 
-        
-
         self.view_save_base_path = os.path.expanduser("~/.viewpoints")
         os.makedirs(self.view_save_base_path, 0o755, exist_ok=True)
 
         # these are only used for the elliopsoid rendering 
+
+        if no_gl_issue:
       
-        self.g_camera = util.Camera(self.window_h, self.window_w)
-        self.window_gl = self.init_glfw() # this has no issue
+            self.g_camera = util.Camera(self.window_h, self.window_w)
+            self.window_gl = self.init_glfw() # this has no issue
 
-        # TODO: something wrong here with the glfw (just crash) after I use mini-forge
-        # exactly this line here
+            # TODO: something wrong here with the glfw (just crash) after I use mini-forge
+            # exactly this line here
 
-        # solution:
-        # os.environ["PYOPENGL_PLATFORM"] = "osmesa"
-        # or set in your conda environment
-        # export PYOPENGL_PLATFORM=osmesa
-        # reference: 
-        # https://github.com/facebookresearch/AnimatedDrawings/issues/99
+            # solution:
+            # os.environ["PYOPENGL_PLATFORM"] = "osmesa"
+            # or set in your conda environment
+            # export PYOPENGL_PLATFORM=osmesa
+            # reference: 
+            # https://github.com/facebookresearch/AnimatedDrawings/issues/99
 
-        self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)  
+            self.g_renderer = OpenGLRenderer(self.g_camera.w, self.g_camera.h)  
 
-        # gl.glEnable(gl.GL_TEXTURE_2D)
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        gl.glDepthFunc(gl.GL_LEQUAL)
-        self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
+            # gl.glEnable(gl.GL_TEXTURE_2D)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
 
         # screenshot saving path
         self.save_path = "."
@@ -1871,11 +1873,10 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.ellipsoid_chbox.checked:
+        elif self.ellipsoid_chbox.checked and no_gl_issue:
 
             if self.cur_data_packet is None:
                 return
-            
 
             glfw.poll_events()
             # gl.glClearColor(0, 0, 0, 1.0)
