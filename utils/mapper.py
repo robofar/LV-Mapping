@@ -240,7 +240,6 @@ class Mapper:
         self.dataset.static_mask = self.static_mask
 
         # 3. Sampling
-
         # sampling data for training (only using the actually measured points, no mono priors)
         (
             coord, # coord is in sensor local frame
@@ -342,73 +341,6 @@ class Mapper:
             print("# Total sample in pool: ", self.pool_sample_count)
             print("# Current sample      : ", self.cur_sample_count)
             print("# Local sample        : ", self.local_sample_indices.shape[0])
-
-        if (
-            self.config.bs_new_sample > 0
-        ):  # learn more in the region that is newly observed
-
-            cur_sample_filtered = self.global_coord_pool[
-                -self.cur_sample_count :
-            ]  # newly added samples
-            cur_sample_filtered_count = cur_sample_filtered.shape[0]
-            bs = self.config.infer_bs
-            iter_n = math.ceil(cur_sample_filtered_count / bs)
-            cur_sample_certainty = torch.zeros(
-                cur_sample_filtered_count, device=self.device
-            )
-            cur_label_filtered = self.sdf_label_pool[-self.cur_sample_count :]
-
-            self.neural_points.set_search_neighborhood(
-                num_nei_cells=1, search_alpha=0.0
-            )
-            for n in range(iter_n):
-                head = n * bs
-                tail = min((n + 1) * bs, cur_sample_filtered_count)
-                batch_coord = cur_sample_filtered[head:tail, :]
-                batch_certainty = self.neural_points.query_certainty(batch_coord)
-                cur_sample_certainty[head:tail] = batch_certainty
-
-            # dirty fix
-            self.neural_points.set_search_neighborhood(
-                num_nei_cells=self.config.num_nei_cells,
-                search_alpha=self.config.search_alpha,
-            )
-
-            # cur_sample_certainty = self.neural_points.query_certainty()
-            # self.new_idx = torch.where(cur_sample_certainty < self.config.new_certainty_thre)[0] # both the surface and freespace new samples
-
-            # use only the close-to-surface new samples
-            self.new_idx = torch.where(
-                (cur_sample_certainty < self.config.new_certainty_thre)
-                & (
-                    torch.abs(cur_label_filtered)
-                    < self.config.surface_sample_range_m * 3.0
-                )
-            )[0]
-
-            self.new_idx += (
-                self.pool_sample_count - self.cur_sample_count
-            )  # new idx in the data pool
-
-            new_sample_count = self.new_idx.shape[0]
-            # if not self.silence:
-            #     print("# New sample          : ", new_sample_count)
-
-            # for determine adaptive mapping iteration
-            self.adaptive_iter_offset = 0
-            self.new_obs_ratio = new_sample_count / self.cur_sample_count
-            if self.config.adaptive_iters:
-                if self.new_obs_ratio < self.config.new_sample_ratio_less:
-                    # print('Train less:', self.new_obs_ratio)
-                    self.adaptive_iter_offset = -5
-                elif self.new_obs_ratio > self.config.new_sample_ratio_more:
-                    # print('Train more:', self.new_obs_ratio)
-                    self.adaptive_iter_offset = 5
-                    if (
-                        frame_id > self.config.freeze_after_frame
-                        and self.new_obs_ratio > self.config.new_sample_ratio_restart
-                    ):
-                        self.adaptive_iter_offset = 10
             
             
     
@@ -955,7 +887,7 @@ class Mapper:
 
 
     # jointly optimize the neural point features and gaussian parameters
-    def joint_gsdf_mapping(self, iter_count: int, sdf_loss_on = False,
+    def joint_gsdf_mapping(self, iter_count: int, sdf_loss_on = True,
          online_eval_on = False, lpips_eval_on = False, render_pcd = False):
         
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
