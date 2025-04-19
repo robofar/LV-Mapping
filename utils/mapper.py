@@ -194,8 +194,6 @@ class Mapper:
         # points_torch contains both the coordinate and the color (intensity)
         # frame_id is the actually used frame id starting from 0 with no skip, 0, 1, 2, ......
 
-        T0 = get_time()
-
         # 1. Initialization
         frame_origin_torch = cur_pose_torch[:3, 3]
         frame_orientation_torch = cur_pose_torch[:3, :3]
@@ -243,11 +241,9 @@ class Mapper:
 
         # 3. Sampling
 
-        T1 = get_time()
-
         # sampling data for training (only using the actually measured points, no mono priors)
         (
-            coord,
+            coord, # coord is in sensor local frame
             sdf_label,
             normal_label,
             sem_label,
@@ -259,8 +255,6 @@ class Mapper:
 
         self.sdf_train_frame_count += 1 # sample points from point cloud for sdf training
 
-        # coord is in sensor local frame
-
         time_repeat = torch.tensor(
             frame_id, dtype=torch.int, device=self.device
         ).repeat(coord.shape[0])
@@ -268,12 +262,11 @@ class Mapper:
         self.cur_sample_count = sdf_label.shape[0]  # before filtering
         self.pool_sample_count = self.sdf_label_pool.shape[0]
 
-        T2 = get_time()
 
         update_colors = None
         update_normals = None 
 
-        # update the neural point map
+        # 4. Select points for the neural point map update
         if self.config.from_sample_points:
             if self.config.from_all_samples:
                 update_points = coord
@@ -296,69 +289,16 @@ class Mapper:
         update_points = transform_torch(update_points, cur_pose_torch)
 
         if update_normals is not None:
-            update_normals = transform_torch(update_normals, cur_pose_rot)
-            
-        # prune map and recreate hash (not used)
-        if self.config.prune_map_on and ((frame_id + 1) % self.config.prune_freq_frame == 0):
-            if self.neural_points.prune_map(self.config.max_prune_certainty):
-                self.neural_points.recreate_hash(None, None, True, True, frame_id)
-        # TODO: we can prune those free gaussians that has a very small opacity? # TODO: there's some floating gaussians in the sky due to wrong mono depth initialization
-        
+            update_normals = transform_torch(update_normals, cur_pose_rot)      
 
-        # update neural point map
+        # 5. Update neural point map
         self.neural_points.update(
             update_points, update_colors, update_normals, frame_origin_torch, frame_orientation_torch, frame_id
         )
 
-        # update gaussians using mono depth predictions # TODO
-        if mono_depth_point_cloud_torch is not None and self.config.monodepth_on: 
-            # use the mono depth estimation results to do the initialization
-            mono_depth_point_cloud_torch[:, :3] = transform_torch(mono_depth_point_cloud_torch[:, :3], cur_pose_torch)
 
-            # also need to transform the normal
-            
-            # we currently use a easy fix for ground robot to use only the points with large height value
-            if self.dataset.loader.mono_depth_for_high_z:
-                update_points_min_z_quantile = torch.quantile(update_points[:, 2], 0.98) + self.config.voxel_size_m # TODO # height ?
-                mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] > update_points_min_z_quantile
-            else: # mono depth for low z
-                update_points_max_z_quantile = torch.quantile(update_points[:, 2], 0.2) + self.config.voxel_size_m
-                mono_depth_point_used_mask = mono_depth_point_cloud_torch[:, 2] < update_points_max_z_quantile
-
-            mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[mono_depth_point_used_mask]
-
-            # voxel downsampling (make it sparse) # TODO: but how sparse
-            down_voxel_size = self.config.monodepth_gaussian_res # add to config # TODO
-            
-            if mono_depth_point_cloud_torch.shape[0] > 0:
-                idx = voxel_down_sample_torch(mono_depth_point_cloud_torch[:, :3], down_voxel_size)
-                mono_depth_point_cloud_torch = mono_depth_point_cloud_torch[idx]
-
-            if mono_depth_point_normals_torch is not None:
-                cur_rot_torch = torch.eye(4)
-                cur_rot_torch[:3,:3] = cur_pose_torch[:3,:3] # rotation part
-                mono_depth_point_normals_torch = transform_torch(mono_depth_point_normals_torch, cur_pose_torch)
-                mono_depth_point_normals_torch = mono_depth_point_normals_torch[mono_depth_point_used_mask]
-                mono_depth_point_normals_torch = mono_depth_point_normals_torch[idx]
-
-            if mono_depth_point_cloud_torch.shape[0] > 0:
-                self.neural_points.update(
-                    mono_depth_point_cloud_torch[:,:3], mono_depth_point_cloud_torch[:, 3:],
-                    mono_depth_point_normals_torch, frame_origin_torch, 
-                    frame_orientation_torch, frame_id, is_reliable = True
-                ) # is_reliable = False
-
-        # TODO
-        # update again with the mono_depth predicted point cloud, set another mask for these neural points
-        # local map is also updated here
-
-        # record the current map memory
-        self.neural_points.record_memory(verbose=(not self.silence), record_footprint=True)
-
-        T3 = get_time()
-
-        # concat with current observations
-        # self.coord_pool = torch.cat((self.coord_pool, coord), 0)
+        # 6. Update pool (concat with current observations)
+        self.coord_pool = torch.cat((self.coord_pool, coord), 0)
         self.weight_pool = torch.cat((self.weight_pool, weight), 0)
         self.sdf_label_pool = torch.cat((self.sdf_label_pool, sdf_label), 0)
         self.time_pool = torch.cat((self.time_pool, time_repeat), 0)
@@ -378,76 +318,15 @@ class Mapper:
         else:
             self.normal_label_pool = None
 
-        # update the data pool
-        # get the data pool ready for training
-
-        # else:  # used when ba is not enabled
         global_coord = transform_torch(coord, cur_pose_torch)
         self.global_coord_pool = torch.cat(
             (self.global_coord_pool, global_coord), 0
         )
-            # why so slow
 
-        T3_1 = get_time()
+        self.cur_sample_count = coord.shape[0]
+        self.pool_sample_count = self.global_coord_pool.shape[0]
 
-        if (frame_id + 1) % self.config.pool_filter_freq == 0:
-            
-            # if self.config.pool_filter_with_dist:
-            #     pool_relatve = self.global_coord_pool - frame_origin_torch
-            #     # print(pool_relatve.shape)
-            #     if self.config.range_filter_2d:
-            #         pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
-            #     else:
-            #         pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
-                
-            #     dist_mask = pool_relative_dist < self.config.window_radius # keep inside
-            #     filter_mask = dist_mask
-            # else:
-            #    filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
-
-            filter_mask = torch.ones(self.global_coord_pool.shape[0], device=self.device, dtype=torch.bool)
-
-            true_indices = torch.nonzero(filter_mask).squeeze()
-
-            pool_sample_count = true_indices.shape[0]
-
-            if pool_sample_count > self.config.pool_capacity:
-                discard_count = pool_sample_count - self.config.pool_capacity
-                # randomly discard some of the data samples if it already exceed the maximum number allowed in the data pool
-                discarded_index = torch.randint(
-                    0, pool_sample_count, (discard_count,), device=self.device
-                )
-                # Set the elements corresponding to the discard indices to False
-                filter_mask[true_indices[discarded_index]] = False
-                    
-            # filter the data pool
-            # self.coord_pool = self.coord_pool[filter_mask]
-            # make global here
-            self.global_coord_pool = self.global_coord_pool[filter_mask]   
-            self.sdf_label_pool = self.sdf_label_pool[filter_mask]
-            self.weight_pool = self.weight_pool[filter_mask]
-            self.time_pool = self.time_pool[filter_mask]
-            # self.dist_mask_pool = dist_mask[filter_mask]
-
-            if normal_label is not None:
-                self.normal_label_pool = self.normal_label_pool[filter_mask]
-            if sem_label is not None:
-                self.sem_label_pool = self.sem_label_pool[filter_mask]
-            if color_label is not None:
-                self.color_pool = self.color_pool[filter_mask]
-
-            cur_sample_filter_mask = filter_mask[
-                -self.cur_sample_count :
-            ]  # typically all true
-            self.cur_sample_count = (
-                cur_sample_filter_mask.sum().item()
-            )  # number of current samples
-            self.pool_sample_count = filter_mask.sum().item()
-        else:
-            self.cur_sample_count = coord.shape[0]
-            self.pool_sample_count = self.global_coord_pool.shape[0]
-
-
+        # 7. Take local pool (save indices)
         pool_relatve = self.global_coord_pool - frame_origin_torch
         # print(pool_relatve.shape)
         if self.config.range_filter_2d:
@@ -463,8 +342,6 @@ class Mapper:
             print("# Total sample in pool: ", self.pool_sample_count)
             print("# Current sample      : ", self.cur_sample_count)
             print("# Local sample        : ", self.local_sample_indices.shape[0])
-
-        T3_2 = get_time()
 
         if (
             self.config.bs_new_sample > 0
@@ -533,19 +410,7 @@ class Mapper:
                     ):
                         self.adaptive_iter_offset = 10
             
-            # use self.new_obs_ratio to determine keyframe
-
-
-        T3_3 = get_time()
-
-        T4 = get_time()
-
-        # print("time for dynamic filtering     (ms):", (T1-T0)*1e3)
-        # print("time for sampling              (ms):", (T2-T1)*1e3)
-        # print("time for map updating          (ms):", (T3-T2)*1e3)
-        # print("time for pool updating         (ms):", (T4-T3)*1e3) # mainly spent here
-        # print("time for pool transforming     (ms):", (T3_1-T3_0)*1e3) # mainly spent here
-        # print("time for filtering             (ms):", (T3_2-T3_1)*1e3)
+            
     
     def dynamic_filter(self, points_torch, type_2_on: bool = True):
 
