@@ -107,8 +107,70 @@ class NeuralPoints(nn.Module):
             [73856093, 19349669, 83492791], dtype=self.idx_dtype, device=self.device
         )
 
-        # initialization
-        # the global map
+        # neural grid settings [FARIS]
+        self.level = config.selected_level_spawning # of which level of neural grid we want to use centers
+        self.leaf_voxel_size = config.leaf_voxel_size # voxel size in lowest level (same as config.voxel_size_m)
+        self.voxel_level_num = config.voxel_level_num # number of levels for hierarchical (i.e. multi-level) voxel grid
+        self.up_scale_factor = config.up_scale_factor # scaling voxel size for levels
+        self.center_resolution = self.leaf_voxel_size*(self.up_scale_factor**self.level) # like self.resolution but for my setup. I can use instead config.voxel_size_m (in mapper)
+
+        # for point to corners
+        self.steps = torch.tensor([[0., 0., 0.], [0., 0., 1.], 
+                                   [0., 1., 0.], [0., 1., 1.], 
+                                   [1., 0., 0.], [1., 0., 1.], 
+                                   [1., 1., 0.], [1., 1., 1.]], dtype=self.dtype, device=self.device)
+
+        ##################################################### initialization
+        ########### Corners [FARIS]
+        self.corner_indexs_list = [] # hash table for voxel corners. Voxel corner is mapped to index using hash function, and value is again index but of correspondig feature in features_list for that corner
+        self.geo_features_list = nn.ParameterList([]) # features to be stored (for each level separately ; per corner) ; this tensor is optimized (i.e. returned by model.parameters())
+        if(self.config.color_on):
+            self.color_features_list = nn.ParameterList([]) # geo and color features are only per corner. we will not create features for voxel centers
+        else:
+            self.color_features_list = None
+
+        self.corner_points_list = []
+        self.corner_certainties_list = []
+
+        # Initialization of multi-level grid
+        # torch.tensor -> requires_grad is False by default
+        # nn.Parameter -> requires_grad is True by default
+        for l in range(self.voxel_level_num):
+            buffer_pt_index = torch.full(
+                (self.buffer_size,), -1, dtype=self.idx_dtype, device=self.device
+            )
+            self.corner_indexs_list.append(buffer_pt_index)
+
+            corner_points = torch.empty(
+                (0, 3), device=self.device, dtype=self.idx_dtype
+            )  # create ts
+            self.corner_points_list.append(corner_points)
+
+            corner_certainties = torch.empty((0), dtype=self.dtype, device=self.device)
+            self.corner_certainties_list.append(corner_certainties)
+
+            geo_features = torch.empty(
+                (1, self.geo_feature_dim), dtype=self.dtype, device=self.device # 0 or 1
+            )
+            geo_features_parameter = nn.Parameter(data=geo_features, requires_grad=True)
+            self.geo_features_list.append(geo_features_parameter)
+
+            if(self.config.color_on):
+                color_features = torch.empty(
+                    (1, self.color_feature_dim), dtype=self.dtype, device=self.device # 0 or 1
+                )
+                color_features_parameter = nn.Parameter(data=color_features, requires_grad=True)
+                self.color_features_list.append(color_features_parameter)
+
+
+
+
+
+
+
+
+        ####################### the global map
+        ############### Centers
         self.buffer_pt_index = torch.full(
             (self.buffer_size,), -1, dtype=self.idx_dtype, device=self.device
         )
@@ -265,6 +327,11 @@ class NeuralPoints(nn.Module):
             print("Current map memory consumption: %f (MB)" % self.cur_memory_mb)
         if record_footprint:
             self.memory_footprint.append(self.cur_memory_mb)
+    
+    def to_corners(self, points: torch.Tensor, resolution):
+        origin_corner = torch.floor(points / resolution) # this is origin (bottom left) corner not center !
+        corners = (origin_corner.repeat(1,8) + self.steps.reshape(1,-1)).reshape(-1,3)
+        return corners
 
     def update(
         self,
@@ -276,9 +343,44 @@ class NeuralPoints(nn.Module):
         cur_ts: int = 0,
         is_reliable: bool = True # if false, these neural points are initialized with the mono depth estimation, which is not accurate
     ):
+        
+        ################# corners [FARIS]
+        for i in range(self.voxel_level_num):
+            cur_resolution = self.leaf_voxel_size*(self.up_scale_factor**i)
+            sample_idx = voxel_down_sample_torch(points, cur_resolution)
+            sample_points = points[sample_idx] # "centers" (closest to center actually -> we can keep their actual color)
+
+            corners = self.to_corners(sample_points, cur_resolution)
+            unique_corners = torch.unique(corners, dim=0)
+            corner_hash_idx = (unique_corners.to(self.primes) * self.primes).sum(-1) % self.buffer_size
+            update_corners_mask = (self.corner_indexs_list[i][corner_hash_idx] == -1)
+            new_corners_count = unique_corners[update_corners_mask].shape[0]
+
+            self.corner_indexs_list[i][corner_hash_idx[update_corners_mask]] = torch.arange(
+                new_corners_count, 
+                dtype=self.corner_indexs_list[i].dtype, 
+                device=self.corner_indexs_list[i].device
+            ) + self.corner_points_list[i].shape[0]
+
+            new_geo_features = self.geo_feature_std*torch.randn(new_corners_count, self.geo_feature_dim, device=self.device, dtype=self.dtype)
+            if self.color_on:
+                new_color_features = self.color_feature_std*torch.randn(new_corners_count, self.color_feature_dim, device=self.device, dtype=self.dtype)
+            new_corners = unique_corners[update_corners_mask] * cur_resolution # were unitless ; make them metric
+            new_corners_certainties = torch.zeros(new_corners_count, dtype=self.dtype, device=self.device)
+
+            self.geo_features_list[i] = nn.Parameter(torch.cat((self.geo_features_list[i], new_geo_features),0))
+            if self.color_on:
+                self.color_features_list[i] = nn.Parameter(torch.cat((self.color_features_list[i], new_color_features),0))
+            self.corner_points_list[i] = torch.cat((self.corner_points_list[i], new_corners), 0)
+            self.corner_certainties_list[i] = torch.cat((self.corner_certainties_list[i], new_corners_certainties), 0)
+
+
+        ################# centers
         # update the neural point map using new observations
 
-        cur_resolution = self.resolution
+        #cur_resolution = self.resolution
+        cur_resolution = self.center_resolution
+
         # if self.mean_grid_sampling:
         #     sample_points = meanGridSampling(points, resolution=cur_resolution)
         # take the point that is the closest to the voxel center (now used)
@@ -410,6 +512,18 @@ class NeuralPoints(nn.Module):
         # update RGB color
         if added_colors is not None:
             self.point_colors = torch.cat((self.point_colors, added_colors), 0)
+
+
+
+
+        ################################################################################################################
+
+
+
+
+        ################################################################################################################
+
+
         
         
         # gaussian parameters
@@ -656,6 +770,56 @@ class NeuralPoints(nn.Module):
         if self.color_features is not None:
             _, self.color_feature_pca = feature_pca_torch((self.color_features)[:-1], down_rate=down_rate, project_data=False)
 
+    # Return weights
+    def interpolate(self, x, resolution):
+        coords = x / resolution
+        d_coords = coords - torch.floor(coords)
+        tx = d_coords[:,0]
+        _1_tx = 1-tx
+        ty = d_coords[:,1]
+        _1_ty = 1-ty
+        tz = d_coords[:,2]
+        _1_tz = 1-tz
+        p0 = _1_tx*_1_ty*_1_tz
+        p1 = _1_tx*_1_ty*tz
+        p2 = _1_tx*ty*_1_tz
+        p3 = _1_tx*ty*tz
+        p4 = tx*_1_ty*_1_tz
+        p5 = tx*_1_ty*tz
+        p6 = tx*ty*_1_tz
+        p7 = tx*ty*tz
+        p = torch.stack((p0,p1,p2,p3,p4,p5,p6,p7),0).T.reshape(-1,1)
+        return p
+    
+
+    def query_neural_grid(
+            self,
+            query_points: torch.Tensor,
+            query_geo_feature: bool = True,
+            query_color_feature: bool = False
+    ):
+        if not query_geo_feature and not query_color_feature:
+            sys.exit("you need to at least query one kind of feature")
+        
+        sum_geo_features = torch.zeros(query_points.shape[0], self.geo_feature_dim, device=self.device, dtype=self.dtype)
+        sum_color_features = torch.zeros(query_points.shape[0], self.color_feature_dim, device=self.device, dtype=self.dtype)
+
+        for i in range(self.voxel_level_num):
+            current_resolution = self.leaf_voxel_size*(self.up_scale_factor**i)
+            query_corners = self.to_corners(query_points, current_resolution) # 8Q, 3
+            query_keys = (query_corners.to(self.primes) * self.primes).sum(-1) % self.buffer_size # 8Q,1
+            hash_index_nx8 = self.corner_indexs_list[i][query_keys].reshape(-1,8) # Q,8 (8 corner indexes for each point)
+            featured_query_mask = (hash_index_nx8.min(dim=1)[0]) > -1 # Q,1
+            features_index = hash_index_nx8[featured_query_mask] # (Q',8)
+            features_index = features_index.reshape(-1,1).squeeze(1) # (8Q',) has to be this shape to access features_list
+
+            coeffs = self.interpolate(query_points[featured_query_mask], current_resolution) # Q', feature_dim
+            sum_geo_features[featured_query_mask] += (self.geo_features_list[i][features_index]*coeffs).reshape(-1,8,self.geo_feature_dim).sum(1)
+            if(query_color_feature):
+                sum_color_features[featured_query_mask] += (self.color_features_list[i][features_index]*coeffs).reshape(-1,8,self.color_feature_dim).sum(1)
+
+
+        return sum_geo_features, sum_color_features
 
     # not use the free gaussians (neural points)
     def query_feature(
@@ -669,6 +833,7 @@ class NeuralPoints(nn.Module):
         use_only_measured_points: bool = True,
         use_only_valid_points: bool = False,
     ):
+        
         
         if not query_geo_feature and not query_color_feature:
             sys.exit("you need to at least query one kind of feature")
@@ -725,8 +890,17 @@ class NeuralPoints(nn.Module):
         # T2 = get_time()
 
         valid_mask = idx >= 0  # [N, K]
+        # idx[valid_mask] is flattened tensor (1D) which contains only elemets from idx where valid_mask is True
+        # Take xyz values for these points, query them into neural grid, return features, instead of just taking features irectly from neural features list
+        # self.local_neural_points and self.neural_points
 
         # valid_mask = (idx >= 0) & ()  # [N, K]
+        
+        if query_locally:
+            local_geo_fts, local_color_fts = self.query_neural_grid(self.local_neural_points[idx[valid_mask]], query_geo_feature, (query_color_feature and self.color_features is not None))
+        else:
+            geo_fts, color_fts = self.query_neural_grid(self.neural_points[idx[valid_mask]], query_geo_feature, (query_color_feature and self.color_features is not None))
+        
 
         if query_geo_feature:
             geo_features = torch.zeros(
@@ -737,11 +911,14 @@ class NeuralPoints(nn.Module):
                 dtype=self.dtype,
             )  # [N, K, F]
             if query_locally:
-                geo_features[valid_mask] = self.local_geo_features[idx[valid_mask]]
+                #geo_features[valid_mask] = self.local_geo_features[idx[valid_mask]]
+                geo_features[valid_mask] = local_geo_fts
             else:
-                geo_features[valid_mask] = self.geo_features[idx[valid_mask]]
+                #geo_features[valid_mask] = self.geo_features[idx[valid_mask]]
+                geo_features[valid_mask] = geo_fts
             if self.config.layer_norm_on:
                 geo_features = F.layer_norm(geo_features, [self.geo_feature_dim])
+
         if query_color_feature and self.color_features is not None:
             color_features = torch.zeros(
                 batch_size,
@@ -751,9 +928,11 @@ class NeuralPoints(nn.Module):
                 dtype=self.dtype,
             )  # [N, K, F]
             if query_locally:
-                color_features[valid_mask] = self.local_color_features[idx[valid_mask]]
+                #color_features[valid_mask] = self.local_color_features[idx[valid_mask]]
+                color_features[valid_mask] = local_color_fts
             else:
-                color_features[valid_mask] = self.color_features[idx[valid_mask]]
+                #color_features[valid_mask] = self.color_features[idx[valid_mask]]
+                color_features[valid_mask] = color_fts
             if self.config.layer_norm_on:
                 color_features = F.layer_norm(color_features, [self.color_feature_dim])
 
@@ -1622,13 +1801,15 @@ class NeuralPoints(nn.Module):
 
         neural_points_data = {}
         neural_points_data["position"] = self.local_neural_points
-
-        # print(neural_points_data["position"])
-
         neural_points_data["orientation"] = self.local_point_orientations
         neural_points_data["color"] = self.local_point_colors
-        neural_points_data["geo_feature"] = self.local_geo_features
-        neural_points_data["color_feature"] = self.local_color_features
+
+        #neural_points_data["geo_feature"] = self.local_geo_features
+        #neural_points_data["color_feature"] = self.local_color_features
+        local_geo_fts, local_color_fts = self.query_neural_grid(self.local_neural_points, True, True)
+        neural_points_data["geo_feature"] = local_geo_fts
+        neural_points_data["color_feature"] = local_color_fts
+
         neural_points_data["resolution"] = self.resolution
         neural_points_data["free_mask"] = self.local_free_gs_mask
         neural_points_data["valid_mask"] = self.local_valid_gs_mask
@@ -1641,11 +1822,15 @@ class NeuralPoints(nn.Module):
             sorrounding_mask_a = sorrounding_mask[:-1]
             sorrounding_neural_points_data["position"] = self.neural_points[sorrounding_mask_a]
             sorrounding_neural_points_data["orientation"] = self.point_orientations[sorrounding_mask_a]
-            sorrounding_neural_points_data["geo_feature"] = self.geo_features[sorrounding_mask]
+
+            #sorrounding_neural_points_data["geo_feature"] = self.geo_features[sorrounding_mask]
+            sorrounding_geo_fts, sorrounding_color_fts = self.query_neural_grid(self.neural_points[sorrounding_mask_a], True, self.point_colors is not None)
+            sorrounding_neural_points_data["geo_feature"] = sorrounding_geo_fts
             
             if self.point_colors is not None:
                 sorrounding_neural_points_data["color"] = self.point_colors[sorrounding_mask_a]
-                sorrounding_neural_points_data["color_feature"] = self.color_features[sorrounding_mask]
+                #sorrounding_neural_points_data["color_feature"] = self.color_features[sorrounding_mask]
+                sorrounding_neural_points_data["color_feature"] = sorrounding_color_fts
             
             sorrounding_neural_points_data["resolution"] = self.resolution
             sorrounding_neural_points_data["free_mask"] = self.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point

@@ -56,6 +56,8 @@ from fused_ssim import fused_ssim
 
 from gs_gui.gui_utils import VisPacket
 
+import torchvision.utils as vutils
+
 
 class Mapper:
     def __init__(
@@ -194,6 +196,7 @@ class Mapper:
 
         T0 = get_time()
 
+        # 1. Initialization
         frame_origin_torch = cur_pose_torch[:3, 3]
         frame_orientation_torch = cur_pose_torch[:3, :3]
 
@@ -205,7 +208,7 @@ class Mapper:
 
         # better to project the camera frame here (better also with the image timestamp)
 
-        # dynamic filtering
+        # 2. Dynamic filtering
         self.static_mask = torch.ones(
             frame_point_torch.shape[0], dtype=torch.bool, device=self.config.device
         )
@@ -237,6 +240,8 @@ class Mapper:
             frame_normal_torch = frame_normal_torch[self.static_mask]  
 
         self.dataset.static_mask = self.static_mask
+
+        # 3. Sampling
 
         T1 = get_time()
 
@@ -583,7 +588,7 @@ class Mapper:
         return static_mask
 
     def dynamic_filter_neural_points(self):
-
+        
         geo_feature, _, weight_knn, _, certainty = self.neural_points.query_feature(
             self.neural_points.local_neural_points, accumulate_stability=False
         )
@@ -841,6 +846,7 @@ class Mapper:
         else:
             color_mlp_param = None
 
+        '''
         opt = setup_optimizer(
             self.config,
             self.neural_points.local_geo_features,
@@ -849,6 +855,23 @@ class Mapper:
             sem_mlp_param,
             color_mlp_param,
         )
+        '''
+        ########## optimize neural grid [FARIS]
+        fg_geo_param = (self.neural_points.geo_features_list)
+        #fg_color_param = list(self.neural_grid.color_features_list.parameters())
+        fg_color_param = (self.neural_points.color_features_list)
+
+        opt = setup_optimizer(
+            self.config,
+            fg_geo_param,
+            fg_color_param,
+            sdf_mlp_param,
+            sem_mlp_param,
+            color_mlp_param,
+        )
+        
+        
+
 
         for iter in tqdm(range(iter_count), disable=self.silence, desc="SDF training"):
             # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
@@ -1067,7 +1090,7 @@ class Mapper:
 
 
     # jointly optimize the neural point features and gaussian parameters
-    def joint_gsdf_mapping(self, iter_count: int, sdf_loss_on = True,
+    def joint_gsdf_mapping(self, iter_count: int, sdf_loss_on = False,
          online_eval_on = False, lpips_eval_on = False, render_pcd = False):
         
         # neural_point_feat = [self.neural_points.local_geo_features, self.neural_points.local_color_features]
@@ -1076,10 +1099,29 @@ class Mapper:
 
         mlp_color_param = list(self.color_mlp.parameters()) if self.color_mlp is not None else None
 
+        '''
         opt = setup_optimizer(
             self.config,
             self.neural_points.local_geo_features,
             self.neural_points.local_color_features,
+            mlp_sdf_param=list(self.sdf_mlp.parameters()),
+            mlp_color_param=mlp_color_param,
+            mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
+            mlp_gs_scale_param=list(self.gaussian_scale_mlp.parameters()),
+            mlp_gs_rot_param=list(self.gaussian_rot_mlp.parameters()),
+            mlp_gs_alpha_param=list(self.gaussian_alpha_mlp.parameters()),
+            mlp_gs_color_param=list(self.gaussian_color_mlp.parameters()),
+            cams = cams_param,
+            exposure_correction_on=self.config.exposure_correction_on,
+            cam_pose_correction_on=self.config.cam_pose_train_on,
+        )
+        '''
+        fg_geo_param = (self.neural_points.geo_features_list)
+        fg_color_param = (self.neural_points.color_features_list)
+        opt = setup_optimizer(
+            self.config,
+            fg_geo_param, 
+            fg_color_param,
             mlp_sdf_param=list(self.sdf_mlp.parameters()),
             mlp_color_param=mlp_color_param,
             mlp_gs_xyz_param=list(self.gaussian_xyz_mlp.parameters()),
@@ -1164,6 +1206,8 @@ class Mapper:
 
                 # camera poses already set
                 T1 = get_time()
+
+                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
                 
                 cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
@@ -1884,6 +1928,10 @@ class Mapper:
 
         eval_down_scale = 2**(eval_down_rate)
 
+        if self.config.save_image_eval:
+            save_folder = "eval_images_2"
+            os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
+
 
         # if rerender_tsdf_fusion_on:
         #     tsdf_fusion_voxel_size = self.config.tsdf_fusion_voxel_size
@@ -2076,10 +2124,41 @@ class Mapper:
 
                         # rendered results
                         rendered_rgb_image, rendered_depth, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
-
                         rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
-
                         rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
+
+                        if self.config.save_image_eval:
+                            rendered_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
+
+                            # Transform to world frame
+                            rendered_normal = -1.0 * (rendered_normal.permute(1,2,0) @ (cur_view_cam.world_view_transform[:3,:3].T)).permute(2,0,1)
+
+                            normal_norm = rendered_normal.norm(2, dim=0)
+                            normal_color_1 = 0.5 * (normal_norm - rendered_normal) #   # convert to the normal vis color
+
+                            normal = torch.nn.functional.normalize(rendered_normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+                            normal_color_2 = 0.5 * (1 - normal)
+
+                            normal = torch.nn.functional.normalize(rendered_normal, dim=0)
+                            normal_color_3 = 0.5 * (normal + 1)
+
+                            save_path_gt = os.path.join(save_folder, cur_view_cam.uid + "_gt" + ".png")
+                            vutils.save_image(gt_rgb_image, save_path_gt)
+
+                            save_path_rend = os.path.join(save_folder, cur_view_cam.uid + "_rend" + ".png")
+                            vutils.save_image(rendered_rgb_image, save_path_rend)
+
+                            save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_raw" + ".png")
+                            vutils.save_image(rendered_normal, save_path_normal)
+
+                            save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_1" + ".png")
+                            vutils.save_image(normal_color_1, save_path_normal)
+
+                            save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_2" + ".png")
+                            vutils.save_image(normal_color_2, save_path_normal)
+
+                            save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_3" + ".png")
+                            vutils.save_image(normal_color_3, save_path_normal)
 
                         if not self.config.gs_eval_cam_refine_on:
                             break

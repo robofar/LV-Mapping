@@ -101,6 +101,12 @@ class Config:
         self.idw_index: int = 2 # the index for IDW (inverse distance weighting), 2 means square inverse
         self.buffer_size: int = int(5e7) # buffer size for hashing, the smaller, the more likely to collision # TODO decrease to save memory somehow
 
+        # neural grid [FARIS]
+        self.selected_level_spawning = 0
+        self.leaf_voxel_size = 0.25
+        self.voxel_level_num = 3
+        self.up_scale_factor = 2.0
+
         # shared by both kinds of feature 
         self.feature_dim: int = 8  # length of the feature for each grid feature
         self.color_feature_dim: int = 8
@@ -343,6 +349,7 @@ class Config:
         # gs evaluation
         self.gs_eval_cam_refine_on: bool = False  
         self.gs_cam_refine_iter_count: int = 50 # should be larger than 0
+        self.save_image_eval: bool = True
 
 
         # tracking (odometry estimation)
