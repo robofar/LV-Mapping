@@ -574,10 +574,10 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
                 cur_view_cam.set_pose(T_w_c)
         
-                gt_rgb_image = cur_view_cam.rgb_image_list[eval_down_rate]
+                gt_rgb_image = cur_view_cam.rgb_image
 
                 if cur_view_cam.depth_on:
-                    gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate]
+                    gt_depth_image = cur_view_cam.depth_image
                     valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
 
             if eval_on and config.gs_eval_cam_refine_on and gt_rgb_image is not None:
@@ -766,7 +766,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                         print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                 
                     if gt_depth_image is not None and rendered_depth is not None: 
-                        gt_depth_image = cur_view_cam.depth_image_list[eval_down_rate] # torch.tensor
+                        gt_depth_image = cur_view_cam.depth_image # torch.tensor
                         valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
                         
                         diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs

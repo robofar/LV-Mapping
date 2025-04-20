@@ -282,8 +282,8 @@ class Config:
         self.img_pool_size: int = 10 # #short-term training views
         self.long_term_pool_size: int = 80
         self.img_test_pool_size: int = 0 # testing views
-        self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling)
-        self.gs_vis_down_rate: int = 0 # for the visualization
+        self.gs_down_rate: int = 0 # downsampling rate for rendering (0 means no downsampling) # delete
+        self.gs_vis_down_rate: int = 0 # for the visualization # delete
         self.sh_degree: int = 1 # max spherical harmonics level # not used now # TODO
         self.movable_gs: bool = True # allow the gaussians' position to be optimized or not (deprecated)
 

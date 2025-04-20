@@ -1050,7 +1050,7 @@ class SLAMDataset():
             if cam_img is None:
                 continue
 
-            cam_rgb_torch = cam_img.rgb_image_list[0] # without downsampling
+            cam_rgb_torch = cam_img.rgb_image # without downsampling
 
             # TODO: check if this will be an in-place operation of self.cur_point_cloud_torch
             cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)

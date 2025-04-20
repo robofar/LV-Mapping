@@ -85,10 +85,6 @@ class CamImage:
 
         # pyramid of images
         self.pyramid_level = pyramid_level
-        self.rgb_image_list = [None] * pyramid_level
-        self.depth_image_list = [None] * pyramid_level
-        self.sky_mask_list = [None] * pyramid_level
-        self.normal_img_list = [None] * pyramid_level
 
         # camera pose optimization
         self.cam_rot_delta = nn.Parameter(
@@ -123,68 +119,26 @@ class CamImage:
             else:
                 self.depth_on = False
 
-            # TODO: may add normal
-            # TODO: the issue of the depth rendering loss lie in the depth image downsampling, bilinear may not be a good idea, update it 
-            
-            # C can be either 3 or 4
-            # NOTE: F.interpolate require 4D input, it's not an in-place operation, the original input tensor remains unchanged
-            # Downsample to Cx(H/2)x(W/2)
-            down_level1_image = F.interpolate(rgb_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-            # Downsample to Cx(H/4)x(W/4)
-            down_level2_image = F.interpolate(down_level1_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-            # Downsample to Cx(H/8)x(W/8)
-            down_level3_image = F.interpolate(down_level2_image.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
 
-            if self.depth_on:  # 1, H, W
-                down_level1_depth = F.interpolate(depth_image.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-                down_level2_depth = F.interpolate(down_level1_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-                down_level3_depth = F.interpolate(down_level2_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            else:
-                down_level1_depth = down_level2_depth = down_level3_depth = None
 
             if sky_mask is not None: # sky_mask 1, H, W
-                self.sky_mask_on = True
                 sky_mask = sky_mask.to(self.device)
-                down_level1_sky_mask = F.interpolate(sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
-                down_level2_sky_mask = F.interpolate(down_level1_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
-                down_level3_sky_mask = F.interpolate(down_level2_sky_mask.float().unsqueeze(0), scale_factor=0.5, mode='nearest').squeeze(0).bool()
+                self.sky_mask_on = True
             else:
-                down_level1_sky_mask = down_level2_sky_mask = down_level3_sky_mask = None
                 self.sky_mask_on = False
 
             if normal_img is not None: # normal already in device  # sky_mask 3, H, W
-                self.mono_normal_on = True
                 normal_img = normal_img.to(self.device)
-                down_level1_normal = F.interpolate(normal_img.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-                down_level2_normal = F.interpolate(down_level1_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
-                down_level3_normal = F.interpolate(down_level2_normal.unsqueeze(0), scale_factor=0.5, mode='bilinear', align_corners=False).squeeze(0)
+                self.mono_normal_on = True
             else:
-                down_level1_normal = down_level2_normal = down_level3_normal = None
                 self.mono_normal_on = False
 
-            self.rgb_image_list[0] = rgb_image
-            self.depth_image_list[0] = depth_image
-            self.sky_mask_list[0] = sky_mask
-            self.normal_img_list[0] = normal_img
+            self.rgb_image = rgb_image
+            self.depth_image = depth_image
+            self.sky_mask = sky_mask
+            self.normal_img = normal_img
 
-            self.rgb_image_list[1] = down_level1_image
-            self.depth_image_list[1] = down_level1_depth
-            self.sky_mask_list[1] = down_level1_sky_mask
-            self.normal_img_list[1] = down_level1_normal
-
-            self.rgb_image_list[2] = down_level2_image
-            self.depth_image_list[2] = down_level2_depth
-            self.sky_mask_list[2] = down_level2_sky_mask
-            self.normal_img_list[2] = down_level2_normal
-
-            self.rgb_image_list[3] = down_level3_image
-            self.depth_image_list[3] = down_level3_depth
-            self.sky_mask_list[3] = down_level3_sky_mask
-            self.normal_img_list[3] = down_level3_normal
-
-            self.cur_best_level: int = 0
-
-            self.free_memory_under_levels(img_down_rate-1)
+            
     
     # deprecated
     def random_patch(self, h_size=float('inf'), w_size=float('inf')):
@@ -235,28 +189,13 @@ class CamImage:
         if depth_img_torch is not None:  # 1, H, W
             self.depth_on = True
             depth_img_torch = depth_img_torch.to(self.device)   
-            down_level1_depth = F.interpolate(depth_img_torch.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            down_level2_depth = F.interpolate(down_level1_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            down_level3_depth = F.interpolate(down_level2_depth.unsqueeze(0), scale_factor=0.5, mode='nearest-exact').squeeze(0)
-            self.depth_image_list[0] = depth_img_torch
-            self.depth_image_list[1] = down_level1_depth
-            self.depth_image_list[2] = down_level2_depth
-            self.depth_image_list[3] = down_level3_depth
+            self.depth_image = depth_img_torch
 
-    def free_memory_at_level(self, down_level_to_free: int = 0):
-        if len(self.rgb_image_list) > down_level_to_free and down_level_to_free >= 0:
-            self.rgb_image_list[down_level_to_free] = None
-            self.depth_image_list[down_level_to_free] = None
-            self.normal_img_list[down_level_to_free] = None
-            self.sky_mask_list[down_level_to_free] = None
-            self.cur_best_level = down_level_to_free + 1
-
-    def free_memory_under_levels(self, hightest_down_level_to_free: int = 0):
-        free_levels = min(hightest_down_level_to_free+1, len(self.rgb_image_list))
-        if free_levels >= 1:
-            for l in range(free_levels):
-                self.free_memory_at_level(l)
-        self.cur_best_level = hightest_down_level_to_free+1
+    def free_memory(self):
+        self.rgb_image = None
+        self.depth_image = None
+        self.normal_img = None
+        self.sky_mask = None
 
 
 # this is not used
