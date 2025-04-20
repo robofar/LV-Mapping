@@ -252,6 +252,7 @@ def run_pin_slam(
 
     print("Some config info:")
     print(f"Dynamic filter on: {config.dynamic_filter_on}")
+    print(f"GS Invalid Check on: {config.gs_invalid_check_on}")
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
@@ -356,7 +357,7 @@ def run_pin_slam(
             if dataset.cur_cam_img is not None and not neural_points.is_empty(): # when there are new imgs, do training
                 mapper.update_cam_pool(frame_id)
                 mapper.joint_gsdf_mapping(config.gs_iters) # only when sdf field is learned well 
-            
+        
         # TODO: check its time consuming, can be done once per x frames 
         if valid_lidar_frame_flag and mapper.sdf_train_frame_count > 5 and mapper.sdf_train_frame_count % 2 == 0 and config.gs_invalid_check_on:
             mapper.check_invalid_neural_points() # render_min_nn_count=config.query_nn_k

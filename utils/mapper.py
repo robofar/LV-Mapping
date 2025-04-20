@@ -144,9 +144,6 @@ class Mapper:
         self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
         self.sdf_train_frame_count: int = 0
 
-        # used training views in this frame # for visualization
-        self.cur_frame_train_views = None
-
         # current exposure parameters for each camera
         self.cams_exposure_ab = {}
         self.per_cam_exposure_ab = {} # dict of dict, contains dict per cam
@@ -415,6 +412,22 @@ class Mapper:
                 device=self.device, 
                 dtype=torch.float64
             )
+    
+
+    # Immediately loading all gt poses
+    def load_gt_poses(self):
+        # self.dataset.gt_poses => numpy.array ; float64
+        # self.used_poses => torch.tensor ; torch.float64
+
+        if self.dataset.gt_pose_provided:  # for pure reconstruction with known pose
+            self.used_poses = torch.tensor(
+                self.dataset.gt_poses,
+                device=self.device, 
+                dtype=self.tran_dtype
+            )
+        else:
+            print("Please provide poses...")
+
 
     def update_cam_pool(self, frame_id: int):
 
@@ -427,9 +440,7 @@ class Mapper:
             cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
 
             T_w_l = self.used_poses[frame_id] # already in torch tensor, lidar pose (in the lidar deskewed reference frame)
-
             T_c_l = torch.tensor(self.dataset.T_c_l_mats[cam_name], device=self.device) 
-
             diff_pose_l_c_ts = torch.eye(4).to(T_w_l)
 
             # relative transformation between the lidar reference timestamp and the camera triggering timestamp
@@ -458,7 +469,7 @@ class Mapper:
             cam.set_pose(T_w_c_after_pgo)
 
     # get a batch of training samples and labels for map optimization
-    def get_batch(self, global_coord=True):
+    def get_batch(self):
         
 
         if self.local_sample_indices is not None:
@@ -466,47 +477,16 @@ class Mapper:
         else:
             pool_sample_count = self.pool_sample_count
 
-        if (
-            self.config.bs_new_sample > 0
-            and self.new_idx is not None
-            and not self.dataset.lose_track
-            and not self.dataset.stop_status
-        ):
-            # partial, partial for the history and current samples
-            new_idx_count = self.new_idx.shape[0]
-            if new_idx_count > 0:
-                bs_new = min(new_idx_count, self.config.bs_new_sample)
-                bs_history = self.config.bs - bs_new
+        # uniformly sample the pool
+        index = torch.randint(
+            0, pool_sample_count, (self.config.bs,), device=self.device
+        )
 
-                index_history = torch.randint(
-                    0, pool_sample_count, (bs_history,), device=self.device
-                )
-                if self.local_sample_indices is not None:
-                    index_history = self.local_sample_indices[index_history]
-                
-                index_new_batch = torch.randint(
-                    0, new_idx_count, (bs_new,), device=self.device
-                )
-                index_new = self.new_idx[index_new_batch]
-                index = torch.cat((index_history, index_new), dim=0)
-            else:  # uniformly sample the pool
-                index = torch.randint(
-                    0, self.pool_sample_count, (self.config.bs,), device=self.device
-                )
-        else:  # uniformly sample the pool
-            index = torch.randint(
-                0, pool_sample_count, (self.config.bs,), device=self.device
-            )
+        if self.local_sample_indices is not None:
+            index = self.local_sample_indices[index]
 
-            if self.local_sample_indices is not None:
-                index = self.local_sample_indices[index]
-
-        coord = self.global_coord_pool[index, :]
-
-        # if global_coord:
-        #     coord = self.global_coord_pool[index, :]
-        # else:
-        #     coord = self.coord_pool[index, :]
+        # coord = self.coord_pool[index, :]
+        global_coord = self.global_coord_pool[index, :]
 
         sdf_label = self.sdf_label_pool[index]
         ts = self.time_pool[index]  # frame number as the timestamp
@@ -525,7 +505,7 @@ class Mapper:
         else:
             normal_label = None
 
-        return coord, sdf_label, ts, normal_label, sem_label, color_label, weight
+        return global_coord, sdf_label, ts, normal_label, sem_label, color_label, weight
 
     # transform the data pool after pgo pose correction
     def transform_data_pool(self, pose_diff_torch: torch.tensor):
@@ -596,15 +576,13 @@ class Mapper:
         for iter in tqdm(range(iter_count), disable=self.silence, desc="SDF training"):
             # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
 
-            T00 = get_time()
+            
             # we do not use the ray rendering loss here for the incremental mapping
-            coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch(
-                global_coord=True
-            )  # coord here is in global frame if no ba pose update
+            coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()  # coord here is in global frame if no ba pose update
 
             # FIXME: if coord outside of the local map, we do not feed it into the network
 
-            T01 = get_time()
+            
 
             poses = self.used_poses[ts]
             origins = poses[:, :3, 3]
@@ -633,7 +611,7 @@ class Mapper:
                 coord, ts, query_color_feature=self.config.color_on
             )
 
-            T02 = get_time()
+            
             
             # predict the scaled sdf with the feature
             sdf_pred = self.sdf_mlp.sdf(geo_feature) # [N, K, 1]  
@@ -662,7 +640,7 @@ class Mapper:
                     self.config.voxel_size_m * self.config.num_grad_step_ratio,
                 )  #
 
-            T03 = get_time()
+            
 
             if self.config.proj_correction_on:  # [not used]
                 cos = torch.abs(F.cosine_similarity(g, coord - origins))
@@ -774,7 +752,7 @@ class Mapper:
                 )
                 cur_loss += self.config.weight_i * color_loss
 
-            T04 = get_time()
+            
 
             # print(cur_loss)
 
@@ -782,16 +760,7 @@ class Mapper:
             cur_loss.backward(retain_graph=False)
             opt.step()
 
-            T05 = get_time()
-
             self.total_iter += 1
-
-            # in ms
-            # print("time for get data        :", (T01-T00) * 1e3) # \
-            # print("time for feature querying:", (T02-T01) * 1e3) # \\\\\\\
-            # print("time for sdf prediction  :", (T03-T02) * 1e3) # \\\\\\
-            # print("time for loss calculation:", (T04-T03) * 1e3) # \\
-            # print("time for back propogation:", (T05-T04) * 1e3) # \\\\\\
 
             if self.config.wandb_vis_on:
                 wandb_log_content = {
@@ -806,7 +775,7 @@ class Mapper:
                 wandb.log(wandb_log_content)
 
         # update the global map
-        self.neural_points.assign_local_to_global()
+        self.neural_points.assign_local_to_global() # [TODO]
 
 
     # jointly optimize the neural point features and gaussian parameters
@@ -849,8 +818,6 @@ class Mapper:
             exposure_correction_on=self.config.exposure_correction_on,
             cam_pose_correction_on=self.config.cam_pose_train_on,
         )
-
-        self.cur_frame_train_views = {} # set back to empty
 
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
@@ -937,8 +904,6 @@ class Mapper:
                 if render_pkg is None:
                     continue
                 
-                # record the cam views used for training at this timestep
-                self.cur_frame_train_views[viewpoint_cam.uid] = viewpoint_cam
 
                 T3 = get_time()
 
@@ -1451,7 +1416,6 @@ class Mapper:
                 #     print(" SDF loss             iter time (ms):", (T6-T5)*1e3) 
                 #     print(" Backward propagation iter time (ms):", (T7-T6)*1e3) # still, this backpropagation is slow, but better to do this in batch
 
-            # self.neural_points.assign_local_gaussians_to_global() # set back gaussians (and also neural points), better don't do it twice
             self.neural_points.assign_local_to_global() # set back pin feature
 
             # TODO: select some reliable new gaussians to update
@@ -1482,6 +1446,9 @@ class Mapper:
 
         return 
 
+    # Fills self.neural_points.valid_gs_mask
+    # I think then from these neural points gaussians will not be spawned
+    # Initially they are all true
     def check_invalid_neural_points(self, stability_threshold = 1.0, 
             render_min_nn_count: int = 5, 
             max_z_thre = None):
@@ -1570,7 +1537,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images"
+            save_folder = "eval_images_2"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
