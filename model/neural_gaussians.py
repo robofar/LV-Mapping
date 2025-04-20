@@ -78,8 +78,6 @@ class NeuralPoints(nn.Module):
         self.sorrounding_map_radius = config.sorrounding_map_radius
 
         self.temporal_local_map_on = True
-
-        # FIXME
         if not self.config.track_on and self.config.temporal_local_map_off:
             # print("Not using temporal local map")
             self.temporal_local_map_on = False
@@ -422,7 +420,7 @@ class NeuralPoints(nn.Module):
                 
             # print("# Color update count:", color_update_mask.sum().item()) 
 
-            if self.temporal_local_map_on: # only done for the slam mode
+            if self.temporal_local_map_on: # only done for the slam mode. Not for batch mapping mode
                 # the voxel is not occupied before or the case when hash collision happens
                 # delta_t = (cur_ts - self.point_ts_create[hash_idx]) # use time diff
                 delta_travel_dist = (
@@ -514,88 +512,6 @@ class NeuralPoints(nn.Module):
             self.point_colors = torch.cat((self.point_colors, added_colors), 0)
 
 
-
-
-        ################################################################################################################
-
-
-
-
-        ################################################################################################################
-
-
-        
-        
-        # gaussian parameters
-        ## ----------------
-
-        ## Displacement (Position)
-        # new_xyz = torch.zeros((new_point_count,3), device=self.device, dtype=self.dtype)
-        # self.xyz = torch.cat((self.xyz, new_xyz), 0) # displacement
-        ## ----------------
-
-        ## Color SH
-        # sh_features = torch.zeros((new_point_count, 3, (self.max_sh_degree + 1) ** 2), device=self.device, dtype=self.dtype)
-
-        # if added_colors is not None:
-        #     fused_color = RGB2SH(added_colors) # N, 3, now sh with 0 dim
-        #     # print(fused_color.shape)
-        #     sh_features[:, :3, 0 ] = fused_color
-        #     sh_features[:, 3:, 1:] = 0.0        
-
-        # # give a initial value for these (TODO)
-        # new_features_dc = sh_features[:,:,0:1].transpose(1, 2).contiguous() # N, 1 ,3
-        # # print(new_features_dc.shape)
-        # self.features_dc = torch.cat((self.features_dc, new_features_dc), 0)
-
-        # new_features_rest = sh_features[:,:,1:].transpose(1, 2).contiguous() # N, (max_sh+1)**2-1, 3
-        # # print(new_features_rest.shape)
-        # self.features_rest = torch.cat((self.features_rest, new_features_rest), 0)
-
-        ## Scale
-        # the same scaling initialization for all Gaussians
-        # mean_dist = torch.tensor([1.0 * self.resolution], dtype=self.dtype, device=self.device) # set a bit larger (TODO) # 1.0 give rise to better results
-        
-        # if is_reliable:
-        #     init_scale = mean_dist
-        # else: # initalize with a larger radius
-        #     init_scale = mean_dist * 3.0
-
-        # new_scales = self.scaling_inverse_activation(init_scale)[...,None].repeat(new_point_count, self.gs_dim_count) # only for two dim, 2D Gaussian
-        # if self.gs_dim_count == 3: # gaussian surfel setting
-        #     new_scales[..., -1] -= 1e10 # squeeze z scaling
-
-        # self.scaling = torch.cat((self.scaling, new_scales), 0) 
-        ## ----------------
-        
-        ## Rotation
-        # new_rots = torch.rand((new_point_count, 4), dtype=self.dtype, device=self.device) # random initialization
-        
-        # if added_normals is not None: # initialize it with the valid surface normal 
-        #     valid_normal_mask = (torch.max(added_normals, 1)[0] > 0.0) # not all zero
-        #     new_rots[valid_normal_mask] = normal2rotation(added_normals[valid_normal_mask]) # batch
-
-        # # switch the normal direction if the normal is not pointing to the camera
-        # added_ray = added_pt - sensor_position # N, 3
-        # new_normals = rotation2normal(new_rots) # N, 3
-        # dot_product = (added_ray * new_normals).sum(dim=1) # N
-        # new_normals[dot_product>0] *= -1 
-        # new_rots = normal2rotation(new_normals)
-
-        # new_rots = torch.nan_to_num(new_rots, 0, 0) # no NaN is allowed, otherwise CUDA has error
-        
-        # self.rotation = torch.cat((self.rotation, new_rots), 0) # initialize the normals done
-        ## ----------------
-
-        ## Opacity
-        # if is_reliable:
-        #     init_opacity = self.config.gs_init_opacity # 0.5
-        # else:
-        #     init_opacity = 0.1
-
-        # new_opacities = self.inverse_opacity_activation(init_opacity * torch.ones((new_point_count, 1), dtype=self.dtype, device=self.device))
-        # self.opacity = torch.cat((self.opacity, new_opacities), 0)
-        ## ----------------
         
         ## Mask
         if added_colors is not None:
@@ -610,11 +526,6 @@ class NeuralPoints(nn.Module):
 
         self.valid_gs_mask = torch.cat((self.valid_gs_mask, torch.ones((new_point_count), dtype=bool, device=self.device)), 0) # all True
 
-        if sensor_position is not None:
-            self.reset_local_map(
-                sensor_position, sensor_orientation, cur_ts
-            )  # no need to recreate hash
-
         return new_point_ratio
 
     # we also set the sorrounding map here
@@ -623,7 +534,7 @@ class NeuralPoints(nn.Module):
         sensor_position: torch.Tensor,
         sensor_orientation: torch.Tensor = None,
         cur_ts: int = 0,
-        use_travel_dist: bool = True,
+        use_travel_dist: bool = False,
         diff_ts_local: int = 50,
     ):
     # TODO: not very efficient, optimize the code
@@ -827,7 +738,7 @@ class NeuralPoints(nn.Module):
         query_points: torch.Tensor,
         query_ts: torch.Tensor = None,
         accumulate_stability: bool = True,
-        query_locally: bool = True,
+        query_locally: bool = False,
         query_geo_feature: bool = True,
         query_color_feature: bool = False,
         use_only_measured_points: bool = True,
@@ -1284,102 +1195,6 @@ class NeuralPoints(nn.Module):
         # TODO: visualize orientation as normal
 
         neural_pc_o3d = o3d.geometry.PointCloud()
-
-        # TODO # these are the version for GS, but at least add vis_free_gaussians, vis_invalid_gaussians options here
-
-        # if False:  # "gaussian fused color" # here we do not use random_down_ratio            
-        #     if query_global:
-                
-        #         shown_gaussian_mask = torch.ones_like(self.valid_gs_mask, dtype=torch.bool, device=self.device)
-
-        #         if not vis_invalid_gaussians:
-        #             shown_gaussian_mask = shown_gaussian_mask & self.valid_gs_mask
-        #         if not vis_free_gaussians:
-        #             shown_gaussian_mask = shown_gaussian_mask & (~self.free_gs_mask)
-                
-        #         neural_points_np = (
-        #             self.neural_points[shown_gaussian_mask]
-        #             .cpu()
-        #             .detach()
-        #             .numpy()
-        #             .astype(np.float64)
-        #         )  
-
-        #         # alpha_np =  (
-        #         #     self.get_opacity[shown_gaussian_mask]
-        #         #     .cpu()
-        #         #     .detach()
-        #         #     .numpy()
-        #         #     .astype(np.float64)
-        #         # )
-        #         # gaussian_rgb_np[]
-
-        #         if vis_normals:
-        #             normal_np =  (
-        #                 rotation2normal(self.get_rotation[shown_gaussian_mask])
-        #                 .cpu()
-        #                 .detach()
-        #                 .numpy()
-        #                 .astype(np.float64)
-        #             )
-        #     else: # only show local map
-        #         # TODO
-        #         # if vis_free_gaussians:
-        #         #     shown_gaussian_mask = self.local_valid_gs_mask
-        #         # else:
-        #         #     shown_gaussian_mask = self.local_valid_gs_mask & (~self.local_free_gs_mask)
-
-        #         shown_gaussian_mask = torch.ones_like(self.local_valid_gs_mask).to(self.local_valid_gs_mask)
-        #         local_valid_gs_mask_np = self.local_valid_gs_mask.cpu().detach().numpy()
-        #         local_free_gs_mask_np = self.local_free_gs_mask.cpu().detach().numpy()       
-                       
-        #         if color_mode == 0:
-        #             neural_points_np = (
-        #                 self.get_local_xyz[shown_gaussian_mask]
-        #                 .cpu()
-        #                 .detach()
-        #                 .numpy()
-        #                 .astype(np.float64)
-        #             )
-        #         else:
-        #             neural_points_np = (
-        #                 self.local_neural_points[shown_gaussian_mask]
-        #                 .cpu()
-        #                 .detach()
-        #                 .numpy()
-        #                 .astype(np.float64)
-        #             )
-        #         gaussian_rgb_np = (
-        #             SH2RGB(self.local_features_dc[shown_gaussian_mask, 0])
-        #             .cpu()
-        #             .detach()
-        #             .numpy()
-        #             .astype(np.float64)
-        #         )
-        #         # gaussian_rgb_np[~local_valid_gs_mask_np] = np.array([1.0, 0, 0])
-        #         # gaussian_rgb_np[local_valid_gs_mask_np] = np.array([0.6, 0.6, 0.6])
-        #         # alpha_np =  (
-        #         #     self.get_local_opacity[shown_gaussian_mask]
-        #         #     .cpu()
-        #         #     .detach()
-        #         #     .numpy()
-        #         #     .astype(np.float64)
-        #         # )
-        #         if vis_normals:
-        #             normal_np =  (
-        #                 rotation2normal(self.get_local_rotation[shown_gaussian_mask])
-        #                 .cpu()
-        #                 .detach()
-        #                 .numpy()
-        #                 .astype(np.float64)
-        #             )
-
-        #     neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np)
-        #     # neural_pc_o3d.colors = o3d.utility.Vector3dVector(gaussian_rgb_np * alpha_np)
-        #     if vis_normals:
-        #         neural_pc_o3d.normals = o3d.utility.Vector3dVector(normal_np)
-
-        # # original pin-slam, no gs enabled
 
         if query_global:
             neural_points_np = (

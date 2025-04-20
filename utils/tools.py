@@ -421,9 +421,10 @@ def get_gradient(inputs, outputs):
 
 
 def freeze_model(model: nn.Module):
-    for child in model.children():
-        for param in child.parameters():
-            param.requires_grad = False
+    if model is not None:
+        for child in model.children():
+            for param in child.parameters():
+                param.requires_grad = False
 
 
 def unfreeze_model(model: nn.Module):

@@ -55,6 +55,7 @@ class SLAMDataset():
         self.config = config
         self.silence = config.silence
         self.dtype = config.dtype
+        self.tran_dtype = config.tran_dtype
         self.device = config.device
         self.run_path = config.run_path
 
@@ -186,10 +187,12 @@ class SLAMDataset():
         if config.pgo_on:
             self.pgo_poses = np.broadcast_to(np.eye(4), (max_frame_number, 4, 4)).copy() # T_wi
 
+        '''
         self.travel_dist = np.zeros(max_frame_number) 
         self.accu_travel_dist: float = 0.0
         self.accu_travel_dist_for_keyframe: float = 0.0
         self.accu_travel_degree_for_keyframe: float = 0.0
+        '''
         
         self.time_table = []
 
@@ -216,7 +219,7 @@ class SLAMDataset():
             self.color_scale = 1.0
             self.config.deskew_ref_ratio = 0.5
 
-        self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.dtype)
+        self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.tran_dtype)
 
         # current frame point cloud (for visualization)
         self.cur_frame_o3d = o3d.geometry.PointCloud()
@@ -251,11 +254,11 @@ class SLAMDataset():
     def init_temp_data(self):
         
         # current frame's data
-        self.cur_point_cloud_torch = None
+        self.cur_point_cloud_torch = None # contains xyz and rgb
         self.cur_point_ts_torch = None
         self.cur_sem_labels_torch = None
         self.cur_sem_labels_full = None
-        self.cur_point_normals = None
+        self.cur_point_normals = None # set up in self.estimate_normals (if config.estimate_normal is True)
         self.cur_point_lidar_idx_torch = None # now only used for deskewing multiple-LiDARs
 
         self.cur_point_cloud_mono_depth = None # point cloud results from image mono (metric) depth estimation
@@ -274,6 +277,20 @@ class SLAMDataset():
 
         # sensor timestamp
         self.cur_sensor_ts = None
+
+        # pose
+        self.cur_pose_ref = None # numpy
+        self.cur_pose_torch = None # torch
+
+        self.last_pose_ref = None # numpy
+        self.last_pose_torch = None
+
+        self.last_odom_tran = None # numpy (odom transformation between (t-1) and t)
+        self.last_odom_tran_torch = None
+
+
+        # ground segmentation
+        self.cur_ground_mask_torch = None
 
 
     def read_frame_ros(self, msg):
@@ -685,23 +702,39 @@ class SLAMDataset():
         # print(self.cur_point_ts_torch)
     
     def set_ref_pose(self, frame_id):
+        cur_frame = frame_id
+        last_frame = frame_id - 1
+
         # load gt pose if available
         if self.gt_pose_provided:
             self.cur_pose_ref = self.gt_poses[frame_id]
-        else:  # or initialize with identity
-            self.cur_pose_ref = np.eye(4)
+            if frame_id == 0:
+                self.last_pose_ref = self.gt_poses[cur_frame]
+            else:
+                self.last_pose_ref = self.gt_poses[last_frame]
+
+            self.last_odom_tran = np.linalg.inv(self.last_pose_ref) @ self.cur_pose_ref  # T_last<-cur # the odometry result instead of the inital guess
+
+        else:
+            print("[bold red] GT poses not provided! [/bold red]")
+            sys.exit("Exiting program...")
+        
+        '''
         self.cur_pose_torch = torch.tensor(
             self.cur_pose_ref, device=self.device, dtype=self.dtype
         )
+        '''
+        self.cur_pose_torch = torch.tensor(self.cur_pose_ref, device=self.device, dtype=self.tran_dtype)
+        self.last_pose_torch = torch.tensor(self.last_pose_ref, device=self.device, dtype=self.tran_dtype)
+        self.last_odom_tran_torch = torch.tensor(self.last_odom_tran, device=self.device, dtype=self.tran_dtype) # tran_in_frame ; try also dtype=torch.float64
 
     def preprocess_frame(self): 
         """
         proprocessing main function: all the preprocessing steps for a input point cloud
         """  
-        # T1 = get_time()
 
         # setup poses
-        valid_frame_flag = self.initialize_pose()
+        valid_frame_flag = self.valid_frame()
         if not valid_frame_flag:   
             return False
 
@@ -709,74 +742,38 @@ class SLAMDataset():
         if self.config.adaptive_range_on:
             self.set_adaptive_resolution()
 
-        # T2 = get_time()
 
         # preprocessing, filtering, kitti intrinsic correction
         self.filter_and_correct()
 
-        # Tn0 = get_time()
         # normal estimation (not used)
         self.cur_point_normals = None
         if self.config.estimate_normal:
             self.estimate_normals()
         
-        # Tn1 = get_time()
-        # print("Normal estimation time (s):", (Tn1-Tn0)*1e3)
 
-        # T3 = get_time()
+        # Prepare scan to be used for mapping (downsampling and deskewing)
+        self.preprocess_scan()
 
         # prepare for the registration (from the second frame)
-        if self.processed_frame > 0:
-            self.preprocess_source_points()
+        #if self.processed_frame > 0:
+            #self.preprocess_source_points()
             
         # T4 = get_time()
         return True
+    
 
-    def initialize_pose(self):
+    def valid_frame(self):
         """
-        initialize the poses, return value indicates whether the frame is valid
-        """  
-
-        frame_id = self.processed_frame
-        cur_pose_init_guess = self.cur_pose_ref
-        if frame_id == 0:  # initialize the first frame, no tracking yet
-            if self.config.track_on:
-                self.odom_poses[frame_id] = self.cur_pose_ref
-            if self.config.pgo_on:
-                self.pgo_poses[frame_id] = self.cur_pose_ref
-            self.travel_dist[frame_id] = 0.0
-            self.last_pose_ref = self.cur_pose_ref
-        elif frame_id > 0:
-            # pose initial guess
-            # last_translation = np.linalg.norm(self.last_odom_tran[:3, 3])
-            if self.config.uniform_motion_on and not self.lose_track: 
-            # if self.config.uniform_motion_on:   
-                # apply uniform motion model here
-                cur_pose_init_guess = (
-                    self.last_pose_ref @ self.last_odom_tran
-                )  # T_world<-cur = T_world<-last @ T_last<-cur
-            else:  # static initial guess
-                cur_pose_init_guess = self.last_pose_ref
-
-            if not self.config.track_on and self.gt_pose_provided:
-                cur_pose_init_guess = self.gt_poses[frame_id]
-
-            # pose initial guess tensor
-            self.cur_pose_guess_torch = torch.tensor(
-                cur_pose_init_guess, dtype=torch.float64, device=self.device
-            )   
+        return value indicates whether the frame is valid
+        """
 
         if self.cur_point_cloud_torch is not None:
             original_count = self.cur_point_cloud_torch.shape[0]
+
             if original_count < 10:  # deal with missing data (invalid frame)
                 print("[bold red]Not enough input point cloud, skip this frame[/bold red]")
-                if self.config.track_on:
-                    self.odom_poses[frame_id] = cur_pose_init_guess
-                if self.config.pgo_on:
-                    self.pgo_poses[frame_id] = cur_pose_init_guess
                 return False # indicating invalid frame
-        else:
-            return False
         
         return True
 
@@ -913,9 +910,49 @@ class SLAMDataset():
                 ts_diff_list=self.ts_ref_ratio_diffs 
             )  # T_last<-cur
 
-        # print("# Source point for registeration : ", cur_source_torch.shape[0])
-
     
+    # preprocess_source_points - Mine version is used for mapping (Yue's for registration)
+    def preprocess_scan(self):
+        self.voxel_downsample_points_for_mapping()
+        if self.config.deskew:
+            self.deskew_scan()
+
+    def voxel_downsample_points_for_mapping(self):
+        # downsampling the point for mapping now
+        idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:, :3], self.train_voxel_m)
+
+        self.cur_point_cloud_torch = self.cur_point_cloud_torch[idx]
+
+        if self.cur_point_ts_torch is not None:
+            self.cur_point_ts_torch = self.cur_point_ts_torch[idx]
+
+        if self.cur_point_lidar_idx_torch is not None:
+            self.cur_point_lidar_idx_torch = self.cur_point_lidar_idx_torch[idx]
+
+        if self.cur_point_normals is not None:
+            self.cur_point_normals = self.cur_point_normals[idx]
+        
+        if self.cur_ground_mask_torch is not None:
+            self.cur_ground_mask_torch = self.cur_ground_mask_torch[idx]
+        
+        if self.cur_sem_labels_torch is not None:
+            self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
+            self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
+
+    # would be same as calling deskew_at_frame(self.last_odom_tran_torch)
+    def deskew_scan(self):
+
+        self.cur_point_cloud_torch = deskewing(
+            self.cur_point_cloud_torch,
+            self.cur_point_ts_torch,
+            self.last_odom_tran_torch, # T_last<-cur # tran_in_frame
+            self.config.deskew_ref_ratio,
+            points_lidar_idx = self.cur_point_lidar_idx_torch,
+            T_l_lm_list=self.T_l_lm_list,
+            ts_diff_list=self.ts_ref_ratio_diffs 
+        )
+    
+    # updates some poses that I updated immediately in set_ref_pose bcs I know all poses immediately
     def update_odom_pose(self, cur_pose_torch: torch.tensor): 
         """
         Done after odometry to setup the latest poses, do the deskewing of raw lidar points and
@@ -1000,7 +1037,7 @@ class SLAMDataset():
             self.write_results() # record before the failure point
             sys.exit("Lose track for a long time, system failed") 
 
-
+    '''
     def voxel_downsample_points_for_mapping(self):
         # downsampling the point for mapping now
         idx = voxel_down_sample_torch(self.cur_point_cloud_torch[:, :3], self.train_voxel_m)
@@ -1010,6 +1047,7 @@ class SLAMDataset():
         if self.cur_sem_labels_torch is not None:
             self.cur_sem_labels_torch = self.cur_sem_labels_torch[idx]
             self.cur_sem_labels_full = self.cur_sem_labels_full[idx]
+    '''
 
     # get the relative timestamp shift from the reference lidar frame as a ratio
     def get_cur_cam_ref_ts_ratio(self, cam_name, lidar_t_interval: float = 0.1):
@@ -1028,7 +1066,7 @@ class SLAMDataset():
 
         return cur_cam_ref_ts_ratio
 
-    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, tran_in_frame = None):
+    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, use_odom_tran = False):
         # done after deskewing
         # to get a refined depth map and colorized point cloud
 
@@ -1053,19 +1091,19 @@ class SLAMDataset():
             cam_rgb_torch = cam_img.rgb_image # without downsampling
 
             # TODO: check if this will be an in-place operation of self.cur_point_cloud_torch
-            cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.dtype)
+            cur_T_c_l = torch.tensor(self.T_c_l_mats[cam_name], device=self.device, dtype=self.tran_dtype)
             
             # relative transformation between the lidar reference timestamp and the camera triggering timestamp
-            if tran_in_frame is not None and self.cur_sensor_ts is not None:
+            if use_odom_tran and self.cur_sensor_ts is not None:
                 
                 cur_cam_ref_ts_ratio = self.get_cur_cam_ref_ts_ratio(cam_name)
                 # print(cur_cam_ref_ts_ratio)
 
-                diff_pose_l_c_ts = slerp_pose(tran_in_frame, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(cur_T_c_l)
+                diff_pose_l_c_ts = slerp_pose(self.last_odom_tran_torch, cur_cam_ref_ts_ratio, self.config.deskew_ref_ratio).to(cur_T_c_l)
 
                 cur_T_c_l = cur_T_c_l @ torch.linalg.inv(diff_pose_l_c_ts)
             
-            cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype)
+            cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype) # K should be dtype not tran_dtype
 
             points_rgb_torch, depth_map_torch = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
                 cam_rgb_torch, cur_T_c_l, cur_K_mat, min_depth=self.config.min_range)
@@ -1077,12 +1115,21 @@ class SLAMDataset():
 
         if use_only_colorized_points:
             with_rgb_mask = (points_rgb_torch[:, 3] == 0)
-            # print("# not valid count:", torch.sum(~with_rgb_mask).item())
+
             self.cur_point_cloud_torch = self.cur_point_cloud_torch[with_rgb_mask]
+
             if self.cur_point_ts_torch is not None:
                 self.cur_point_ts_torch = self.cur_point_ts_torch[with_rgb_mask]
+            
+            if self.cur_point_lidar_idx_torch is not None:
+                self.cur_point_lidar_idx_torch = self.cur_point_lidar_idx_torch[with_rgb_mask]
+
             if self.cur_point_normals is not None:
                 self.cur_point_normals = self.cur_point_normals[with_rgb_mask]
+            
+            if self.cur_ground_mask_torch is not None:
+                self.cur_ground_mask_torch = self.cur_ground_mask_torch[with_rgb_mask]
+
             if self.cur_sem_labels_torch is not None:
                 self.cur_sem_labels_torch = self.cur_sem_labels_torch[with_rgb_mask]
                 self.cur_sem_labels_full = self.cur_sem_labels_full[with_rgb_mask]

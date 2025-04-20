@@ -239,16 +239,34 @@ def run_pin_slam(
     pool_pcd = None
 
     print("Some config info:")
-    print(f"Dynamic filter on: {config.dynamic_filter_on}")
+    print(f"Dynamic Filtering using SDF: {config.dynamic_filter_on}")
+    print(f"GS Invalid Check (neural_points.valid_gs_mask): {config.gs_invalid_check_on}")
+    print(f"Estimating Normal for Input PointCloud: {config.estimate_normal}")
+    print(f"Use only colorized points: {config.learn_color_residual}")
+    print(f"Temporal Local Map: {config.temporal_local_map_off == False}")
+    print(f"Use Local Pool for SDF Training: {config.use_local_pool_sdf}")
+    print(f"Freeze decoder after {config.freeze_after_iter} iterations")
 
     mapper.load_gt_poses()
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
         remove_gpu_cache()
+        print(f"Frame ID: {frame_id}")
 
-        # I. Load data and preprocessing
+        # I. Load data (pointclouds and poses) and preprocessing
+        dataset.init_temp_data() # init cur frame temp data
+        dataset.read_frame_with_loader(frame_id, use_image=config.gs_on) # read pointcloud + all poses (cur_pose, prev_pose and odometry since we know all poses in advance)
+        dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
+        if (not dataset.is_rgbd): # if it is rgbd dataset dont override gt depth (but change such that I obtain foundation masks)
+            dataset.project_pointcloud_to_cams(use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
+        
 
+        mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
+
+        if config.gs_on: # only when color available
+            if dataset.cur_cam_img is not None:
+                mapper.update_cam_pool(frame_id)
 
 
 
@@ -258,6 +276,23 @@ def run_pin_slam(
         dataset.processed_frame += 1
     
 
+    print("SDF Training...")
+    mapper.mapping(5000)
+
+
     # VI. Save results
-    # Free pool
     mapper.free_pool()
+
+    color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+    neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+    if config.save_mesh and cur_mesh is None:
+        print("Saving mesh...")
+        chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), config.mc_res_m * 100) # reconstruct in chunks
+        mc_cm_str = str(round(config.mc_res_m*1e2))
+        mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
+        cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, config.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
+        print(f"save the reconstructed mesh to {mesh_path}")
+
+
+if __name__ == "__main__":
+    app()

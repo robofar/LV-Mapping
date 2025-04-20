@@ -29,6 +29,8 @@ from utils.config import Config
 from utils.data_sampler import DataSampler
 from utils.loss import color_diff_loss, sdf_bce_loss, sdf_diff_loss, sdf_zhong_loss
 from utils.tools import (
+    freeze_decoders,
+    freeze_model,
     colorize_depth_maps,
     get_gradient,
     get_time,
@@ -87,6 +89,7 @@ class Mapper:
 
         self.device = config.device
         self.dtype = config.dtype
+        self.tran_dtype = config.tran_dtype
         self.used_poses = None
         self.require_gradient = False
         if (
@@ -144,7 +147,7 @@ class Mapper:
         self.gs_train_frame_count: int = 0 # only consider the time frame (so if it's a multi-cam system, multi-cam images belong to a single frame)
         self.sdf_train_frame_count: int = 0
 
-        # current exposure parameters for each camera
+        # current exposure parameters for each camera. Do I need this at all? [TODO]
         self.cams_exposure_ab = {}
         self.per_cam_exposure_ab = {} # dict of dict, contains dict per cam
         
@@ -314,21 +317,22 @@ class Mapper:
         self.pool_sample_count = self.global_coord_pool.shape[0]
 
         # 7. Take local pool (save indices)
-        pool_relatve = self.global_coord_pool - frame_origin_torch
-        # print(pool_relatve.shape)
-        if self.config.range_filter_2d:
-            pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
-        else:
-            pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
-        
-        dist_mask = pool_relative_dist < self.config.window_radius # keep inside
-        true_indices = torch.nonzero(dist_mask).squeeze()
-        self.local_sample_indices = true_indices
+        if self.config.use_local_pool_sdf:
+            pool_relatve = self.global_coord_pool - frame_origin_torch
+            # print(pool_relatve.shape)
+            if self.config.range_filter_2d:
+                pool_relative_dist = torch.norm(pool_relatve[:,:2], p=2, dim=1)
+            else:
+                pool_relative_dist = torch.norm(pool_relatve, p=2, dim=1)
+            
+            dist_mask = pool_relative_dist < self.config.window_radius # keep inside
+            true_indices = torch.nonzero(dist_mask).squeeze()
+            self.local_sample_indices = true_indices
 
         if not self.silence:
             print("# Total sample in pool: ", self.pool_sample_count)
             print("# Current sample      : ", self.cur_sample_count)
-            print("# Local sample        : ", self.local_sample_indices.shape[0])
+            print("# Local sample        : ", self.local_sample_indices.shape[0] if self.local_sample_indices is not None else None)
             
             
     
@@ -471,7 +475,6 @@ class Mapper:
     # get a batch of training samples and labels for map optimization
     def get_batch(self):
         
-
         if self.local_sample_indices is not None:
             pool_sample_count = self.local_sample_indices.shape[0]
         else:
@@ -575,6 +578,21 @@ class Mapper:
 
         for iter in tqdm(range(iter_count), disable=self.silence, desc="SDF training"):
             # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
+
+            print(f"SDF iter: {iter}")
+
+            # freeze the decoder after certain frame 
+            if not self.config.decoder_freezed and (iter == self.config.freeze_after_iter):
+                print("Models freezed...")
+                freeze_model(self.sdf_mlp)
+                freeze_model(self.color_mlp)
+                freeze_model(self.sem_mlp)
+                self.config.decoder_freezed = True
+                print(self.neural_points.geo_feature_pca)
+                print(self.neural_points.color_feature_pca)
+                self.neural_points.compute_feature_principle_components(down_rate = 17)
+                print(self.neural_points.geo_feature_pca.shape)
+                print(self.neural_points.color_feature_pca.shape)
 
             
             # we do not use the ray rendering loss here for the incremental mapping
@@ -775,7 +793,7 @@ class Mapper:
                 wandb.log(wandb_log_content)
 
         # update the global map
-        self.neural_points.assign_local_to_global() # [TODO]
+        # self.neural_points.assign_local_to_global() # [TODO]
 
 
     # jointly optimize the neural point features and gaussian parameters

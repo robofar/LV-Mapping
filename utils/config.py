@@ -26,7 +26,7 @@ class Config:
         self.label_path: str = "" # input point-wise label path, for semantic mapping (optional)
 
         # for uisng kiss-icp data loader
-        self.use_dataloader: bool = False # use the dataloader providied by kiss-icp or not
+        self.use_dataloader: bool = True # use the dataloader providied by kiss-icp or not
         self.data_loader_name: str = "generic"
         self.data_loader_seq: str = ""
 
@@ -146,6 +146,7 @@ class Config:
         self.new_certainty_thre: float = 1.0
         self.pool_filter_freq: int = 10 
         self.pool_filter_with_dist: bool = True # filter sdf sample pools based on a given radius # FIXME
+        self.use_local_pool_sdf = False
         
         # MLP decoder
         self.mlp_bias_on: bool = True
@@ -162,6 +163,7 @@ class Config:
 
         self.decoder_freezed: bool = False # change to true after self.freeze_after_frame
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
+        self.freeze_after_iter: int = 2000
 
         # For GS MLPs
         self.dist_concat_on: bool = False
@@ -479,7 +481,7 @@ class Config:
         if "setting" in config_args:
             self.name = config_args["setting"].get("name", "pin_slam")
             
-            self.use_dataloader = config_args["setting"].get("use_kiss_icp_dataloader", False)
+            self.use_dataloader = config_args["setting"].get("use_kiss_icp_dataloader", True)
 
             self.output_root = config_args["setting"].get("output_root", "./experiments")
             self.pc_path = config_args["setting"].get("pc_path", "") 
@@ -585,6 +587,7 @@ class Config:
             
             # freeze the decoder after runing for x frames (used for incremental mapping to avoid forgeting)
             self.freeze_after_frame = config_args["decoder"].get("freeze_after_frame", self.freeze_after_frame)
+            self.freeze_after_iter = config_args["decoder"].get("freeze_after_iter", self.freeze_after_iter)
 
         # FIXME, now set to the same as geo mlp, but actually can be different
         self.color_mlp_level = self.geo_mlp_level
@@ -620,6 +623,7 @@ class Config:
             self.new_certainty_thre = float(config_args["continual"].get("new_certainty_thre", self.new_certainty_thre))
             self.pool_filter_freq = config_args["continual"].get("pool_filter_freq", 1)
             self.pool_filter_with_dist = config_args["continual"].get("pool_filter_with_dist", self.pool_filter_with_dist)
+            self.use_local_pool_sdf = config_args["continual"].get("use_local_pool_sdf", self.use_local_pool_sdf)
         
         # tracker
         if "tracker" in config_args:

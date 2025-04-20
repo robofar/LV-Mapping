@@ -23,9 +23,11 @@ neuralpoints:
   query_nn_k: 8 # 
   feature_dim: 32 # 32 
   color_feature_dim: 16 # 16
-  weighted_first: True # not much difference True or False 
+  weighted_first: True # not much difference True or False
+  temporal_local_map_off: True
 decoder:
   freeze_after_frame: 30 # 30 # 50 tried # 100, 150 has problem when evaluation, double backpro, figure out why
+  freeze_after_iter: 2200
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128 # 128
 loss:
@@ -37,6 +39,7 @@ loss:
 continual:
   batch_size_new_sample: 1000
   pool_capacity: 1e7 # this is often the part that takes a lot of memory # better to increase this
+  use_local_pool_sdf: False
 # when test a mapping mode, comment out the tracker and pgo 
 tracker_x:
   source_vox_down_m: 0.6
