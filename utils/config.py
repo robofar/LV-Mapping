@@ -163,7 +163,8 @@ class Config:
 
         self.decoder_freezed: bool = False # change to true after self.freeze_after_frame
         self.freeze_after_frame: int = 40  # if the decoder model is not loaded, it would be trained and freezed after such frame number
-        self.freeze_after_iter: int = 2000
+        self.freeze_after_iter_sdf: int = 2000
+        self.freeze_after_iter_gaussians: int = 4000
 
         # For GS MLPs
         self.dist_concat_on: bool = False
@@ -587,7 +588,8 @@ class Config:
             
             # freeze the decoder after runing for x frames (used for incremental mapping to avoid forgeting)
             self.freeze_after_frame = config_args["decoder"].get("freeze_after_frame", self.freeze_after_frame)
-            self.freeze_after_iter = config_args["decoder"].get("freeze_after_iter", self.freeze_after_iter)
+            self.freeze_after_iter_sdf = config_args["decoder"].get("freeze_after_iter_sdf", self.freeze_after_iter_sdf)
+            self.freeze_after_iter_gaussians = config_args["decoder"].get("freeze_after_iter_gaussians", self.freeze_after_iter_gaussians)
 
         # FIXME, now set to the same as geo mlp, but actually can be different
         self.color_mlp_level = self.geo_mlp_level

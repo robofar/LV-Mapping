@@ -27,7 +27,8 @@ neuralpoints:
   temporal_local_map_off: True
 decoder:
   freeze_after_frame: 30 # 30 # 50 tried # 100, 150 has problem when evaluation, double backpro, figure out why
-  freeze_after_iter: 2200
+  freeze_after_iter_sdf: 2200
+  freeze_after_iter_gaussians: 4200
   gs_mlp_level: 1 # 2?, not much improvement
   gs_mlp_hidden_dim: 128 # 128
 loss:

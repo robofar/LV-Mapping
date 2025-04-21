@@ -245,7 +245,8 @@ def run_pin_slam(
     print(f"Use only colorized points: {config.learn_color_residual}")
     print(f"Temporal Local Map: {config.temporal_local_map_off == False}")
     print(f"Use Local Pool for SDF Training: {config.use_local_pool_sdf}")
-    print(f"Freeze decoder after {config.freeze_after_iter} iterations")
+    print(f"Freeze SDF decoders after {config.freeze_after_iter_sdf} iterations")
+    print(f"Freeze Gaussian decoders after {config.freeze_after_iter_gaussians} iterations")
 
     mapper.load_gt_poses()
         
@@ -275,23 +276,47 @@ def run_pin_slam(
         # last
         dataset.processed_frame += 1
     
-
+    remove_gpu_cache()
     print("SDF Training...")
     mapper.mapping(5000)
 
+    remove_gpu_cache()
+    print("GSDF Training")
+    print(f"There are {len(mapper.cam_pool)} images in the pool")
+    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 100)
+
 
     # VI. Save results
+    remove_gpu_cache()
     mapper.free_pool()
 
+    if config.gs_on and config.gs_eval_on: 
+        print("Begin rendering evaluation")
+        remove_gpu_cache()
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, 
+                               lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, 
+                               rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
+        #mapper.gs_eval_out() 
+
+    remove_gpu_cache()
     color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+    if config.save_map:
+        remove_gpu_cache()
+        print("Saving neural point map")
+        neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
+        o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
+        print(f"save the neural point map to {neural_points_path}")
     if config.save_mesh and cur_mesh is None:
+        remove_gpu_cache()
         print("Saving mesh...")
         chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), config.mc_res_m * 100) # reconstruct in chunks
         mc_cm_str = str(round(config.mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, config.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
         print(f"save the reconstructed mesh to {mesh_path}")
+    
+    neural_points.clear_temp() # clear temp data
 
 
 if __name__ == "__main__":

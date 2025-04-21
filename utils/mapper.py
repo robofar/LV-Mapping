@@ -582,7 +582,7 @@ class Mapper:
             print(f"SDF iter: {iter}")
 
             # freeze the decoder after certain frame 
-            if not self.config.decoder_freezed and (iter == self.config.freeze_after_iter):
+            if not self.config.decoder_freezed and (iter == self.config.freeze_after_iter_sdf):
                 print("Models freezed...")
                 freeze_model(self.sdf_mlp)
                 freeze_model(self.color_mlp)
@@ -840,8 +840,8 @@ class Mapper:
         background = torch.tensor(self.config.bg_color, dtype=self.dtype, device=self.device)
         bg_3d = background.view(3, 1, 1)
 
+        '''
         cur_local_map_center = self.used_poses[-1,:3,3]
-
         neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
         
         # FIXME
@@ -863,7 +863,9 @@ class Mapper:
                         gs_type=self.config.gs_type,
                         displacement_range_ratio=self.config.displacement_range_ratio,
                         max_scale_ratio=self.config.max_scale_ratio,
-                        unit_scale_ratio=self.config.unit_scale_ratio)        
+                        unit_scale_ratio=self.config.unit_scale_ratio)   
+        '''
+        sorrounding_spawn_results = None
 
         # also have a valid mask for the neural points
 
@@ -880,12 +882,18 @@ class Mapper:
             eval_depth_min = self.config.min_range
 
             for iter in tqdm(range(iter_count), disable=self.silence, desc="GSDF training"):    
+                print(f"GSDF iter: {iter}")
+
+                if (iter == self.config.freeze_after_iter_gaussians):
+                    print("Gaussian MLPs freezed...")
+                    freeze_model(self.gaussian_xyz_mlp)
+                    freeze_model(self.gaussian_scale_mlp)
+                    freeze_model(self.gaussian_rot_mlp)
+                    freeze_model(self.gaussian_alpha_mlp)
+                    freeze_model(self.gaussian_color_mlp)
 
                 # camera poses already set
                 T1 = get_time()
-
-                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
-                cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
                 cur_img_idx = torch.randperm(pool_size)[0]
                 viewpoint_cam: CamImage = self.cam_pool[cur_img_idx]
@@ -900,6 +908,11 @@ class Mapper:
                     gt_depth_image = None
 
                 T2 = get_time()
+
+                self.neural_points.reset_local_map(viewpoint_cam.camera_center) # use either local map or global map. In render, anyways only neural points in current FoV will be used for spawning Gaussians
+                neural_points_data, _ = self.neural_points.gather_local_data(with_sorroundings=False)
+
+                cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
                 # render gaussians
                 render_pkg = render(viewpoint_cam, None, neural_points_data, 
@@ -1555,7 +1568,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_2"
+            save_folder = "eval_images"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
