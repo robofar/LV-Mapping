@@ -83,7 +83,7 @@ def render(viewpoint_camera: CamImage,
     dtype = torch.float32
     device = viewpoint_camera.device
 
-    img_scale = 2**down_rate
+    img_scale = 2**0
 
     active_sh_degree = 0 # we use view dependent color prediction, no SH involved
 
@@ -135,7 +135,7 @@ def render(viewpoint_camera: CamImage,
             viewmatrix=viewpoint_camera.world_view_transform,
             projmatrix=viewpoint_camera.full_proj_transform,
             projmatrix_raw=viewpoint_camera.projection_matrix,
-            patch_bbox=viewpoint_camera.full_patch(down_rate), # just image size bbx, TODO: solve the stupid patchbbox issue
+            patch_bbox=viewpoint_camera.full_patch(), # just image size bbx, TODO: solve the stupid patchbbox issue
             prcppoint=viewpoint_camera.prcppoint, # principle point
             sh_degree=active_sh_degree,
             campos=viewpoint_camera.camera_center,

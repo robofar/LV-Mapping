@@ -21,16 +21,32 @@ from gaussian_splatting.utils.graphics_utils import getWorld2View, getWorld2View
 
 # used by us
 class CamImage:
-    def __init__(self, frame_id, rgb_image, K_mat, z_min=0.1, z_max=100.0,
-        cam_id: str = "cam", img_down_rate = 0, 
-        depth_image = None, normal_img = None, sky_mask = None, 
-        device = "cuda", cam_pose = None, img_width = None, img_height = None, pyramid_level: int = 4):
+    def __init__(
+        self, 
+        frame_id, 
+        rgb_image, 
+        K_mat, 
+        z_min=0.1, 
+        z_max=100.0,
+        cam_id: str = "cam", 
+        depth_image = None, 
+        normal_img = None, 
+        sky_mask = None, 
+        foundation_mask = None,
+        binary_mask = None,
+        device = "cuda", 
+        image_device = "cuda",
+        cam_pose = None, 
+        img_width = None, 
+        img_height = None
+    ):
         
         self.frame_id = frame_id
         self.cam_id = cam_id
         self.uid = f"{frame_id:05d}_{cam_id}"
 
         self.device = device
+        self.image_device = image_device # device for the image
         self.dtype = torch.float32
 
         self.train_view: bool = False # is used as train view or test view
@@ -83,9 +99,6 @@ class CamImage:
 
         self.set_pose(cam_pose)
 
-        # pyramid of images
-        self.pyramid_level = pyramid_level
-
         # camera pose optimization
         self.cam_rot_delta = nn.Parameter(
             torch.zeros(3, requires_grad=True, device=device)
@@ -111,10 +124,10 @@ class CamImage:
         )
 
         if rgb_image is not None:
-            rgb_image = rgb_image.to(self.device)
+            rgb_image = rgb_image.to(self.image_device)
             
             if depth_image is not None: # 1, H, W
-                depth_image = depth_image.to(self.device)
+                depth_image = depth_image.to(self.image_device)
                 self.depth_on = True
             else:
                 self.depth_on = False
@@ -122,21 +135,36 @@ class CamImage:
 
 
             if sky_mask is not None: # sky_mask 1, H, W
-                sky_mask = sky_mask.to(self.device)
+                sky_mask = sky_mask.to(self.image_device)
                 self.sky_mask_on = True
             else:
                 self.sky_mask_on = False
 
             if normal_img is not None: # normal already in device  # sky_mask 3, H, W
-                normal_img = normal_img.to(self.device)
+                normal_img = normal_img.to(self.image_device)
                 self.mono_normal_on = True
             else:
                 self.mono_normal_on = False
 
-            self.rgb_image = rgb_image
-            self.depth_image = depth_image
-            self.sky_mask = sky_mask
-            self.normal_img = normal_img
+            if foundation_mask is not None:
+                foundation_mask = foundation_mask.to(self.image_device)
+                self.foundation_mask_on = True
+            else:
+                self.foundation_mask_on = False
+            
+            if binary_mask is not None:
+                binary_mask = binary_mask.to(self.image_device)
+                self.binary_mask_on = True
+            else:
+                self.binary_mask_on = False
+
+
+        self.rgb_image = rgb_image
+        self.depth_image = depth_image
+        self.sky_mask = sky_mask
+        self.normal_img = normal_img
+        self.foundation_mask = foundation_mask # uint16
+        self.binary_mask = binary_mask # bool
 
             
     
@@ -153,10 +181,11 @@ class CamImage:
         w1 = w0 + w_size - 1
         return torch.tensor([h0, w0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
-    def full_patch(self, img_down_rate: int = 0):
-        img_down_scale = 2**(img_down_rate)
-        h1 = int(self.image_height / img_down_scale) - 1
-        w1 = int(self.image_width / img_down_scale) - 1
+    # leave this on device, not image_device, because it is used in renderer only
+    # before using renderer I will anyways move image to gpu (i.e. device)
+    def full_patch(self):
+        h1 = int(self.image_height) - 1
+        w1 = int(self.image_width) - 1
         return torch.tensor([0, 0, h1, w1]).to(dtype=self.dtype, device=self.device)
 
     def set_pose(self, cam_pose):
@@ -188,7 +217,7 @@ class CamImage:
     def set_depth_img(self, depth_img_torch):
         if depth_img_torch is not None:  # 1, H, W
             self.depth_on = True
-            depth_img_torch = depth_img_torch.to(self.device)   
+            depth_img_torch = depth_img_torch.to(self.image_device)   
             self.depth_image = depth_img_torch
 
     def free_memory(self):
@@ -196,6 +225,18 @@ class CamImage:
         self.depth_image = None
         self.normal_img = None
         self.sky_mask = None
+        self.foundation_mask = None
+        self.binary_mask = None
+    
+
+    def move_to_device(self):
+        self.rgb_image = self.rgb_image.to(self.device)
+        if self.depth_on:
+            self.depth_image = self.depth_image.to(self.device)
+        if self.foundation_mask_on:
+            self.foundation_mask = self.foundation_mask.to(self.device)
+        if self.binary_mask_on:
+            self.binary_mask = self.binary_mask.to(self.device)
 
 
 # this is not used

@@ -90,7 +90,8 @@ def run_pin_slam(
     save_merged_pc: bool = typer.Option(False, '--save-merged-pc', '-p', help='Save the merged point cloud after SLAM'),
     gs_on: bool = typer.Option(False, '--gs-on', '-g', help='Turn on GS'),
     deskew: bool = typer.Option(False, '--deskew', help='Try to deskew the LiDAR scans'),
-    tag: Optional[str] = typer.Option(None, '--tag', help='A tag for this experiment')
+    tag: Optional[str] = typer.Option(None, '--tag', help='A tag for this experiment'),
+    MOT: bool = typer.Option(True, '--mot-off', '-f', help='Turn off MOT mode (i.e. Static Map Creation)') # False is default value. If -f flag is specified, then value is True
 ) -> None:
 
     config = Config()
@@ -104,6 +105,7 @@ def run_pin_slam(
     config.save_map = save_map
     config.save_mesh = save_mesh
     config.save_merged_pc = save_merged_pc
+    config.MOT = MOT
 
     if not config.deskew and deskew:
         config.deskew = True
@@ -238,7 +240,13 @@ def run_pin_slam(
     cur_sdf_slice = None
     pool_pcd = None
 
+    if config.MOT:
+        print("MOT mode...")
+    else:
+        print("Mapping mode...")
+
     print("Some config info:")
+    print(f"GS On: {config.gs_on}")
     print(f"Dynamic Filtering using SDF: {config.dynamic_filter_on}")
     print(f"GS Invalid Check (neural_points.valid_gs_mask): {config.gs_invalid_check_on}")
     print(f"Estimating Normal for Input PointCloud: {config.estimate_normal}")
@@ -273,8 +281,10 @@ def run_pin_slam(
 
 
 
+
         # last
         dataset.processed_frame += 1
+
     
     remove_gpu_cache()
     print("SDF Training...")
@@ -293,7 +303,7 @@ def run_pin_slam(
     if config.gs_on and config.gs_eval_on: 
         print("Begin rendering evaluation")
         remove_gpu_cache()
-        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=10, 
+        mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=0, 
                                lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, 
                                rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
         #mapper.gs_eval_out() 

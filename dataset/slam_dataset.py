@@ -57,7 +57,9 @@ class SLAMDataset():
         self.dtype = config.dtype
         self.tran_dtype = config.tran_dtype
         self.device = config.device
+        self.image_device = config.image_device
         self.run_path = config.run_path
+        self.use_ground_segmentation = config.use_ground_segmentation
 
         max_frame_number: int = 100000 # about 3 hours of operation
 
@@ -87,6 +89,7 @@ class SLAMDataset():
                 topic=config.data_loader_seq,
                 cam_name=config.data_loader_seq,
                 lidar_name=config.data_loader_seq,
+                MOT = config.MOT
             )
             config.end_frame = min(len(self.loader), config.end_frame)
             used_frame_count = int((config.end_frame - config.begin_frame) / config.step_frame)
@@ -206,6 +209,8 @@ class SLAMDataset():
         self.last_pose_ref = np.eye(4)
         self.last_odom_tran = np.eye(4)
         self.cur_pose_ref = np.eye(4)
+        # last_pose_ref -> last_pose_torch
+        # cur_pose_ref -> cur_pose_torch
         # count the consecutive stop frame of the robot
         self.stop_count: int = 0
         self.stop_status = False
@@ -225,14 +230,18 @@ class SLAMDataset():
         self.cur_frame_o3d = o3d.geometry.PointCloud()
         # current frame bounding box in the world coordinate system
         self.cur_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # axes centered in scan (note: scan is in local sensor frame in dataset.py)
+        self.cur_axes = o3d.geometry.TriangleMesh()
         # merged downsampled point cloud (for visualization)
         self.map_down_o3d = o3d.geometry.PointCloud()
         # map bounding box in the world coordinate system
         self.map_bbx = o3d.geometry.AxisAlignedBoundingBox()
+        # axes for world frame (0,0,0 in world frame)
+        self.map_axes = o3d.geometry.TriangleMesh()
         # current frame mono depth predicted point cloud
         self.cur_frame_mono_depth_o3d = o3d.geometry.PointCloud()
 
-        self.static_mask = None
+        self.static_mask = None # will be filled from mapper.py if dynamic_filter_on is True
 
         # adaptive resolution
         self.crop_max_range = self.config.max_range
@@ -341,6 +350,7 @@ class SLAMDataset():
         point_lidar_idx = None
         img_dict = None
         depth_dict = None
+        sky_dict = None
         imus = None
 
         # this might still be slow
@@ -355,6 +365,9 @@ class SLAMDataset():
             #     print("Available data source:", dict_keys)
             if "points" in dict_keys:
                 points = frame_data["points"] # may also contain intensity or color
+                # Run PW++ here
+                if self.use_ground_segmentation:
+                    ground_mask = self.ground_segmentation(points[:, :3])
             if "point_ts" in dict_keys:
                 point_ts = frame_data["point_ts"]
             if "point_lidar_idx" in dict_keys: # the point belong to which lidar, now we support the multi-lidar system
@@ -368,12 +381,22 @@ class SLAMDataset():
                 cam_list = list(img_dict.keys())
                 self.cur_cam_img = {}
 
+                if "mask" in dict_keys:
+                    mask_dict: dict = frame_data["mask"]
+                else:
+                    mask_dict = None
+
                 if "depth" in dict_keys: # have depth img
                     depth_dict: dict = frame_data["depth"]
                 else:
                     depth_dict = None
+                
+                if "binary_mask" in dict_keys:
+                    binary_mask_dict: dict = frame_data["binary_mask"]
+                else:
+                    binary_mask_dict = None
 
-                if "sky" in dict_keys: # have depth img
+                if "sky" in dict_keys: # have sky img
                     sky_dict: dict = frame_data["sky"]
                 else:
                     sky_dict = None
@@ -385,28 +408,49 @@ class SLAMDataset():
                     tic_load_cam = get_time() # this part is very slow, but why?
 
                     cur_img_rgb_np = img_dict[cam_name] # 3 channel (rgb only) # uint8 [0, 255]
-
-                    cur_img_depth_np = None
-                    cur_img_depth = None
-                    if depth_dict is not None:
-                        cur_img_depth_np = depth_dict[cam_name] # H, W, 1
-
-                        cur_img_depth = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.device) # unit: m
-                        cur_img_depth = cur_img_depth.permute(2,0,1) # 1, H, W
-                        # cur_img_rgb_np = cur_img_np[:,:,:3].astype(np.uint8) # [0,255]
-
-                        cur_img_depth_np = np.squeeze(cur_img_depth_np) # H, W
-
-                    sky_mask = None # optional sky mask (sky:1, non-sky:0)
-                    if sky_dict is not None:
-                        sky_mask = torch.tensor(sky_dict[cam_name], dtype=torch.bool, device=self.device) #
-                        sky_mask = sky_mask.permute(2,0,1) # 1, H, W
-                    
                     # cur_img_rgb_torch = torch.tensor(cur_img_rgb_np, dtype=self.dtype, device=self.device) 
                     cur_img_rgb_torch = torch.from_numpy(cur_img_rgb_np).float().to(self.device)
                     cur_img_rgb_torch = cur_img_rgb_torch.permute(2,0,1) # 3, H, W
                     cur_img_rgb_torch /= 255.0 # convert RGB channel to [0,1]
-                    # print(cur_img[3])
+
+                    cur_img_mask_np = None
+                    cur_img_mask_torch = None # optional mask (1: valid, 0: invalid)
+                    if mask_dict[cam_name] is not None:
+                        cur_img_mask_np = mask_dict[cam_name] # H,W
+
+                        cur_img_mask_torch = torch.tensor(cur_img_mask_np, dtype=torch.int16, device=self.image_device) # has to be int16, because later some instance_id tensor is int16 (int8 would be small cuz there could be more than 255 classes for sequence)
+                        #cur_img_mask_torch = cur_img_mask_torch.permute(2,0,1) # N, H, W
+
+                    cur_img_depth_np = None # numpy
+                    cur_img_depth_torch = None # torch
+                    if depth_dict[cam_name] is not None:
+                        cur_img_depth_np = depth_dict[cam_name] # H, W, 1
+
+                        cur_img_depth_torch = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.image_device) # unit: m
+                        cur_img_depth_torch = cur_img_depth_torch.permute(2,0,1) # 1, H, W
+                    
+
+                    cur_binary_mask_np = None
+                    cur_binary_mask_torch = None
+                    if binary_mask_dict[cam_name] is not None:
+                        cur_binary_mask_np = binary_mask_dict[cam_name]
+
+                        cur_binary_mask_torch = torch.tensor(cur_binary_mask_np, device=self.image_device)
+                        cur_binary_mask_torch = cur_binary_mask_torch.permute(2,0,1) # 1, H, W
+
+
+
+                    cur_sky_mask_np = None
+                    cur_sky_mask_torch = None # optional sky mask (sky:1, non-sky:0)
+                    if sky_dict is not None:
+                        cur_sky_mask_np = sky_dict[cam_name]
+
+                        cur_sky_mask_torch = torch.tensor(cur_sky_mask_np, dtype=torch.bool, device=self.image_device) #
+                        cur_sky_mask_torch = cur_sky_mask_torch.permute(2,0,1) # 1, H, W
+
+                        cur_sky_mask_np = np.squeeze(cur_sky_mask_np) # H, W (bcs of monodepth only I guess)
+                    
+                    
 
                     H, W = cur_img_rgb_torch.shape[1], cur_img_rgb_torch.shape[2]
 
@@ -627,8 +671,9 @@ class SLAMDataset():
                     # this is actually very fast (1-2 ms)
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb_torch, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.local_map_radius*1.1,
-                                                          cam_name, depth_image=cur_img_depth, normal_img=pred_normal,  
-                                                          sky_mask=sky_mask, device=self.device)
+                                                          cam_name, depth_image=cur_img_depth_torch, normal_img=pred_normal,  
+                                                          sky_mask=cur_sky_mask_torch, foundation_mask = cur_img_mask_torch, binary_mask = cur_binary_mask_torch,
+                                                          device=self.device, image_device=self.image_device)
                     
                 if monodepth_on and use_mono_depth_for_gs_init:
                     self.cur_frame_mono_depth_o3d = pred_pcd_merged # also may conatin normals
@@ -649,6 +694,8 @@ class SLAMDataset():
 
         if points is not None:
             self.cur_point_cloud_torch = torch.tensor(points, device=self.device, dtype=self.dtype)
+            if self.use_ground_segmentation:
+                self.cur_ground_mask_torch = torch.tensor(ground_mask, device=self.device, dtype=torch.bool)
 
         if self.config.deskew: 
             self.get_point_ts(point_ts)
@@ -658,6 +705,8 @@ class SLAMDataset():
 
         # if points is not None and self.cur_cam_img is not None:
         #     print("Point cloud and img associated")
+
+        # normals of points are estimated in preprocess_frame (self.cur_point_normals), after we preprocess scan (shapes will be same for all these self.cur_*)
 
     def read_frame(self, frame_id, init_pose: bool = True):
 
@@ -700,6 +749,31 @@ class SLAMDataset():
             self.get_point_ts(point_ts)
 
         # print(self.cur_point_ts_torch)
+
+    def ground_segmentation(self, points : np.ndarray):
+        self.PatchworkPLUSPLUS.estimateGround(points)
+
+        ground = self.PatchworkPLUSPLUS.getGround() # float32 (maybe convert to float64 bcs raw scan is float64)
+        nonground = self.PatchworkPLUSPLUS.getNonground() # float32 (maybe convert to float64 bcs raw scan is float64)
+
+        ground_idx = self.PatchworkPLUSPLUS.getGroundIndices() # int32
+        nonground_idx = self.PatchworkPLUSPLUS.getNongroundIndices() # int32
+
+        ground_mask = np.ones(points.shape[0], dtype=bool) # 1-ground, 0-nonground
+        ground_mask[nonground_idx] = False
+
+        centers = self.PatchworkPLUSPLUS.getCenters()
+        normals = self.PatchworkPLUSPLUS.getNormals()
+
+        #print("Original Points  #: ", points.shape[0])
+        #print("Ground Points    #: ", ground.shape[0])
+        #print("Nonground Points #: ", nonground.shape[0])
+        #print("Ground Indices   #: ", ground_idx.shape[0])
+        #print("Nonground Indices #: ", nonground_idx.shape[0])
+
+        #sys.exit("patchworkplusplus works if you see this exit message :D")
+
+        return ground_mask
     
     def set_ref_pose(self, frame_id):
         cur_frame = frame_id
@@ -810,6 +884,12 @@ class SLAMDataset():
 
         if self.cur_sem_labels_torch is not None:
             self.cur_sem_labels_torch = self.cur_sem_labels_torch[filter_idx]
+        
+        if self.cur_point_normals is not None:
+            self.cur_point_normals = self.cur_point_normals[filter_idx]
+
+        if self.cur_ground_mask_torch is not None:
+            self.cur_ground_mask_torch = self.cur_ground_mask_torch[filter_idx]
         
         # kitti intrinsic correction
         if self.config.kitti_correction_on:
@@ -1077,6 +1157,8 @@ class SLAMDataset():
         # TODO
 
         points_rgb_torch = -1.0 * torch.ones((point_count, 4)).to(self.cur_point_cloud_torch) # set as invalid in the beginning
+        instance_ids_cam_name = {}
+        points_timestamp = self.processed_frame * torch.ones((self.cur_point_cloud_torch.shape[0], 1), dtype=torch.int16, device=self.cur_point_cloud_torch.device)
 
         if self.cur_cam_img is None:
             return
@@ -1084,6 +1166,7 @@ class SLAMDataset():
         cur_cam_names = list(self.cur_cam_img.keys())
         for cam_name in cur_cam_names:
             cam_img: CamImage = self.cur_cam_img[cam_name]
+            instance_ids_cam_name[cam_name] = None # initialize with None
 
             if cam_img is None:
                 continue
@@ -1105,8 +1188,11 @@ class SLAMDataset():
             
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype) # K should be dtype not tran_dtype
 
-            points_rgb_torch, depth_map_torch = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
-                cam_rgb_torch, cur_T_c_l, cur_K_mat, min_depth=self.config.min_range)
+            points_rgb_torch, depth_map_torch, instance_ids = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
+                cam_rgb_torch, cur_T_c_l, cur_K_mat, cam_img.foundation_mask, min_depth=self.config.min_range)
+
+            if(cam_img.foundation_mask is not None):
+                instance_ids_cam_name[cam_name] = instance_ids
 
             cam_img.set_depth_img(depth_map_torch)
         

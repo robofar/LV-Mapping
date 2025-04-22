@@ -1160,11 +1160,106 @@ def colorize_depth_maps(
 
     return img_colored
 
+#######################################################################################################
+
+def visualize_segmentation_comparison(seg, expanded_seg, headless=True):
+    """
+    Visualize original and expanded segmentation masks side by side.
+    
+    Args:
+        seg (torch.Tensor): Original segmentation (H, W)
+        expanded_seg (torch.Tensor): Expanded segmentation (H, W)
+    """
+    seg_np = seg.cpu().numpy()
+    expanded_np = expanded_seg.cpu().numpy()
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    axs[0].imshow(seg_np, cmap='tab20')
+    axs[0].set_title("Original Segmentation")
+    axs[0].axis('off')
+
+    axs[1].imshow(expanded_np, cmap='tab20')
+    axs[1].set_title("Expanded Segmentation")
+    axs[1].axis('off')
+
+    plt.tight_layout()
+
+    if headless:
+        save_path = "seg_comparison_adaptive.png"
+        plt.savefig(save_path)
+        plt.close()
+        print(f"[✓] Saved segmentation comparison to: {save_path}")
+    else:
+        plt.show()
+
+def expand_segmentation_adaptive(segmentation, min_radius=3, max_radius=15):
+    import numpy as np
+    from scipy.ndimage import binary_dilation, generate_binary_structure, iterate_structure
+
+    seg_np = segmentation.cpu().numpy()
+    unique_ids = np.unique(seg_np)
+    expanded = np.zeros_like(seg_np)
+
+    for instance_id in unique_ids:
+        if instance_id == 0:
+            expanded[seg_np == 0] = 0
+            continue
+
+        mask = seg_np == instance_id
+        area = mask.sum()
+
+        # Heuristic: larger masks → larger radius
+        radius = int(np.clip(area ** 0.5 / 20, min_radius, max_radius))  # sqrt-area scaling
+        struct = iterate_structure(generate_binary_structure(2, 1), radius)
+
+        dilated_mask = binary_dilation(mask, structure=struct)
+        expanded[dilated_mask] = instance_id
+
+    return torch.from_numpy(expanded).to(segmentation.device).type(torch.int16)
+
+
+def expand_segmentation(segmentation, dilation_radius=5):
+    """
+    Expand segmentation regions with ID > 0.
+    
+    Args:
+        segmentation (torch.Tensor): shape (H, W), dtype torch.int16
+        dilation_radius (int): number of pixels to dilate instance masks
+    
+    Returns:
+        torch.Tensor: dilated segmentation (same shape and dtype)
+    """
+    seg_np = segmentation.cpu().numpy()  # convert to NumPy
+    unique_ids = np.unique(seg_np)
+    expanded = np.zeros_like(seg_np)
+
+    # Create a structuring element for dilation
+    from scipy.ndimage import binary_dilation, generate_binary_structure, iterate_structure
+    struct = generate_binary_structure(2, 1)  # 2D, connectivity=1 (4-neighbors)
+    struct = iterate_structure(struct, dilation_radius)
+
+    for instance_id in unique_ids:
+        if instance_id == 0:
+            # Keep background as is
+            expanded[seg_np == 0] = 0
+            continue
+
+        mask = seg_np == instance_id
+        dilated_mask = binary_dilation(mask, structure=struct)
+
+        # Only assign dilated region to instance_id if it doesn't overwrite another foreground
+        # For simplicity, we allow overwriting (can be improved with priority logic)
+        expanded[dilated_mask] = instance_id
+
+    return torch.from_numpy(expanded).to(segmentation.device).type(torch.int16)
+
 
 def project_points_to_cam_torch(points_torch, 
                                 points_rgb_torch, 
                                 img_torch, 
                                 T_c_l, K_mat, 
+                                foundation_mask,
                                 min_depth=1.0, 
                                 max_depth=100.0):
 
@@ -1172,6 +1267,9 @@ def project_points_to_cam_torch(points_torch,
     # img_torch as torch.Tensor (C, H, W), rgb channel has the float value [0,1]
     
     device = points_torch.device
+    img_torch = img_torch.to(device) # because now image can be on gpu or cpu
+    foundation_mask = foundation_mask.to(device) # because now image can be on gpu or cpu
+    instance_ids = -1 * torch.ones((points_torch.shape[0], 1), dtype=torch.int16, device=device) # has to be int8 bcs of -1 (if it is uint8 then this -1 would become 255)
 
     # FIXME: check if points_torch would also get changed
     # if so, clone it
@@ -1201,6 +1299,11 @@ def project_points_to_cam_torch(points_torch,
     u_valid = u[mask]
 
     masked_depth = depth[mask]
+
+    if foundation_mask is not None and (img_torch.shape[1] == foundation_mask.shape[0]) and ((img_torch.shape[2] == foundation_mask.shape[1])):
+        #expanded_foundation_mask = expand_segmentation(foundation_mask)
+        expanded_foundation_mask_adaptive = expand_segmentation_adaptive(foundation_mask)
+        instance_ids[mask] = expanded_foundation_mask_adaptive[v_valid, u_valid].unsqueeze(-1)
 
     per_pixel_point_counter = torch.ones_like(masked_depth, dtype=torch.int, device=device)
     
@@ -1246,7 +1349,7 @@ def project_points_to_cam_torch(points_torch,
     # # mask indicating this point has color assigned by a corresponding pixel
     # points_rgb_torch[mask, 3] = 0  
 
-    return points_rgb_torch, depth_map_torch
+    return points_rgb_torch, depth_map_torch, instance_ids
 
 def perspective_cam2image_torch(points, K_mat):
     # project the 3D points in camera frame to 2D image frame with given intrinsic matrix

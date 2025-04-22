@@ -59,6 +59,7 @@ from fused_ssim import fused_ssim
 from gs_gui.gui_utils import VisPacket
 
 import torchvision.utils as vutils
+import copy
 
 
 class Mapper:
@@ -895,8 +896,10 @@ class Mapper:
                 # camera poses already set
                 T1 = get_time()
 
-                cur_img_idx = torch.randperm(pool_size)[0]
+                cur_img_idx = torch.randperm(pool_size)[0] # random_camera_viewpoint_index
                 viewpoint_cam: CamImage = self.cam_pool[cur_img_idx]
+                viewpoint_cam: CamImage = copy.deepcopy(self.cam_pool[cur_img_idx]) # deep copy so it does not affect the original camera object in camera pool
+                viewpoint_cam.move_to_device()
                 weight_down_rate = 1.0 # ?
                 is_replay_mode = False # ?
                 cam_name = viewpoint_cam.cam_id
@@ -1568,7 +1571,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images"
+            save_folder = "eval_images_test"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
@@ -1691,7 +1694,9 @@ class Mapper:
                     lidar_position_np = T_w_l_cam_ts_np[:3,3]
 
                     # you need to also load the camera exposure coefficients here
-                    cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    #cur_view_cam: CamImage = self.dataset.cur_cam_img[cam_name]
+                    cur_view_cam: CamImage = copy.deepcopy(self.dataset.cur_cam_img[cam_name]) # original cur_cam_img will not be moved to gpu otherwise will if not using deepcopy
+                    cur_view_cam.move_to_device()
                     cur_view_cam.set_pose(T_w_c)
 
                     # print(T_w_c)

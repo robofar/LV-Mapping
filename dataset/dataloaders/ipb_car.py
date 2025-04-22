@@ -37,11 +37,12 @@ from utils.tools import get_time
 # for the new test data
 
 class IPBCarDataset:
-    def __init__(self, data_dir, cam_name: str, *_, **__):
+    def __init__(self, data_dir, cam_name: str, MOT: bool, *_, **__):
         
         self.load_img = False # default
 
         self.use_only_colorized_points = False
+        self.MOT = MOT
         
         self.use_only_lidar_h = True
         self.lidar_list = ["lidar_h"] 
@@ -79,7 +80,11 @@ class IPBCarDataset:
             self.cam_list = cam_list_all
             print("Use all the cameras")
 
-        self.img_files = {}
+        self.img_files = {} # image files
+        self.depth_files = {} # depth files
+        self.binary_mask_files = {} # binary mask files
+        self.mask_files = {} # Maks files from Grounded SAM2 (.npy)
+
         self.img_ts = {}
         self.K_mats = {}
         self.dist_coeffs = {}
@@ -126,6 +131,37 @@ class IPBCarDataset:
             
             self.cam_widths[cam_name] = W
             self.cam_heights[cam_name] = H
+
+            # Foundation masks (None if I don't have the mask for some camera)
+            if self.MOT:
+                cur_cam_mask_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "mask_data/")
+                cur_img_mask_files = sorted(glob.glob(cur_cam_mask_dir + "*.npy"))
+                if len(cur_img_mask_files) > 0:
+                    self.mask_files[cam_name] = cur_img_mask_files
+                else:
+                    self.mask_files[cam_name] = None
+            else:
+                self.mask_files[cam_name] = None
+     
+
+            # Depth images
+            if not self.MOT:
+                cur_cam_depth_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "depth/")
+                cur_depth_files = sorted(glob.glob(cur_cam_depth_dir + "*.png"))
+                self.depth_files[cam_name] = cur_depth_files
+            else:
+                self.depth_files[cam_name] = None
+
+            # Binary masks
+            if not self.MOT:
+                cur_cam_binary_mask_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "binary/")
+                cur_binary_mask_files = sorted(glob.glob(cur_cam_binary_mask_dir + "*.png"))
+                if len(cur_binary_mask_files) > 0:
+                    self.binary_mask_files[cam_name] = cur_binary_mask_files
+                else:
+                    self.binary_mask_files[cam_name] = None
+            else:
+                self.binary_mask_files[cam_name] = None
 
 
         # read calib
@@ -232,7 +268,9 @@ class IPBCarDataset:
         if self.load_img:
 
             img_dict = {}
+            mask_dict = {}
             depth_img_dict = {}
+            binary_mask_dict = {}
 
             points_rgb = -1.0 * np.ones_like(points) # N,4, last channel for the mask # set to invalid (indicated by negative value) at first
 
@@ -244,6 +282,7 @@ class IPBCarDataset:
                 sensor_ts_dict[cam_name] = self.img_ts[cam_name][idx]
                 # print("{} ts: {}".format(cam_name, self.img_ts[cam_name][idx]))
 
+                ################################################################
                 cur_img_file = self.img_files[cam_name][idx]
 
                 img_file_split = cur_img_file.split("/")
@@ -273,8 +312,36 @@ class IPBCarDataset:
                 
                 img_dict[cam_name] = img_cam # H, W, 3
                 
+                
                 # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
                 # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
+                ################################################################
+
+                if self.depth_files[cam_name] is not None:
+                    cur_depth_file = self.depth_files[cam_name][0] # filename (this idx is global, so I will have to have all data available immediately)
+                    depth_cam = self.read_depth_image(cur_depth_file)
+                    depth_img_dict[cam_name] = depth_cam # H, W, 1 (depth_cam is numpy array of dtype float32)
+                else:
+                    depth_img_dict[cam_name] = None
+
+
+
+                if self.mask_files[cam_name] is not None:
+                    cur_mask_file = self.mask_files[cam_name][idx] # filename
+                    mask_cam = self.read_mask_npy(mask_file=cur_mask_file) # load it (create some function to load the mask)
+                    mask_dict[cam_name] = mask_cam # H, W (mask_cam is numpy array of dtype uint16). Right now it is H,W, but should I use H,W,1 ?
+                else:
+                    #print(f"Maks files for camera {cam_name} do not exist")
+                    mask_dict[cam_name] = None
+
+                    
+                
+                if self.binary_mask_files[cam_name] is not None:
+                    cur_binary_mask_file = self.binary_mask_files[cam_name][0] # filename (this idx is global, so I will have to have all data available immediately)
+                    binary_mask_cam = self.read_binary_mask(cur_binary_mask_file)
+                    binary_mask_dict[cam_name] = binary_mask_cam
+                else:
+                    binary_mask_dict[cam_name] = None
 
             # FIXME
             # if self.use_only_colorized_points:
@@ -288,8 +355,10 @@ class IPBCarDataset:
             points = np.hstack((points[:,:3], points_rgb[:,:3]))
 
             # print(point_ts) # correct
-            frame_data["img"] = img_dict 
-            # frame_data["depth"] = depth_img_dict  
+            frame_data["img"] = img_dict
+            frame_data["mask"] = mask_dict
+            frame_data["depth"] = depth_img_dict
+            frame_data["binary_mask"] = binary_mask_dict  
 
         frame_data.update({"points": points, "point_ts": point_ts, "point_lidar_idx": point_lidar_idx})
         
@@ -396,6 +465,25 @@ class IPBCarDataset:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         return img
+    
+
+    def read_mask_npy(self, mask_file: str):
+        mask = np.load(mask_file)
+        return mask
+    
+    def read_depth_image(self, depth_file: str):
+        depth = cv2.imread(depth_file, cv2.IMREAD_UNCHANGED)
+        depth = cv2.cvtColor(depth, cv2.COLOR_BGR2GRAY)
+        depth = np.expand_dims(depth, axis=-1)
+        depth = depth.astype(np.float32)
+        return depth
+    
+    def read_binary_mask(self, binary_mask_file: str):
+        binary_mask = cv2.imread(binary_mask_file, cv2.IMREAD_UNCHANGED)
+        binary_mask = cv2.cvtColor(binary_mask, cv2.COLOR_BGR2GRAY)
+        binary_mask = np.expand_dims(binary_mask, axis=-1)
+        binary_mask = binary_mask.astype(np.bool_)
+        return binary_mask
 
     def read_calib_file(self, yaml_file_path: str) -> dict:
 

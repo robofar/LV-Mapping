@@ -2,7 +2,7 @@ import open3d as o3d
 
 
 #mesh_path = "./pings_experiments/test_ipbcar_gs_ours_ipb_car__2025-04-20_17-16-01/mesh/mesh_15cm.ply"
-mesh_path = "./pings_experiments/test_ipbcar_gs_ours_ipb_car__2025-04-21_08-48-38/mesh/mesh_15cm.ply"
+mesh_path = "./pings_experiments/test_ipbcar_gs_ours_ipb_car__2025-04-22_11-31-01/mesh/mesh_15cm.ply"
 
 mesh = o3d.io.read_triangle_mesh(mesh_path)
 print(mesh)

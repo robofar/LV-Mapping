@@ -42,6 +42,7 @@ class Config:
         self.seed: int = 42 # random seed for the experiment
         self.num_workers: int = 12 # number of worker for the dataloader
         self.device: str = "cuda"  # use "cuda" or "cpu"
+        self.image_device: str = "cpu" # device for the image (all images)
         self.gpu_id: str = "0"  # used GPU id
 
         # dataset specific
@@ -53,6 +54,13 @@ class Config:
         self.deskew: bool = False
         self.lidar_type_guess: str = "hesai" # velodyne
         self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
+
+        # ground segmentation
+        self.use_ground_segmentation: bool = False # use ground segmentation or not
+        self.MOT: bool = True
+        self.use_pool: bool = False
+        self.points_batch_size_initialization: int = 10000 # batch size for the point cloud (sampling-on-demand) (for map initialization)
+        self.points_batch_size_sdf: int = 1000 # batch size for the point cloud (sampling-on-demand) (for sdf training)
 
         # preprocess
         # distance filter
