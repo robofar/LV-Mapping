@@ -45,6 +45,7 @@ from utils.tools import (
     remove_gpu_cache,
 )
 from utils.tracker import Tracker
+from utils.dynamic import Dynamic
 
 from gs_gui import slam_gui
 from gs_gui.gui_utils import VisPacket, ParamsGUI, ControlPacket, get_latest_queue
@@ -181,8 +182,11 @@ def run_pin_slam(
     # dataset
     dataset = SLAMDataset(config)
 
+    # dynamic
+    dynamic = Dynamic(dataset.cam_names, config) # separate thing for every camera name
+
     # mapper
-    mapper = Mapper(config, dataset, neural_points, mlp_dict)
+    mapper = Mapper(config, dataset, neural_points, mlp_dict, dynamic)
 
     # mesh reconstructor
     mesher = Mesher(config, neural_points, mlp_dict)
@@ -266,9 +270,11 @@ def run_pin_slam(
         # I. Load data (pointclouds and poses) and preprocessing
         dataset.init_temp_data() # init cur frame temp data
         dataset.read_frame_with_loader(frame_id, use_image=config.gs_on) # read pointcloud + all poses (cur_pose, prev_pose and odometry since we know all poses in advance)
-        dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
-        if (not dataset.is_rgbd): # if it is rgbd dataset dont override gt depth (but change such that I obtain foundation masks)
-            dataset.project_pointcloud_to_cams(use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
+        
+        if config.MOT:
+            dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
+            if (not dataset.is_rgbd): # if it is rgbd dataset dont override gt depth (but change such that I obtain foundation masks)
+                dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
         
 
         mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
@@ -279,10 +285,6 @@ def run_pin_slam(
 
 
 
-
-
-
-        # last
         dataset.processed_frame += 1
 
     

@@ -47,6 +47,11 @@ from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 from gaussian_splatting.utils.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
+import sys
+
+from matplotlib import pyplot as plt
+import torchvision.utils as vutils
+
 class SLAMDataset():
     def __init__(self, config: Config) -> None:
 
@@ -1146,9 +1151,13 @@ class SLAMDataset():
 
         return cur_cam_ref_ts_ratio
 
-    def project_pointcloud_to_cams(self, use_only_colorized_points: bool = True, use_odom_tran = False):
+    def project_pointcloud_to_cams(self, dynamic, use_only_colorized_points: bool = False, use_odom_tran = False):
         # done after deskewing
         # to get a refined depth map and colorized point cloud
+
+        # Colorize points from pointcloud that correspond to some of the cameras
+        # Create sparse depth maps for each camera
+        # Add points to dynamic dictionary, which later I can use to decide between static/dynamic (foreground is with label 0)
 
         point_count = self.cur_point_cloud_torch.shape[0]
         point_channel = self.cur_point_cloud_torch.shape[1]
@@ -1194,7 +1203,17 @@ class SLAMDataset():
             if(cam_img.foundation_mask is not None):
                 instance_ids_cam_name[cam_name] = instance_ids
 
-            cam_img.set_depth_img(depth_map_torch)
+            # Save depth image [uncomment later]
+            '''
+            dir_path = f"{self.config.pc_path}camera_{cam_name}/depth"
+            os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
+
+            frame_id_in_folder = self.config.begin_frame + cam_img.frame_id * self.config.step_frame # global frame_id
+            save_path_depth = os.path.join(dir_path, f"depth_{frame_id_in_folder:010d}.png")
+            vutils.save_image(depth_map_torch, save_path_depth)
+            '''
+
+            cam_img.set_depth_img(depth_map_torch) # [comment later]
         
         # color channels
         self.cur_point_cloud_torch[:, 3:] = points_rgb_torch[:, :3] # 4-6 rgb
@@ -1203,6 +1222,10 @@ class SLAMDataset():
             with_rgb_mask = (points_rgb_torch[:, 3] == 0)
 
             self.cur_point_cloud_torch = self.cur_point_cloud_torch[with_rgb_mask]
+
+            for cam_name in cur_cam_names:
+                if instance_ids_cam_name[cam_name] is not None:
+                    instance_ids_cam_name[cam_name] = instance_ids_cam_name[cam_name][with_rgb_mask]
 
             if self.cur_point_ts_torch is not None:
                 self.cur_point_ts_torch = self.cur_point_ts_torch[with_rgb_mask]
@@ -1219,6 +1242,33 @@ class SLAMDataset():
             if self.cur_sem_labels_torch is not None:
                 self.cur_sem_labels_torch = self.cur_sem_labels_torch[with_rgb_mask]
                 self.cur_sem_labels_full = self.cur_sem_labels_full[with_rgb_mask]
+        
+
+        # Convert to world frame
+        cur_point_cloud_world_torch = torch.zeros_like(self.cur_point_cloud_torch)
+        cur_point_cloud_world_torch[:,:3] = transform_torch(self.cur_point_cloud_torch[:,:3], self.cur_pose_torch) # xyz
+        cur_point_cloud_world_torch[:,3:] = self.cur_point_cloud_torch[:,3:] # rgb
+
+        # Convert normals to world frame if you decide to use them, then send them to dynamic, and save them also so you have normals
+
+        # Fill dynamic (I have to iterate thgough all cameras because of filtering above)
+
+        # 1. Store out of FOV points (need data from all 4 cameras. points that has -1 instance id in all cameras are outside FOV)
+        # Stack all instance ID arrays into a 2D array: shape = (num_cameras, num_points)
+        all_instance_ids = torch.stack([instance_ids_cam_name[cam_name] for cam_name in cur_cam_names], dim=0) # purpose just for creating outside_fov_mask
+        outside_fov_mask = (all_instance_ids == -1).all(dim=0).squeeze(1)  # shape: (num_points,)
+
+        dynamic.append_outside_fov_points(cur_point_cloud_world_torch, outside_fov_mask, points_timestamp)
+
+        # 2. >=0 (-1 not gonna be processed in append_instance_points function)
+        for cam_name in cur_cam_names:
+            cam_img: CamImage = self.cur_cam_img[cam_name]
+            point_instance_ids = instance_ids_cam_name[cam_name] # instance id for every point in point cloud for that camera
+
+            if(cam_img.foundation_mask is not None): # or if instance_ids is not None, whatever
+                # Add points to dynamic dictionary
+                unique_ids = torch.unique(point_instance_ids, sorted=True)
+                dynamic.append_instance_points(cur_point_cloud_world_torch, point_instance_ids, unique_ids, cam_name, self.cur_ground_mask_torch, points_timestamp)
 
 
     def update_poses_after_pgo(self, pgo_poses):
@@ -1243,6 +1293,7 @@ class SLAMDataset():
 
         # visualize or not
         # uncomment to visualize the dynamic mask
+        '''
         if (self.config.dynamic_filter_on) and (self.static_mask is not None) and (not self.stop_status):
             static_mask = self.static_mask.detach().cpu().numpy()
             frame_colors_np = np.ones_like(frame_points_np) * 0.7
@@ -1251,6 +1302,7 @@ class SLAMDataset():
             frame_o3d.colors = o3d.utility.Vector3dVector(
                 frame_colors_np.astype(np.float64)
             )
+        '''
 
         # if self.cur_point_normals is not None:
         #     frame_normals_np = (

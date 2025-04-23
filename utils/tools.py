@@ -807,7 +807,30 @@ def o3d2torch(o3d, device="cpu", dtype=torch.float32):
     return torch.tensor(np.asarray(o3d.points), dtype=dtype, device=device)
 
 
-def transform_torch(points: torch.tensor, transformation: torch.tensor):
+def transform_torch(points: torch.Tensor, transformation: torch.Tensor):
+    # points: [N, 3]
+    # transformation: [4, 4] or [N, 4, 4]
+
+    N = points.shape[0]
+    device = points.device
+
+    # Make homogeneous points: [N, 4]
+    points_homo = torch.cat([points, torch.ones(N, 1).to(points)], dim=1) # [N, 4]
+
+    if transformation.ndim == 2:
+        # Single transformation: [4, 4]
+        transformed = torch.matmul(points_homo, transformation.to(points).T)  # [N, 4]
+    elif transformation.ndim == 3 and transformation.shape[0] == N:
+        # Per-point transformation: [N, 4, 4]
+        points_homo = points_homo.unsqueeze(-1)       # [N, 4, 1]
+        transformed = torch.bmm(transformation.to(points), points_homo).squeeze(-1)  # [N, 4]
+    else:
+        raise ValueError(f"Unsupported transformation shape: {transformation.shape}")
+
+    return transformed[:, :3]
+
+
+def transform_torch_original(points: torch.tensor, transformation: torch.tensor):
     # points [N, 3]
     # transformation [4, 4]
     # Add a homogeneous coordinate to each point in the point cloud

@@ -60,6 +60,7 @@ from gs_gui.gui_utils import VisPacket
 
 import torchvision.utils as vutils
 import copy
+from utils.dynamic import Dynamic
 
 
 class Mapper:
@@ -68,7 +69,8 @@ class Mapper:
         config: Config,
         dataset: SLAMDataset,
         neural_points: NeuralPoints,
-        decoders
+        decoders,
+        dynamic: Dynamic = None
     ):
 
         self.config = config
@@ -77,6 +79,7 @@ class Mapper:
         self.neural_points = neural_points
 
         self.decoders = decoders
+        self.dynamic = dynamic
 
         self.sdf_mlp = decoders["sdf"]
         self.sem_mlp = decoders["semantic"]
@@ -1571,7 +1574,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_test"
+            save_folder = "eval_images_test_2"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
@@ -2508,3 +2511,31 @@ class Mapper:
         gradient = torch.cat([gradient_x, gradient_y, gradient_z], dim=1)  # [...,3]
 
         return gradient
+    
+
+
+    def create_binary_masks(self):
+        dynamic_instance_ids = {}
+        for cam_name in self.dynamic.dynamic_instance.keys():
+            true_keys = [k for k,v in self.dynamic.dynamic_instance[cam_name].items() if v is True]
+            true_keys_tensor = torch.tensor(true_keys, dtype=torch.int16, device='cuda:0')
+            dynamic_instance_ids[cam_name] = true_keys_tensor
+            
+            dir_path = f"{self.config.pc_path}camera_{cam_name}/binary"
+            os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
+        
+        print(dynamic_instance_ids)
+        
+        for cam in self.cam_pool:
+            binary_mask = torch.ones_like(cam.foundation_mask, dtype=torch.bool)
+            mask_to_false = (cam.foundation_mask.unsqueeze(0) == dynamic_instance_ids[cam.cam_id].to(device=cam.foundation_mask.device).unsqueeze(1).unsqueeze(2)).any(dim=0)
+            binary_mask[mask_to_false] = False
+            mask_img = binary_mask.float().unsqueeze(0)
+
+            frame_id_in_folder = self.config.begin_frame + cam.frame_id * self.config.step_frame # global frame_id
+            save_path_binary = os.path.join(
+                f"{self.config.pc_path}camera_{cam.cam_id}/binary",
+                f"binary_{frame_id_in_folder:010d}.png"
+            )
+
+            vutils.save_image(mask_img, save_path_binary)
