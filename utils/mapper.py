@@ -95,6 +95,14 @@ class Mapper:
         self.dtype = config.dtype
         self.tran_dtype = config.tran_dtype
         self.used_poses = None
+        self.all_poses = None
+
+        self.static_map_points = None
+        self.static_map_colors = None
+        self.static_map_timestamps = None
+
+
+
         self.require_gradient = False
         if (
             config.ekional_loss_on
@@ -173,6 +181,96 @@ class Mapper:
         self.lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(self.device) 
 
 
+
+    # If using whole map immediately, there is no need for frame-to-frame processing, directly process whole map
+    def map_initialization(self, points_torch: torch.tensor, colors_torch: torch.tensor, timestamps_torch: torch.tensor):
+        
+        for i in range(0, points_torch.shape[0], self.config.points_batch_size_initialization):
+            # Take batch of points
+            points_batch = points_torch[i : i + self.config.points_batch_size_initialization]
+            colors_batch = colors_torch[i : i + self.config.points_batch_size_initialization]
+            normals_batch = None
+            timestamps_batch = timestamps_torch[i : i + self.config.points_batch_size_initialization]
+
+            #pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            inverse_pose_per_point = torch.linalg.inv(pose_per_point)
+
+            points_batch_local = transform_torch(points_batch, inverse_pose_per_point)  # (N, 3) # this is good
+
+            
+
+            # Sample points from the batch
+            (
+                coord, # # coord is in sensor local frame (because frame_point_torch is in sensor local frame)
+                sdf_label,
+                normal_label,
+                sem_label,
+                color_label,
+                weight,
+                samples_per_point
+            ) = self.sampler.sample(
+                points_batch_local, None, None, colors_batch
+            )
+
+
+            # Test pose per sample next (maybe they are not concatenaded the same way as the samples)
+
+
+            # Use pose per sample to convert coord to global frame
+            timestamps_batch_repeated = timestamps_batch.repeat(samples_per_point, 1)
+            timestamps_batch_ordered = (
+                timestamps_batch_repeated.reshape(samples_per_point, -1, 1)
+                .transpose(0, 1)
+                .reshape(-1, 1)
+            )
+            #pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+            pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+
+            update_points = None
+            update_colors = None
+            update_normals = None
+            update_poses = None
+
+            if self.config.from_sample_points:
+                if self.config.from_all_samples:
+                    update_points = coord
+                    update_poses = pose_per_sample
+                    if points_batch is not None:
+                        update_colors = color_label
+                    if normals_batch is not None:
+                        update_normals = normal_label
+                else:
+                    sample_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m * self.config.map_surface_ratio # 0.3 * 0.3 = 0.105
+                    #sample_mask = (weight > 0.0)
+                    update_points = coord[sample_mask, :]
+                    update_poses = pose_per_sample[sample_mask, :]
+                    if colors_torch is not None:
+                        update_colors = color_label[sample_mask, :]
+                    if normals_batch is not None:
+                        update_normals = normal_label[sample_mask, :]
+            else:
+                update_points = points_batch_local
+                update_colors = colors_batch
+                update_normals = normals_batch
+                update_poses = pose_per_point
+
+            
+
+            update_points = transform_torch(update_points, update_poses) # global frame
+            if update_normals is not None:
+                update_normals = transform_torch(update_normals, update_poses)
+
+            
+            # update map
+            if update_points.shape[0] > 0:
+                self.neural_points.update(update_points, update_colors, update_normals)
+
+            
+            if self.config.use_pool:
+                print("Here append samples to pools")
+
+
     # begin mapping
     def process_frame(
         self,
@@ -243,6 +341,7 @@ class Mapper:
             sem_label,
             color_label,
             weight,
+            _
         ) = self.sampler.sample(
             frame_point_torch, frame_normal_torch, frame_label_torch, frame_color_torch
         )
@@ -430,6 +529,12 @@ class Mapper:
         if self.dataset.gt_pose_provided:  # for pure reconstruction with known pose
             self.used_poses = torch.tensor(
                 self.dataset.gt_poses,
+                device=self.device, 
+                dtype=self.tran_dtype
+            )
+
+            self.all_poses = torch.tensor(
+                self.dataset.gt_poses_all,
                 device=self.device, 
                 dtype=self.tran_dtype
             )

@@ -263,4 +263,5 @@ class DataSampler:
             color_tensor,
             weight_tensor,
             # color_mask_tensor,
+            all_sample_n
         )

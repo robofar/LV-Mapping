@@ -53,7 +53,7 @@ from matplotlib import pyplot as plt
 import torchvision.utils as vutils
 
 class SLAMDataset():
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, PatchworkPLUSPLUS = None) -> None:
 
         super().__init__()
 
@@ -66,12 +66,16 @@ class SLAMDataset():
         self.run_path = config.run_path
         self.use_ground_segmentation = config.use_ground_segmentation
 
+        if self.use_ground_segmentation:
+            self.PatchworkPLUSPLUS = PatchworkPLUSPLUS
+
         max_frame_number: int = 100000 # about 3 hours of operation
 
         self.monodepth_on: bool = config.monodepth_on
 
         self.poses_ts = None # timestamp for each reference pose, also as np.array
         self.gt_poses = None
+        self.gt_poses_all = None
         self.calib = {"Tr": np.eye(4), "T_l_c": np.eye(4)} # as T_lidar<-body (cam)
         # "Tr" is used for KITTI, as the reference pose is not in LiDAR frame
 
@@ -102,6 +106,7 @@ class SLAMDataset():
             max_frame_number = self.total_pc_count
             if hasattr(self.loader, 'gt_poses'):
                 self.gt_poses = self.loader.gt_poses[config.begin_frame:config.end_frame:config.step_frame]
+                self.gt_poses_all = self.loader.gt_poses
                 self.gt_pose_provided = True
 
                 # write_kitti_format_poses(os.path.join(self.run_path, "gt_poses"), self.gt_poses)
@@ -1204,16 +1209,15 @@ class SLAMDataset():
                 instance_ids_cam_name[cam_name] = instance_ids
 
             # Save depth image [uncomment later]
-            '''
             dir_path = f"{self.config.pc_path}camera_{cam_name}/depth"
             os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
 
             frame_id_in_folder = self.config.begin_frame + cam_img.frame_id * self.config.step_frame # global frame_id
             save_path_depth = os.path.join(dir_path, f"depth_{frame_id_in_folder:010d}.png")
             vutils.save_image(depth_map_torch, save_path_depth)
-            '''
+            
 
-            cam_img.set_depth_img(depth_map_torch) # [comment later]
+            #cam_img.set_depth_img(depth_map_torch) # [comment later]
         
         # color channels
         self.cur_point_cloud_torch[:, 3:] = points_rgb_torch[:, :3] # 4-6 rgb

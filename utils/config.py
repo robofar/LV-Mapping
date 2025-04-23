@@ -56,7 +56,7 @@ class Config:
         self.deskew_ref_ratio: float = 0.5 # deskew to a reference ts (ratio indicates the ratio in a frame duration, typically 0.1s)
 
         # ground segmentation
-        self.use_ground_segmentation: bool = False # use ground segmentation or not
+        self.use_ground_segmentation: bool = True # use ground segmentation or not
         self.MOT: bool = True
         self.use_pool: bool = False
         self.points_batch_size_initialization: int = 10000 # batch size for the point cloud (sampling-on-demand) (for map initialization)

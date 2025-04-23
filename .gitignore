@@ -208,3 +208,6 @@ q.log/
 
 job_scripts/
 job_scripts
+
+*.ply
+*.npy

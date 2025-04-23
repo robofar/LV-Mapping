@@ -94,7 +94,7 @@ def run_pin_slam(
     gs_on: bool = typer.Option(False, '--gs-on', '-g', help='Turn on GS'),
     deskew: bool = typer.Option(False, '--deskew', help='Try to deskew the LiDAR scans'),
     tag: Optional[str] = typer.Option(None, '--tag', help='A tag for this experiment'),
-    MOT: bool = typer.Option(True, '--mot-off', '-f', help='Turn off MOT mode (i.e. Static Map Creation)') # False is default value. If -f flag is specified, then value is True
+    MOT: bool = typer.Option(True, '--mot-off', '-f', help='Turn off MOT mode (i.e. Static Map Creation)') # True is default value. If -f flag is specified, then value is False
 ) -> None:
 
     config = Config()
@@ -284,8 +284,10 @@ def run_pin_slam(
                 dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
         
 
-        mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
+        #mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
 
+        # update camera pool
+        # We need camera pool also for MOT because of Binary masks generation
         if config.gs_on: # only when color available
             if dataset.cur_cam_img is not None:
                 mapper.update_cam_pool(frame_id)
@@ -293,15 +295,89 @@ def run_pin_slam(
 
 
         dataset.processed_frame += 1
+
     
 
+
+    if config.MOT:
+        dynamic.process_all() # to decide what are dynamic instances, and append everything that is not dynamic to static map
+
+        print(dynamic.outside_fov_pcd.shape)
+        for cam_name in dynamic.instances_pcd.keys():
+            print("Cam name: ", cam_name)
+            for k in dynamic.instances_pcd[cam_name].keys():
+                print(dynamic.instances_pcd[cam_name][k].shape)
+            print("------------------")
+        
+
+        for cam_name in dynamic.dynamic_instance.keys():
+            print(f"Cam name: {cam_name}")
+            for k,v in dynamic.dynamic_instance[cam_name].items():
+                print("Key: ", k, " Value: ", v)
+            print("------------------")
+
+        pcd_static = (
+            dynamic.get_outside_fov_pcd_o3d()[0]
+            + dynamic.get_instance_pcd_o3d(0, 'rear')[0]
+            + dynamic.get_instance_pcd_o3d(0, 'left')[0]
+            + dynamic.get_instance_pcd_o3d(0, 'right')[0]
+            + dynamic.get_instance_pcd_o3d(0, 'front')[0]
+        )
+
+        timestamps_static = torch.cat([
+            dynamic.get_outside_fov_pcd_o3d()[1],
+            dynamic.get_instance_pcd_o3d(0, 'rear')[1],
+            dynamic.get_instance_pcd_o3d(0, 'left')[1],
+            dynamic.get_instance_pcd_o3d(0, 'right')[1],
+            dynamic.get_instance_pcd_o3d(0, 'front')[1],
+        ], dim=0)
+
+
+        print(f"pcd_static point count: {len(pcd_static.points)}")
+        print(f"timestamps_static shape: {timestamps_static.shape}")
+
+        print("Saving static map and their timestamps...")
+        o3d.io.write_point_cloud("static_map.ply", pcd_static)
+
+        timestamps_np = timestamps_static.detach().cpu().numpy()  # shape: [N, 1]
+        np.save("static_map_timestamps.npy", timestamps_np)
+
+        print("Saving binary masks...")
+        #mapper.create_binary_masks()
+
+        sys.exit("MOT Done... Turn off MOT and run again script to start mapping.")
+
+
+
+
+
+
+    print("Loading static map...")
+    static_pcd = o3d.io.read_point_cloud("static_map.ply")
+    points_torch = torch.from_numpy(np.asarray(static_pcd.points)).float().cuda()
+    colors_torch = torch.from_numpy(np.asarray(static_pcd.colors)).to(points_torch)
+    static_timestamps_np = np.load("static_map_timestamps.npy")
+    static_timestamps = torch.from_numpy(static_timestamps_np).to(dtype=torch.int32, device=points_torch.device)
+
+    print(points_torch.shape)
+    print(colors_torch.shape)
+    print(static_timestamps.shape)
+
+
+    # Initializing Neural Grid
+    print("Map intitialization...")
+    mapper.map_initialization(points_torch, colors_torch, static_timestamps)
+    mapper.static_map_points = points_torch
+    mapper.static_map_colors = colors_torch
+    mapper.static_map_timestamps = static_timestamps
+
+    
     print("Neural points: ", neural_points.neural_points.shape)
     print("Neural grid level 0: ", neural_points.corner_points_list[0].shape)
     print("Neural grid level 1: ", neural_points.corner_points_list[1].shape)
     print("Neural grid level 2: ", neural_points.corner_points_list[2].shape)
 
-
-    
+    '''
     remove_gpu_cache()
     print("SDF Training...")
     mapper.mapping(5000)
@@ -343,6 +419,7 @@ def run_pin_slam(
         print(f"save the reconstructed mesh to {mesh_path}")
     
     neural_points.clear_temp() # clear temp data
+    '''
 
 
 if __name__ == "__main__":
