@@ -7,3 +7,6 @@
 [submodule "submodules/diff-gaussian-rasterization-w-pose"]
 	path = submodules/diff-gaussian-rasterization-w-pose
 	url = https://github.com/rmurai0610/diff-gaussian-rasterization-w-pose
+[submodule "submodules/patchwork-plusplus"]
+	path = submodules/patchwork-plusplus
+	url = https://github.com/url-kaist/patchwork-plusplus.git
