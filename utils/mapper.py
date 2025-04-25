@@ -192,8 +192,8 @@ class Mapper:
             normals_batch = None
             timestamps_batch = timestamps_torch[i : i + self.config.points_batch_size_initialization]
 
-            #pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
-            pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            #pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
             inverse_pose_per_point = torch.linalg.inv(pose_per_point)
 
             points_batch_local = transform_torch(points_batch, inverse_pose_per_point)  # (N, 3) # this is good
@@ -224,8 +224,8 @@ class Mapper:
                 .transpose(0, 1)
                 .reshape(-1, 1)
             )
-            #pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
-            pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+            pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+            #pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
 
             update_points = None
             update_colors = None
@@ -268,7 +268,34 @@ class Mapper:
 
             
             if self.config.use_pool:
-                print("Here append samples to pools")
+                # 6. Update pool (concat with current observations)
+                self.coord_pool = torch.cat((self.coord_pool, coord), 0)
+                self.weight_pool = torch.cat((self.weight_pool, weight), 0)
+                self.sdf_label_pool = torch.cat((self.sdf_label_pool, sdf_label), 0)
+                self.time_pool = torch.cat((self.time_pool, timestamps_batch_ordered), 0)
+
+                if sem_label is not None:
+                    self.sem_label_pool = torch.cat((self.sem_label_pool, sem_label), 0)
+                else:
+                    self.sem_label_pool = None
+                if color_label is not None:
+                    self.color_pool = torch.cat((self.color_pool, color_label), 0)
+                else:
+                    self.color_pool = None
+                if normal_label is not None:
+                    self.normal_label_pool = torch.cat(
+                        (self.normal_label_pool, normal_label), 0
+                    )
+                else:
+                    self.normal_label_pool = None
+
+                global_coord = transform_torch(coord, pose_per_sample)
+                self.global_coord_pool = torch.cat(
+                    (self.global_coord_pool, global_coord), 0
+                )
+
+                self.cur_sample_count = coord.shape[0]
+                self.pool_sample_count = self.global_coord_pool.shape[0]
 
 
     # begin mapping
@@ -581,6 +608,71 @@ class Mapper:
 
             cam.set_pose(T_w_c_after_pgo)
 
+
+    def sampling_on_demand(self, points_batch: torch.tensor, colors_batch: torch.tensor, normals_batch: torch.tensor, timestamps_batch: torch.tensor):
+        '''
+        points_batch are in world frame (taken from static map)
+        use timestamps_batch to move them to local frame and then convert local samples to global frame
+        '''
+        pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+        #pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+        inverse_pose_per_point = torch.linalg.inv(pose_per_point)
+        points_batch_local = transform_torch(points_batch, inverse_pose_per_point)  # (N, 3)
+
+        # Sample points from the batch
+        (
+            coord, # # coord is in sensor local frame (because frame_point_torch is in sensor local frame)
+            sdf_label,
+            normal_label,
+            sem_label,
+            color_label,
+            weight,
+            samples_per_point
+        ) = self.sampler.sample(
+            points_batch_local, normals_batch, None, colors_batch
+        )
+
+        timestamps_batch_repeated = timestamps_batch.repeat(samples_per_point, 1)
+        timestamps_batch_ordered = (
+            timestamps_batch_repeated.reshape(samples_per_point, -1, 1)
+            .transpose(0, 1)
+            .reshape(-1, 1)
+        )
+        pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+        #pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+
+        global_coord = transform_torch(coord, pose_per_sample) # global frame
+        if normal_label is not None:
+            global_normal_label = transform_torch(normal_label, pose_per_sample)
+        
+        '''
+        # Randomly sample the points for better randomicity
+        index = torch.randint(
+            0, global_coord.shape[0], (self.config.bs,), device=self.device
+        )
+
+        global_coord = global_coord[index, :]
+        sdf_label = sdf_label[index]
+        timestamps_batch_ordered = timestamps_batch_ordered[index]
+        weight = weight[index]
+        if sem_label is not None:
+            sem_label = sem_label[index]
+        else:
+            sem_label = None
+        if color_label is not None:
+            color_label = color_label[index]
+        else:
+            color_label = None
+        if normal_label is not None:
+            normal_label = global_normal_label[index, :]
+        else:
+            normal_label = None
+        '''
+
+        
+        
+        return global_coord, sdf_label, timestamps_batch_ordered, normal_label, sem_label, color_label, weight
+
     # get a batch of training samples and labels for map optimization
     def get_batch(self):
         
@@ -641,7 +733,7 @@ class Mapper:
     # the main training function
     def mapping(self, iter_count):
 
-        iter_count += self.adaptive_iter_offset
+        #iter_count += self.adaptive_iter_offset
 
         if iter_count <= 0 or self.neural_points.is_empty():
             return # skip the mapping
@@ -688,7 +780,8 @@ class Mapper:
         for iter in tqdm(range(iter_count), disable=self.silence, desc="SDF training"):
             # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
 
-            print(f"SDF iter: {iter}")
+            if ((iter % 100) == 0):
+                print(f"SDF iter: {iter}")
 
             # freeze the decoder after certain frame 
             if not self.config.decoder_freezed and (iter == self.config.freeze_after_iter_sdf):
@@ -704,11 +797,18 @@ class Mapper:
                 print(self.neural_points.color_feature_pca.shape)
 
             
-            # we do not use the ray rendering loss here for the incremental mapping
-            coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()  # coord here is in global frame if no ba pose update
-
-            # FIXME: if coord outside of the local map, we do not feed it into the network
-
+            if self.config.use_pool:
+                # we do not use the ray rendering loss here for the incremental mapping
+                coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()  # coord here is in global frame if no ba pose update
+                # FIXME: if coord outside of the local map, we do not feed it into the network
+            else:
+                index = torch.randint(
+                    0, self.static_map_points.shape[0], (self.config.points_batch_size_sdf,), device=self.device
+                )
+                points_batch = self.static_map_points[index, :]
+                colors_batch = self.static_map_colors[index, :]
+                timestamps_batch = self.static_map_timestamps[index, :]
+                coord, sdf_label, ts, _, sem_label, color_label, weight = self.sampling_on_demand(points_batch, colors_batch, None, timestamps_batch)
             
 
             poses = self.used_poses[ts]
@@ -991,7 +1091,8 @@ class Mapper:
             eval_depth_min = self.config.min_range
 
             for iter in tqdm(range(iter_count), disable=self.silence, desc="GSDF training"):    
-                print(f"GSDF iter: {iter}")
+                if ((iter % 100) == 0):
+                    print(f"GSDF iter: {iter}")
 
                 if (iter == self.config.freeze_after_iter_gaussians):
                     print("Gaussian MLPs freezed...")
@@ -1451,10 +1552,19 @@ class Mapper:
                 color_loss = 0.0
 
                 if sdf_loss_on and self.config.lambda_sdf > 0.0:
-                    # with batch size bs (this is done for all the sdf samples in the local map)
-                    coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
+                    if self.config.use_pool:
+                        # with batch size bs (this is done for all the sdf samples in the local map)
+                        coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
+                        # FIXME: if coord outside of the local map, we do not feed it into the network, because it will anyway not be used to optimize anything
+                    else:
+                        index = torch.randint(
+                            0, self.static_map_points.shape[0], (self.config.points_batch_size_sdf,), device=self.device
+                        )
+                        points_batch = self.static_map_points[index, :]
+                        colors_batch = self.static_map_colors[index, :]
+                        timestamps_batch = self.static_map_timestamps[index, :]
+                        coord, sdf_label, ts, _, sem_label, color_label, weight = self.sampling_on_demand(points_batch, colors_batch, None, timestamps_batch)
 
-                    # FIXME: if coord outside of the local map, we do not feed it into the network, because it will anyway not be used to optimize anything
 
                     valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
                     apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
@@ -1679,7 +1789,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_test_2"
+            save_folder = "eval_images_static_sampling"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
@@ -1710,25 +1820,30 @@ class Mapper:
                 
                 T_w_l = self.used_poses[frame_id] #
                 
+                '''
                 if frame_id % 100 == 0:
                     self.neural_points.recreate_hash(T_w_l[:3,3], kept_points=True, with_ts=True, cur_ts=frame_id) # and at the same time reset local map
                 else:
                     self.neural_points.reset_local_map(T_w_l[:3,3], cur_ts=frame_id)
-                
-                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data()
+                '''
+                self.neural_points.reset_local_map(T_w_l[:3,3])
+                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data(with_sorroundings=True)
 
                 # spawning gaussians for sorrounding map
-                sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
-                    self.decoders, None, T_w_l[:3,3],
-                    dist_concat_on=self.config.dist_concat_on, 
-                    view_concat_on=self.config.view_concat_on, 
-                    scale_filter_on=True,
-                    z_far=self.config.sorrounding_map_radius,
-                    learn_color_residual=self.config.learn_color_residual,
-                    gs_type=self.config.gs_type,
-                    displacement_range_ratio=self.config.displacement_range_ratio,
-                    max_scale_ratio=self.config.max_scale_ratio,
-                    unit_scale_ratio=self.config.unit_scale_ratio)
+                sorrounding_spawn_results = None
+                if sorrounding_neural_points_data is not None:
+                    print(f"Sorrounding neural points data is NOT None, spawn sorrounding map")
+                    sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
+                        self.decoders, None, T_w_l[:3,3],
+                        dist_concat_on=self.config.dist_concat_on, 
+                        view_concat_on=self.config.view_concat_on, 
+                        scale_filter_on=True,
+                        z_far=self.config.sorrounding_map_radius,
+                        learn_color_residual=self.config.learn_color_residual,
+                        gs_type=self.config.gs_type,
+                        displacement_range_ratio=self.config.displacement_range_ratio,
+                        max_scale_ratio=self.config.max_scale_ratio,
+                        unit_scale_ratio=self.config.unit_scale_ratio)
 
                 # in lidar frame
                 cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
@@ -1901,17 +2016,8 @@ class Mapper:
                                 save_path_rend = os.path.join(save_folder, cur_view_cam.uid + "_rend" + ".png")
                                 vutils.save_image(rendered_rgb_image, save_path_rend)
 
-                                save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_raw" + ".png")
-                                vutils.save_image(rendered_normal, save_path_normal)
-
-                                save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_1" + ".png")
-                                vutils.save_image(normal_color_1, save_path_normal)
-
                                 save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_2" + ".png")
                                 vutils.save_image(normal_color_2, save_path_normal)
-
-                                save_path_normal = os.path.join(save_folder, cur_view_cam.uid + "_normal_3" + ".png")
-                                vutils.save_image(normal_color_3, save_path_normal)
 
                             if not self.config.gs_eval_cam_refine_on:
                                 break
@@ -2091,39 +2197,37 @@ class Mapper:
 
 
     def gs_eval_out(self):
-        
-        train_psnr_np = train_ssim_np = train_lpips_np = train_depthl1_np = train_depth_rmse_np = train_cd_np = train_f1_np = 0.0
-
         cam_count = len(self.dataset.cam_names) # better to also compute for each cam
-        # TODO: fix 
-
-        train_frame_count = len(self.train_psnr_list) 
+        frame_count = len(self.psnr_list) 
+        
+        psnr_np = ssim_np = lpips_np = depthl1_np = depth_rmse_np = cd_np = f1_np = 0.0
 
         # TODO: it's even better to print the results for each camera, it's possible
-        if train_frame_count > 0:
-            train_psnr_np = np.mean(np.array(self.train_psnr_list))
-            train_ssim_np = np.mean(np.array(self.train_ssim_list))
-            train_lpips_np = np.mean(np.array(self.train_lpips_list))
+        if frame_count > 0:
+            psnr_np = np.mean(np.array(self.psnr_list))
+            ssim_np = np.mean(np.array(self.ssim_list))
+            lpips_np = np.mean(np.array(self.lpips_list))
             
-            print(f"Calculated on {train_frame_count} train views")
+            print(f"Calculated on {frame_count} views")
 
-            print("Average train view PSNR  ↑ :", f"{train_psnr_np:.3f}")
-            print("Average train view SSIM  ↑ :", f"{train_ssim_np:.3f}")
-            print("Average train view LPIPS ↓ :", f"{train_lpips_np:.3f}")
+            print("Average PSNR  ↑ :", f"{psnr_np:.3f}")
+            print("Average SSIM  ↑ :", f"{ssim_np:.3f}")
+            print("Average LPIPS ↓ :", f"{lpips_np:.3f}")
 
 
-        if len(self.train_depth_rmse_list) > 0:
-            train_depthl1_np = np.mean(np.array(self.train_depthl1_list))
-            train_depth_rmse_np = np.mean(np.array(self.train_depth_rmse_list))
-            print("Average train view Depth L1 (m) ↓ :", f"{train_depthl1_np:.3f}")
-            print("Average train view Depth RMSE (m) ↓ :", f"{train_depth_rmse_np:.3f}")
+        if len(self.depth_rmse_list) > 0:
+            depthl1_np = np.mean(np.array(self.depthl1_list))
+            depth_rmse_np = np.mean(np.array(self.depth_rmse_list))
+            print("Average Depth L1 (m) ↓ :", f"{depthl1_np:.3f}")
+            print("Average Depth RMSE (m) ↓ :", f"{depth_rmse_np:.3f}")
 
-        if len(self.train_cd_list) > 0:
-            train_cd_np = np.mean(np.array(self.train_cd_list))
-            train_f1_np = np.mean(np.array(self.train_f1_list))
-            print("Average train frame CD (m) ↓ :", f"{train_cd_np:.3f}")
-            print("Average train frame F1 (%) ↑ :", f"{train_f1_np:.3f}")
-
+        if len(self.cd_list) > 0:
+            cd_np = np.mean(np.array(self.cd_list))
+            f1_np = np.mean(np.array(self.f1_list))
+            print("Average CD (m) ↓ :", f"{cd_np:.3f}")
+            print("Average F1 (%) ↑ :", f"{f1_np:.3f}")
+        
+        '''
         test_psnr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
 
         test_frame_count = len(self.test_psnr_list) 
@@ -2150,6 +2254,9 @@ class Mapper:
             test_f1_np = np.mean(np.array(self.test_f1_list))
             print("Average test frame CD (m) ↓ :", f"{test_cd_np:.3f}")
             print("Average test frame F1 (%) ↑ :", f"{test_f1_np:.3f}")
+        
+
+        
 
         gs_csv_columns = [
                 "Frame-Type",
@@ -2164,16 +2271,18 @@ class Mapper:
         ]
         gs_eval = [
             {
-                gs_csv_columns[0]: "train",
-                gs_csv_columns[1]: train_psnr_np,
-                gs_csv_columns[2]: train_ssim_np,
-                gs_csv_columns[3]: train_lpips_np,
-                gs_csv_columns[4]: train_depthl1_np,
-                gs_csv_columns[5]: train_depth_rmse_np,
-                gs_csv_columns[6]: train_cd_np,
-                gs_csv_columns[7]: train_f1_np,
-                gs_csv_columns[8]: train_frame_count,
+                gs_csv_columns[0]: "all",
+                gs_csv_columns[1]: psnr_np,
+                gs_csv_columns[2]: ssim_np,
+                gs_csv_columns[3]: lpips_np,
+                gs_csv_columns[4]: depthl1_np,
+                gs_csv_columns[5]: depth_rmse_np,
+                gs_csv_columns[6]: cd_np,
+                gs_csv_columns[7]: f1_np,
+                gs_csv_columns[8]: frame_count,
             },
+            
+            
             {
                 gs_csv_columns[0]: "test",
                 gs_csv_columns[1]: test_psnr_np,
@@ -2185,16 +2294,22 @@ class Mapper:
                 gs_csv_columns[7]: test_f1_np,
                 gs_csv_columns[8]: test_frame_count,
             }
+            
+            
         ]
+        
+        
         gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval.csv")
         try:
             with open(gs_output_csv_path, "w") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
                 writer.writeheader()
                 for data in gs_eval:
+                    print(f"data is {data}")
                     writer.writerow(data)
         except IOError:
             print("I/O error")
+        '''
 
         # if config.save_mesh:
         #     output_mc_res_m = config.mc_res_m*0.6

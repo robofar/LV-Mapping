@@ -58,9 +58,9 @@ class Config:
         # ground segmentation
         self.use_ground_segmentation: bool = True # use ground segmentation or not
         self.MOT: bool = True
-        self.use_pool: bool = False
+        self.use_pool: bool = False # pool or sampling on demand
         self.points_batch_size_initialization: int = 10000 # batch size for the point cloud (sampling-on-demand) (for map initialization)
-        self.points_batch_size_sdf: int = 1000 # batch size for the point cloud (sampling-on-demand) (for sdf training)
+        self.points_batch_size_sdf: int = 1024 # batch size for the point cloud (sampling-on-demand) (for sdf training)
 
         # preprocess
         # distance filter

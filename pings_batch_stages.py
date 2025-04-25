@@ -266,6 +266,7 @@ def run_pin_slam(
     print(f"Use Local Pool for SDF Training: {config.use_local_pool_sdf}")
     print(f"Freeze SDF decoders after {config.freeze_after_iter_sdf} iterations")
     print(f"Freeze Gaussian decoders after {config.freeze_after_iter_gaussians} iterations")
+    print(f"Using data pool for SDF training: {config.use_pool}")
 
     mapper.load_gt_poses()
         
@@ -282,7 +283,7 @@ def run_pin_slam(
             dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
             if (not dataset.is_rgbd): # if it is rgbd dataset dont override gt depth (but change such that I obtain foundation masks)
                 dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
-        
+
 
         #mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
 
@@ -345,7 +346,7 @@ def run_pin_slam(
         print("Saving binary masks...")
         #mapper.create_binary_masks()
 
-        sys.exit("MOT Done... Turn off MOT and run again script to start mapping.")
+        sys.exit("MOT Done... Turn off MOT by setting the flag f and run again script to start mapping.")
 
 
 
@@ -363,6 +364,28 @@ def run_pin_slam(
     print(colors_torch.shape)
     print(static_timestamps.shape)
 
+    print(mapper.cam_pool[0].rgb_image.shape)
+    if mapper.cam_pool[0].depth_image is not None:
+        print("There is a depth image")
+        print(mapper.cam_pool[0].depth_image.shape)
+        print(mapper.cam_pool[0].depth_on)
+    else:
+        print("No depth image in the pool")
+    
+    if mapper.cam_pool[0].binary_mask is not None:
+        print("There is a binary mask")
+        print(mapper.cam_pool[0].binary_mask.shape)
+        print(mapper.cam_pool[0].binary_mask_on)
+    else:
+        print("No binary mask in the pool")
+    
+    if mapper.cam_pool[0].foundation_mask is not None:
+        print("There is a foundation mask")
+        print(mapper.cam_pool[0].foundation_mask.shape)
+        print(mapper.cam_pool[0].foundation_mask_on)
+    else:
+        print("No foundation mask in the pool")
+
 
     # Initializing Neural Grid
     print("Map intitialization...")
@@ -371,38 +394,38 @@ def run_pin_slam(
     mapper.static_map_colors = colors_torch
     mapper.static_map_timestamps = static_timestamps
 
+    print(f"Shape of pool is: {mapper.coord_pool.shape}")
     
     print("Neural points: ", neural_points.neural_points.shape)
     print("Neural grid level 0: ", neural_points.corner_points_list[0].shape)
     print("Neural grid level 1: ", neural_points.corner_points_list[1].shape)
     print("Neural grid level 2: ", neural_points.corner_points_list[2].shape)
 
-    '''
     remove_gpu_cache()
     print("SDF Training...")
-    mapper.mapping(5000)
+    mapper.mapping(5000) # config.iters * config.init_iter_ratio
 
     remove_gpu_cache()
-    print("GSDF Training")
+    print("GSDF Training...")
     print(f"There are {len(mapper.cam_pool)} images in the pool")
-    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 100)
-
+    #mapper.joint_gsdf_mapping(config.gs_iters * len(mapper.cam_pool)) # 10000
+    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 110) # 22000
 
     # VI. Save results
     remove_gpu_cache()
-    mapper.free_pool()
-
     if config.gs_on and config.gs_eval_on: 
         print("Begin rendering evaluation")
         remove_gpu_cache()
         mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=0, 
                                lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, 
                                rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
-        #mapper.gs_eval_out() 
+        mapper.gs_eval_out()
+    
 
     remove_gpu_cache()
     color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+
     if config.save_map:
         remove_gpu_cache()
         print("Saving neural point map")
@@ -416,10 +439,8 @@ def run_pin_slam(
         mc_cm_str = str(round(config.mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, config.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
+        print(cur_mesh)
         print(f"save the reconstructed mesh to {mesh_path}")
-    
-    neural_points.clear_temp() # clear temp data
-    '''
 
 
 if __name__ == "__main__":

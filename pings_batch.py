@@ -268,6 +268,7 @@ def run_pin_slam(
     print(f"Freeze Gaussian decoders after {config.freeze_after_iter_gaussians} iterations")
 
     mapper.load_gt_poses()
+    pcd_sequence = o3d.geometry.PointCloud()
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
@@ -278,11 +279,14 @@ def run_pin_slam(
         dataset.init_temp_data() # init cur frame temp data
         dataset.read_frame_with_loader(frame_id, use_image=config.gs_on) # read pointcloud + all poses (cur_pose, prev_pose and odometry since we know all poses in advance)
         
+        dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
         if config.MOT:
-            dataset.preprocess_frame() # preprocess frame + downsampling + deskewing
             if (not dataset.is_rgbd): # if it is rgbd dataset dont override gt depth (but change such that I obtain foundation masks)
                 dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
         
+
+        dataset.update_o3d_map() # fills cur_frame_o3d with current frame point cloud
+        pcd_sequence += dataset.cur_frame_o3d # appends
 
         mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
 
@@ -294,11 +298,21 @@ def run_pin_slam(
 
         dataset.processed_frame += 1
     
+    points_torch = torch.from_numpy(np.asarray(pcd_sequence.points)).float().cuda()
+    colors_torch = torch.from_numpy(np.asarray(pcd_sequence.colors)).to(points_torch)
+
+    print(points_torch.shape)
+    print(colors_torch.shape)
 
     print("Neural points: ", neural_points.neural_points.shape)
     print("Neural grid level 0: ", neural_points.corner_points_list[0].shape)
     print("Neural grid level 1: ", neural_points.corner_points_list[1].shape)
     print("Neural grid level 2: ", neural_points.corner_points_list[2].shape)
+
+    if(mapper.cam_pool[0].depth_image is not None):
+        print("There is depth image in the pool")
+    else:
+        print("There is no depth image in the pool")
 
 
     
@@ -322,7 +336,7 @@ def run_pin_slam(
         mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=0, 
                                lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, 
                                rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
-        #mapper.gs_eval_out() 
+        mapper.gs_eval_out() 
 
     remove_gpu_cache()
     color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random

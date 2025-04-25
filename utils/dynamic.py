@@ -57,6 +57,10 @@ class Dynamic():
     
 
 
+    #############################################################
+    
+
+
 
 
     def append_outside_fov_points(self, points: torch.Tensor, outside_fov_mask: torch.Tensor, points_timestamps: torch.Tensor):
@@ -116,7 +120,8 @@ class Dynamic():
                 self.instances_pcd[cam_name][instance_id_key] = matched_points
 
 
-            
+    
+    #############################################################
     
 
 
@@ -209,6 +214,8 @@ class Dynamic():
         return best_trace_cluster, best_trace_timestamps, best_bbox, best_aspect_ratio, rest_clusters
     
 
+    #############################################################
+
 
     def append_to_background(self, cam_name, pcd, timestamps: torch.Tensor):
         background_tensor = self.instances_pcd[cam_name][0]
@@ -226,80 +233,13 @@ class Dynamic():
 
 
         
-
-
-
-    def process_instance(self, cam_name, key, knn=10, min_points=20, percentile=0.999, eps_scale=1.3):
-
-        pcd = self.get_instance_pcd_o3d(key, cam_name)
-        #print("Number of points: ", len(pcd.points))
-
-        # If there is not enough points, pretty sure that there is no car trace
-        if (np.asarray(pcd.points).shape[0] < 500):
-            #print(f"Skipping instance {key} because it has too few points ({len(pcd.points)}).")
-            self.append_to_background(cam_name, pcd)
-            return False
-        
-        #pcd.paint_uniform_color([1, 0, 0])
-        #o3d.visualization.draw_geometries([pcd])
-
-        # Depth filtering
-        points = np.asarray(pcd.points)
-        center = np.mean(points, axis=0)
-        distances = np.linalg.norm(points - center, axis=1)
-
-        threshold = np.percentile(distances, 97)  # Keep 97% closest points
-        pcd = pcd.select_by_index(np.where(distances < threshold)[0])
-        # [TODO] Append non-used points to background
-
-        # Statistical outlier removal
-        _, ind = pcd.remove_statistical_outlier(nb_neighbors=30, std_ratio=1.5)
-        pcd = pcd.select_by_index(ind)
-        # [TODO] Append non-used points to background
-
-        #o3d.visualization.draw_geometries([pcd])
-
-        # Compute adaptive eps
-        eps_value = self.estimate_eps(pcd, k=knn, percentile=percentile, eps_scale=eps_scale)
-        #print(f"Estimated eps: {eps_value}")
-
-        # Clustering
-        labels = np.array(pcd.cluster_dbscan(eps=eps_value, min_points=min_points, print_progress=True))
-
-        max_label = labels.max()
-        #print(f"Point cloud has {max_label + 1} clusters.")
-        colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-        colors[labels < 0] = 0
-        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-
-        #o3d.visualization.draw_geometries([pcd])
-
-        # Find the best car trace cluster
-        car_trace_pcd, car_trace_bbox, best_aspect_ratio, rest_clusters = self.find_car_trace_cluster(pcd, labels, aspect_threshold=6.0)
-
-        if car_trace_pcd is None:
-            #print(f"Object {key} does not contain a valid car trace. Merging whole instance into background.")
-            self.append_to_background(cam_name, pcd)  # Append full instance if no valid trace found
-            return False
-        
-        # Append all remaining clusters to background
-        for cluster in rest_clusters:
-            self.append_to_background(cam_name, cluster)
-
-        # Visualize the selected car trace cluster
-        #o3d.visualization.draw_geometries([car_trace_pcd, car_trace_bbox])
-
-        return True
-    
-
-    #######################################
     
     # TODO: Whatever you append to background, you have to remove from original tensor (not important for pipeline (cuz anyways Ill be using static map), but for visualization it is important)
-    def process_instance_2(self, cam_name, key, knn=10, min_points=15, percentile=0.999, eps_scale=1.7):
+    def process_instance(self, cam_name, key, knn=10, min_points=15, percentile=0.999, eps_scale=1.7):
         pcd, points_timestamp = self.get_instance_pcd_o3d(key, cam_name)
 
-        if (np.asarray(pcd.points).shape[0] < 500):
-            #print(f"Skipping instance {key} because it has too few points ({len(pcd.points)}).")
+        if (np.asarray(pcd.points).shape[0] < 500000000):
+            print(f"Skipping instance {key} of camera {cam_name} because it has too few points ({len(pcd.points)}).")
             self.append_to_background(cam_name, pcd, points_timestamp)
             return False
 
@@ -404,7 +344,5 @@ class Dynamic():
         for cam_name in self.instances_pcd.keys():
             for key in self.instances_pcd[cam_name].keys():
                 if key not in [-1, 0]: # -1 is outside of FOV, 0 is background
-                    #print(f"Processing instance {key} for camera {cam_name}...")
-                    result = self.process_instance_2(cam_name, key)
+                    result = self.process_instance(cam_name, key)
                     self.dynamic_instance[cam_name][key] = result
-                    #print("-------------------------")
