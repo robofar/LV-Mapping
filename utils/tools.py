@@ -1185,6 +1185,15 @@ def colorize_depth_maps(
 
 #######################################################################################################
 
+def visualize_depth_image(depth_torch):
+    depth_np = depth_torch.squeeze(0).numpy()  # shape becomes (1024, 2064)
+    plt.figure(figsize=(10, 5))
+    plt.imshow(depth_np, cmap='plasma')  # 'plasma' or 'inferno' often look great for depth
+    plt.colorbar(label='Depth value')
+    plt.title('Depth Visualization')
+    plt.axis('off')
+    plt.show()
+
 def visualize_segmentation_comparison(seg, expanded_seg, headless=True):
     """
     Visualize original and expanded segmentation masks side by side.
@@ -1283,6 +1292,7 @@ def project_points_to_cam_torch(points_torch,
                                 img_torch, 
                                 T_c_l, K_mat, 
                                 foundation_mask,
+                                expand_mask = False,
                                 min_depth=1.0, 
                                 max_depth=100.0):
 
@@ -1325,7 +1335,12 @@ def project_points_to_cam_torch(points_torch,
 
     if foundation_mask is not None and (img_torch.shape[1] == foundation_mask.shape[0]) and ((img_torch.shape[2] == foundation_mask.shape[1])):
         #expanded_foundation_mask = expand_segmentation(foundation_mask)
-        expanded_foundation_mask_adaptive = expand_segmentation_adaptive(foundation_mask)
+        if expand_mask:
+            expanded_foundation_mask_adaptive = expand_segmentation_adaptive(foundation_mask, min_radius=0, max_radius=0)
+        else:
+            expanded_foundation_mask_adaptive = foundation_mask
+
+        #visualize_segmentation_comparison(foundation_mask, expanded_foundation_mask_adaptive, False)
         instance_ids[mask] = expanded_foundation_mask_adaptive[v_valid, u_valid].unsqueeze(-1)
 
     per_pixel_point_counter = torch.ones_like(masked_depth, dtype=torch.int, device=device)

@@ -41,6 +41,7 @@ from utils.tools import (
     project_points_to_cam_torch,
     rotmat_to_degree_np,
     slerp_pose,
+    visualize_depth_image
 )
 from utils.pca import VoxelHasherIndex, GeometricFeatureExtractor
 
@@ -679,6 +680,8 @@ class SLAMDataset():
                     # img_down_rate = min(self.config.gs_down_rate, self.config.gs_vis_down_rate)
 
                     # this is actually very fast (1-2 ms)
+                    # visualize_depth_image(cur_img_depth_torch)
+
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb_torch, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.local_map_radius*1.1,
                                                           cam_name, depth_image=cur_img_depth_torch, normal_img=pred_normal,  
@@ -1203,7 +1206,7 @@ class SLAMDataset():
             cur_K_mat = torch.tensor(self.K_mats[cam_name], device=self.device, dtype=self.dtype) # K should be dtype not tran_dtype
 
             points_rgb_torch, depth_map_torch, instance_ids = project_points_to_cam_torch(self.cur_point_cloud_torch, points_rgb_torch, 
-                cam_rgb_torch, cur_T_c_l, cur_K_mat, cam_img.foundation_mask, min_depth=self.config.min_range)
+                cam_rgb_torch, cur_T_c_l, cur_K_mat, cam_img.foundation_mask, expand_mask=False, min_depth=self.config.min_range)
 
             if(cam_img.foundation_mask is not None):
                 instance_ids_cam_name[cam_name] = instance_ids
@@ -1591,7 +1594,7 @@ class SLAMDataset():
 
         for frame_id in tqdm(range(0, self.total_pc_count, frame_step), desc="TSDF fusion"): 
             
-            frame_id_in_folder = self.config.begin_frame + frame_id * self.config.step_frame
+            frame_id_in_folder = self.config.begin_frame + frame_id * self.config.step_frame # global idx
             frame_data = self.loader[frame_id_in_folder]
 
             cur_imgs = frame_data["img"]

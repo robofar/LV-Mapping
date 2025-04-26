@@ -162,14 +162,47 @@ class Dynamic():
 
         aspect_ratio = max(extents[0], extents[1]) / min(extents[0], extents[1]) # x and y only (z not important)
         volume = np.prod(extents)  # Bounding box volume
-        point_count = len(pcd.points)
+        #point_count = len(pcd.points)
+        point_count = len(pcd.voxel_down_sample(voxel_size=0.1).points)
 
         bbox.color = (0, 1, 0)  # RGB: Green color
 
         return aspect_ratio, volume, point_count, bbox
     
 
-    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=550):
+    def compute_curvature(self, points_2d):
+        """
+        Compute total bending per distance traveled across the cluster.
+        """
+        if points_2d.shape[0] < 3:
+            return 0.0
+
+        diffs = points_2d[1:] - points_2d[:-1]
+        distances = np.linalg.norm(diffs, axis=1)
+        distances = np.clip(distances, 1e-6, None)
+
+        directions = diffs / distances[:, np.newaxis]
+
+        dot_products = (directions[1:] * directions[:-1]).sum(axis=1)
+        dot_products = np.clip(dot_products, -1.0, 1.0)
+        angles = np.arccos(dot_products)
+
+        total_angle_change = np.sum(np.abs(angles))  # In radians
+        total_distance = np.sum(distances)
+
+        if total_distance < 1e-6:
+            return 0.0
+
+        curvature_strength = total_angle_change / total_distance  # radians per meter
+
+        # Weight by total distance to prefer longer traces
+        curvature_score = curvature_strength * total_distance
+
+        return curvature_score
+
+    
+
+    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=550, curvature_threshold=10000.0):
         """
         Identifies the most likely car trace cluster based on aspect ratio and size.
         """
@@ -189,9 +222,14 @@ class Dynamic():
             extents = bbox.extent
             smaller_axis = min(extents[0], extents[1])
 
-            #print(f"{label}: Aspect ratio={aspect_ratio:.2f}, Smaller axis = {smaller_axis:.2f}, Volume={point_count}, Point count={point_count}")
+            # New: Compute curvature
+            cluster_np = np.asarray(cluster_pcd.points)
+            cluster_xy = cluster_np[:, :2]  # Take x and y
+            curvature = self.compute_curvature(cluster_xy)
 
-            if aspect_ratio > aspect_threshold and point_count > min_points:
+            #print(f"Label {label}: Aspect ratio={aspect_ratio:.2f}, Curvature={curvature:.4f}, Points={point_count}")
+
+            if ((aspect_ratio > aspect_threshold) or (curvature > curvature_threshold)) and point_count > min_points:
                 if aspect_ratio > best_aspect_ratio:
                     # Store previous best in rest_clusters before replacing
                     if best_trace_cluster is not None:
@@ -237,9 +275,10 @@ class Dynamic():
     # TODO: Whatever you append to background, you have to remove from original tensor (not important for pipeline (cuz anyways Ill be using static map), but for visualization it is important)
     def process_instance(self, cam_name, key, knn=10, min_points=15, percentile=0.999, eps_scale=1.7):
         pcd, points_timestamp = self.get_instance_pcd_o3d(key, cam_name)
-
-        if (np.asarray(pcd.points).shape[0] < 500000000):
-            print(f"Skipping instance {key} of camera {cam_name} because it has too few points ({len(pcd.points)}).")
+        #print("------")
+        #print(f"Processing instance {key} of camera {cam_name}")
+        if (np.asarray(pcd.points).shape[0] < 500):
+            #print(f"Skipping instance {key} of camera {cam_name} because it has too few points ({len(pcd.points)}).")
             self.append_to_background(cam_name, pcd, points_timestamp)
             return False
 
@@ -316,15 +355,15 @@ class Dynamic():
         #print(f"Point cloud has {max_label + 1} clusters.")
 
         # Visualize using color (just for visualization)
-        #colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-        #colors[labels < 0] = 0
-        #pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+        colors[labels < 0] = 0
+        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
         #o3d.visualization.draw_geometries([pcd])
 
         ###############################
 
         # Find the best car trace cluster
-        car_trace_pcd, car_trace_timestamps, car_trace_bbox, best_aspect_ratio, rest_clusters = self.find_car_trace_cluster(pcd, points_timestamp, labels, aspect_threshold=4.2)
+        car_trace_pcd, car_trace_timestamps, car_trace_bbox, best_aspect_ratio, rest_clusters = self.find_car_trace_cluster(pcd, points_timestamp, labels, aspect_threshold=4.1)
 
         if car_trace_pcd is None:
             #print(f"Object {key} does not contain a valid car trace. Merging whole instance into background.")

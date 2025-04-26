@@ -290,7 +290,7 @@ def run_pin_slam(
         # update camera pool
         # We need camera pool also for MOT because of Binary masks generation
         if config.gs_on: # only when color available
-            if dataset.cur_cam_img is not None:
+            if dataset.cur_cam_img is not None and False:
                 mapper.update_cam_pool(frame_id)
 
 
@@ -302,13 +302,6 @@ def run_pin_slam(
 
     if config.MOT:
         dynamic.process_all() # to decide what are dynamic instances, and append everything that is not dynamic to static map
-
-        print(dynamic.outside_fov_pcd.shape)
-        for cam_name in dynamic.instances_pcd.keys():
-            print("Cam name: ", cam_name)
-            for k in dynamic.instances_pcd[cam_name].keys():
-                print(dynamic.instances_pcd[cam_name][k].shape)
-            print("------------------")
         
 
         for cam_name in dynamic.dynamic_instance.keys():
@@ -344,7 +337,7 @@ def run_pin_slam(
         np.save("static_map_timestamps.npy", timestamps_np)
 
         print("Saving binary masks...")
-        #mapper.create_binary_masks()
+        mapper.create_binary_masks()
 
         sys.exit("MOT Done... Turn off MOT by setting the flag f and run again script to start mapping.")
 
