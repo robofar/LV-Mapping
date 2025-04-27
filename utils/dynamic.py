@@ -202,7 +202,7 @@ class Dynamic():
 
     
 
-    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=550, curvature_threshold=10000.0):
+    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=450, curvature_threshold=15000.0):
         """
         Identifies the most likely car trace cluster based on aspect ratio and size.
         """
@@ -227,7 +227,7 @@ class Dynamic():
             cluster_xy = cluster_np[:, :2]  # Take x and y
             curvature = self.compute_curvature(cluster_xy)
 
-            #print(f"Label {label}: Aspect ratio={aspect_ratio:.2f}, Curvature={curvature:.4f}, Points={point_count}")
+            print(f"Label {label}: Aspect ratio={aspect_ratio:.2f}, Curvature={curvature:.4f}, Points={point_count}")
 
             if ((aspect_ratio > aspect_threshold) or (curvature > curvature_threshold)) and point_count > min_points:
                 if aspect_ratio > best_aspect_ratio:
@@ -275,10 +275,10 @@ class Dynamic():
     # TODO: Whatever you append to background, you have to remove from original tensor (not important for pipeline (cuz anyways Ill be using static map), but for visualization it is important)
     def process_instance(self, cam_name, key, knn=10, min_points=15, percentile=0.999, eps_scale=1.7):
         pcd, points_timestamp = self.get_instance_pcd_o3d(key, cam_name)
-        #print("------")
-        #print(f"Processing instance {key} of camera {cam_name}")
+        print("------")
+        print(f"Processing instance {key} of camera {cam_name}")
         if (np.asarray(pcd.points).shape[0] < 500):
-            #print(f"Skipping instance {key} of camera {cam_name} because it has too few points ({len(pcd.points)}).")
+            print(f"Skipping instance {key} of camera {cam_name} because it has too few points ({len(pcd.points)}).")
             self.append_to_background(cam_name, pcd, points_timestamp)
             return False
 
@@ -352,12 +352,12 @@ class Dynamic():
         #clustering = HDBSCAN(min_samples=20, cluster_selection_epsilon=0.6).fit(points_np)
         labels = clustering.labels_
         max_label = labels.max()
-        #print(f"Point cloud has {max_label + 1} clusters.")
+        print(f"Point cloud has {max_label + 1} clusters.")
 
         # Visualize using color (just for visualization)
-        colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-        colors[labels < 0] = 0
-        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        #colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+        #colors[labels < 0] = 0
+        #pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
         #o3d.visualization.draw_geometries([pcd])
 
         ###############################
@@ -366,7 +366,7 @@ class Dynamic():
         car_trace_pcd, car_trace_timestamps, car_trace_bbox, best_aspect_ratio, rest_clusters = self.find_car_trace_cluster(pcd, points_timestamp, labels, aspect_threshold=4.1)
 
         if car_trace_pcd is None:
-            #print(f"Object {key} does not contain a valid car trace. Merging whole instance into background.")
+            print(f"Object {key} does not contain a valid car trace. Merging whole instance into background.")
             self.append_to_background(cam_name, pcd, points_timestamp)
             return False
 

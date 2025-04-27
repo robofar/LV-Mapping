@@ -269,6 +269,7 @@ def run_pin_slam(
     print(f"Using data pool for SDF training: {config.use_pool}")
 
     mapper.load_gt_poses()
+    #pcd_sequence = o3d.geometry.PointCloud()
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
@@ -285,12 +286,15 @@ def run_pin_slam(
                 dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
 
 
+        #dataset.update_o3d_map() # fills cur_frame_o3d with current frame point cloud
+        #pcd_sequence += dataset.cur_frame_o3d # appends
+
         #mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
 
         # update camera pool
         # We need camera pool also for MOT because of Binary masks generation
         if config.gs_on: # only when color available
-            if dataset.cur_cam_img is not None and False:
+            if dataset.cur_cam_img is not None:
                 mapper.update_cam_pool(frame_id)
 
 
@@ -338,6 +342,15 @@ def run_pin_slam(
 
         print("Saving binary masks...")
         mapper.create_binary_masks()
+
+        '''
+        print("Visualizing for debugging")
+        pcd_sequence.paint_uniform_color([1.0, 0.0, 0.0])
+        pcd_static.paint_uniform_color([0.0, 0.0, 1.0])
+        o3d.visualization.draw_geometries([pcd_sequence])
+        o3d.visualization.draw_geometries([pcd_static])
+        o3d.visualization.draw_geometries([pcd_sequence, pcd_static])
+        '''
 
         sys.exit("MOT Done... Turn off MOT by setting the flag f and run again script to start mapping.")
 
@@ -396,7 +409,7 @@ def run_pin_slam(
 
     remove_gpu_cache()
     print("SDF Training...")
-    mapper.mapping(5000) # config.iters * config.init_iter_ratio
+    mapper.mapping(20) # config.iters * config.init_iter_ratio
 
     remove_gpu_cache()
     print("GSDF Training...")

@@ -61,6 +61,7 @@ from gs_gui.gui_utils import VisPacket
 import torchvision.utils as vutils
 import copy
 from utils.dynamic import Dynamic
+import matplotlib.pyplot as plt
 
 
 class Mapper:
@@ -192,8 +193,8 @@ class Mapper:
             normals_batch = None
             timestamps_batch = timestamps_torch[i : i + self.config.points_batch_size_initialization]
 
-            pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
-            #pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            #pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+            pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
             inverse_pose_per_point = torch.linalg.inv(pose_per_point)
 
             points_batch_local = transform_torch(points_batch, inverse_pose_per_point)  # (N, 3) # this is good
@@ -224,8 +225,8 @@ class Mapper:
                 .transpose(0, 1)
                 .reshape(-1, 1)
             )
-            pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
-            #pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+            #pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+            pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
 
             update_points = None
             update_colors = None
@@ -614,8 +615,8 @@ class Mapper:
         points_batch are in world frame (taken from static map)
         use timestamps_batch to move them to local frame and then convert local samples to global frame
         '''
-        pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
-        #pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+        #pose_per_point = self.used_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
+        pose_per_point = self.all_poses[timestamps_batch.squeeze(-1)]  # (N, 4, 4)
         inverse_pose_per_point = torch.linalg.inv(pose_per_point)
         points_batch_local = transform_torch(points_batch, inverse_pose_per_point)  # (N, 3)
 
@@ -638,8 +639,8 @@ class Mapper:
             .transpose(0, 1)
             .reshape(-1, 1)
         )
-        pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
-        #pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+        #pose_per_sample = self.used_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
+        pose_per_sample = self.all_poses[timestamps_batch_ordered.squeeze(-1)] # I think this is issue (check order)
 
         global_coord = transform_torch(coord, pose_per_sample) # global frame
         if normal_label is not None:
@@ -811,7 +812,8 @@ class Mapper:
                 coord, sdf_label, ts, _, sem_label, color_label, weight = self.sampling_on_demand(points_batch, colors_batch, None, timestamps_batch)
             
 
-            poses = self.used_poses[ts]
+            #poses = self.used_poses[ts]
+            poses = self.all_poses[ts]
             origins = poses[:, :3, 3]
 
             # surface_mask = torch.abs(sdf_label) < self.config.surface_sample_range_m
@@ -1118,6 +1120,43 @@ class Mapper:
                     gt_depth_image = viewpoint_cam.depth_image # 1, H, W
                 else:
                     gt_depth_image = None
+                
+                if viewpoint_cam.binary_mask_on:
+                    binary_mask = viewpoint_cam.binary_mask
+                else:
+                    binary_mask = torch.ones_like(gt_depth_image)
+
+                
+                '''
+                # Plot
+                plt.figure(figsize=(18, 9))
+
+                plt.subplot(2, 2, 1)
+                plt.imshow(gt_rgb_image.permute(1,2,0).cpu().detach().numpy())
+                plt.title("RGB Image")
+                plt.axis('off')
+
+                plt.subplot(2, 2, 2)
+                plt.imshow(gt_depth_image.permute(1,2,0).squeeze(2).cpu().detach().numpy(), cmap='viridis')  # or cmap='plasma', 'inferno', etc.
+                plt.title("Depth Image")
+                plt.axis('off')
+
+                gt_rgb_image_masked = gt_rgb_image * binary_mask
+                gt_depth_image_masked = gt_depth_image * binary_mask
+
+                plt.subplot(2, 2, 3)
+                plt.imshow(gt_rgb_image_masked.permute(1,2,0).cpu().detach().numpy())
+                plt.title("RGB Image")
+                plt.axis('off')
+
+                plt.subplot(2, 2, 4)
+                plt.imshow(gt_depth_image_masked.permute(1,2,0).squeeze(2).cpu().detach().numpy(), cmap='viridis')  # or cmap='plasma', 'inferno', etc.
+                plt.title("Depth Image")
+                plt.axis('off')
+
+                plt.tight_layout()
+                plt.show()
+                '''
 
                 T2 = get_time()
 
@@ -1569,8 +1608,9 @@ class Mapper:
                     valid_color_mask = (torch.abs(sdf_label) < 0.5 * self.config.surface_sample_range_m) & (color_label[:,0] >= 0.0) # Note: here we set the invalid color label with a negative value
                     apply_eikonal_mask = (torch.abs(sdf_label) < self.config.free_sample_end_dist_m)
 
-                    poses = self.used_poses[ts]
-                    origins = poses[:, :3, 3]
+                    #poses = self.used_poses[ts]
+                    #poses = self.all_poses[ts]
+                    #origins = poses[:, :3, 3]
                         
                     if self.require_gradient:
                         coord.requires_grad_(True)

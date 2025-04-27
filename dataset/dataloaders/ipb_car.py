@@ -318,7 +318,7 @@ class IPBCarDataset:
                 ################################################################
 
                 if self.depth_files[cam_name] is not None:
-                    cur_depth_file = self.depth_files[cam_name][0] # filename (this idx is global, so I will have to have all data available immediately)
+                    cur_depth_file = self.depth_files[cam_name][idx] # filename (this idx is global, so I will have to have all data available immediately)
                     depth_cam = self.read_depth_image(cur_depth_file)
                     depth_img_dict[cam_name] = depth_cam # H, W, 1 (depth_cam is numpy array of dtype float32)
                 else:
@@ -337,7 +337,7 @@ class IPBCarDataset:
                     
                 
                 if self.binary_mask_files[cam_name] is not None:
-                    cur_binary_mask_file = self.binary_mask_files[cam_name][0] # filename (this idx is global, so I will have to have all data available immediately)
+                    cur_binary_mask_file = self.binary_mask_files[cam_name][idx] # filename (this idx is global, so I will have to have all data available immediately)
                     binary_mask_cam = self.read_binary_mask(cur_binary_mask_file)
                     binary_mask_dict[cam_name] = binary_mask_cam
                 else:
