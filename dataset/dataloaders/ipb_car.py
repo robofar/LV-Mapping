@@ -147,7 +147,7 @@ class IPBCarDataset:
             # Depth images
             if not self.MOT:
                 cur_cam_depth_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "depth/")
-                cur_depth_files = sorted(glob.glob(cur_cam_depth_dir + "*.png"))
+                cur_depth_files = sorted(glob.glob(cur_cam_depth_dir + "*.npy"))
                 self.depth_files[cam_name] = cur_depth_files
             else:
                 self.depth_files[cam_name] = None
@@ -316,7 +316,6 @@ class IPBCarDataset:
                 # print("img reading time (ms):" , (toc_0 - tic_0)*1e3)
                 # print("pc colorize time (ms):" , (toc_1 - toc_0)*1e3)
                 ################################################################
-
                 if self.depth_files[cam_name] is not None:
                     cur_depth_file = self.depth_files[cam_name][idx] # filename (this idx is global, so I will have to have all data available immediately)
                     depth_cam = self.read_depth_image(cur_depth_file)
@@ -472,10 +471,7 @@ class IPBCarDataset:
         return mask
     
     def read_depth_image(self, depth_file: str):
-        depth = cv2.imread(depth_file, cv2.IMREAD_UNCHANGED)
-        depth = cv2.cvtColor(depth, cv2.COLOR_BGR2GRAY)
-        depth = np.expand_dims(depth, axis=-1)
-        depth = depth.astype(np.float32)
+        depth = np.load(depth_file)  # will have shape [H, W], dtype float32
         return depth
     
     def read_binary_mask(self, binary_mask_file: str):

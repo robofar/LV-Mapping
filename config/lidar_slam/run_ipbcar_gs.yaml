@@ -6,7 +6,7 @@ setting:
   color_channel: 3
   color_map_on: True
   begin_frame: 250 # 0 for static map creation
-  end_frame: 260 # 400 for static map creation
+  end_frame: 252 # 400 for static map creation
 process:
   min_range_m: 1.5
   max_range_m: 60.0

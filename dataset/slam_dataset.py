@@ -436,7 +436,7 @@ class SLAMDataset():
                     cur_img_depth_torch = None # torch
                     if depth_dict[cam_name] is not None:
                         cur_img_depth_np = depth_dict[cam_name] # H, W, 1
-
+                        
                         cur_img_depth_torch = torch.tensor(cur_img_depth_np, dtype=self.dtype, device=self.image_device) # unit: m
                         cur_img_depth_torch = cur_img_depth_torch.permute(2,0,1) # 1, H, W
                     
@@ -1210,15 +1210,19 @@ class SLAMDataset():
 
             if(cam_img.foundation_mask is not None):
                 instance_ids_cam_name[cam_name] = instance_ids
+            
 
             # Save depth image [uncomment later]
             dir_path = f"{self.config.pc_path}camera_{cam_name}/depth"
             os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
 
             frame_id_in_folder = self.config.begin_frame + cam_img.frame_id * self.config.step_frame # global frame_id
-            save_path_depth = os.path.join(dir_path, f"depth_{frame_id_in_folder:010d}.png")
-            vutils.save_image(depth_map_torch, save_path_depth)
-            
+            save_path_depth = os.path.join(dir_path, f"depth_{frame_id_in_folder:010d}.npy")
+
+            depth_map_np = depth_map_torch.squeeze(0).detach().cpu().unsqueeze(-1).numpy()  # [H, W, 1]
+
+            np.save(save_path_depth, depth_map_np)
+            #vutils.save_image(depth_map_torch, save_path_depth)
 
             #cam_img.set_depth_img(depth_map_torch) # [comment later]
         

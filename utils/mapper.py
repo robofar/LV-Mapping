@@ -1108,7 +1108,7 @@ class Mapper:
                 T1 = get_time()
 
                 cur_img_idx = torch.randperm(pool_size)[0] # random_camera_viewpoint_index
-                viewpoint_cam: CamImage = self.cam_pool[cur_img_idx]
+                #viewpoint_cam: CamImage = self.cam_pool[cur_img_idx]
                 viewpoint_cam: CamImage = copy.deepcopy(self.cam_pool[cur_img_idx]) # deep copy so it does not affect the original camera object in camera pool
                 viewpoint_cam.move_to_device()
                 weight_down_rate = 1.0 # ?
@@ -1125,6 +1125,7 @@ class Mapper:
                     binary_mask = viewpoint_cam.binary_mask
                 else:
                     binary_mask = torch.ones_like(gt_depth_image)
+
 
                 
                 '''
@@ -1158,6 +1159,11 @@ class Mapper:
                 plt.show()
                 '''
 
+                # uncomment and try
+                gt_rgb_image = gt_rgb_image * binary_mask
+                gt_depth_image = gt_depth_image * binary_mask
+                
+
                 T2 = get_time()
 
                 self.neural_points.reset_local_map(viewpoint_cam.camera_center) # use either local map or global map. In render, anyways only neural points in current FoV will be used for spawning Gaussians
@@ -1190,15 +1196,26 @@ class Mapper:
                 T3 = get_time()
 
                 # rendered results
-                rendered_rgb_image = render_pkg["render"] # 3, H, W 
+                rendered_rgb_image = render_pkg["render"] # 3, H, W  # rendered rgb
                 rendered_normal = render_pkg['rend_normal'] # 3, H, W # rendered normal
                 rendered_depth = render_pkg["surf_depth"] # 1, H, W # rendered depth
                 depth_normal = render_pkg['surf_normal'] # 3, H, W # calculated from the depth map (depth --> normal), D2N
                 rendered_alpha = render_pkg["rend_alpha"] # 1, H, W accumulated opacity 
                 dist_distortion = render_pkg["rend_dist"] # depth distortion # 1, H, W 
 
+                # uncomment and try
+                rendered_rgb_image = rendered_rgb_image * binary_mask
+                rendered_normal = rendered_normal * binary_mask
+                rendered_depth = rendered_depth * binary_mask
+                depth_normal = depth_normal * binary_mask
+                rendered_alpha = rendered_alpha * binary_mask
+                if dist_distortion is not None:
+                    dist_distortion = dist_distortion * binary_mask
+                
+
                 # Gaussians information
                 visible_mask = render_pkg["visibility_filter"] # gaussian visibility mask, this is for the spawned gaussians (include those sorrounding part)
+
                 
                 # these are only for those spawned gaussians in the local map
                 if "local_view_gaussian_count" in list(render_pkg.keys()):
@@ -1233,6 +1250,8 @@ class Mapper:
                 gaussian_count_per_point = self.gaussian_xyz_mlp.out_k
 
                 # alpha_valid_part = alpha_all[gaussian_alpha_mask]
+                
+                
 
                 T3_1 = get_time()
 
@@ -1242,11 +1261,12 @@ class Mapper:
                 #     rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) 
                 # if depth_normal is not None:
                 #     depth_normal = torch.nn.functional.normalize(depth_normal, dim=0) 
+
                 
                 
                 T3_2 = get_time()
 
-                # ----------------
+                # ---------------- [masking done]
                 # Sky mask loss
                 sky_loss = 0.0
                 if viewpoint_cam.sky_mask_on: 
@@ -1278,7 +1298,7 @@ class Mapper:
 
                 T3_3 = get_time()
 
-                # ----------------
+                # ---------------- [masking done]
                 # RGB rendering loss (combining L1 and SSIM), slow part
 
                 # special issue for ipb car dataset (rear camera, remove the ego-car part for loss calculation)
@@ -1304,7 +1324,7 @@ class Mapper:
 
                 T3_4 = get_time()
 
-                # ----------------
+                # ---------------- [masking done]
                 # Depth rendering loss
                 depth_loss = 0.0
                 valid_depth_mask = None
@@ -1328,7 +1348,7 @@ class Mapper:
 
                 T3_5 = get_time()
 
-                # ----------------
+                # ---------------- [masking done]
 
                 # Regularization losses
                 # this normal consistency regularization loss seems to have some problem, figure it out (FIXME)
@@ -1829,7 +1849,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_static_sampling"
+            save_folder = "eval_images_test_with_binary_mask"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
@@ -2119,6 +2139,7 @@ class Mapper:
                                 valid_depth_mask = valid_depth_mask & accu_alpha_mask
                                             
                             diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs
+
                             # diff_depth[~valid_depth_mask] = 0.0
                             diff_depth_masked = diff_depth[valid_depth_mask].detach().cpu().numpy()
                             cur_depth_l1 = np.mean(diff_depth_masked)
@@ -2253,7 +2274,6 @@ class Mapper:
             print("Average PSNR  ↑ :", f"{psnr_np:.3f}")
             print("Average SSIM  ↑ :", f"{ssim_np:.3f}")
             print("Average LPIPS ↓ :", f"{lpips_np:.3f}")
-
 
         if len(self.depth_rmse_list) > 0:
             depthl1_np = np.mean(np.array(self.depthl1_list))

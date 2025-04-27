@@ -370,31 +370,9 @@ def run_pin_slam(
     print(colors_torch.shape)
     print(static_timestamps.shape)
 
-    print(mapper.cam_pool[0].rgb_image.shape)
-    if mapper.cam_pool[0].depth_image is not None:
-        print("There is a depth image")
-        print(mapper.cam_pool[0].depth_image.shape)
-        print(mapper.cam_pool[0].depth_on)
-    else:
-        print("No depth image in the pool")
-    
-    if mapper.cam_pool[0].binary_mask is not None:
-        print("There is a binary mask")
-        print(mapper.cam_pool[0].binary_mask.shape)
-        print(mapper.cam_pool[0].binary_mask_on)
-    else:
-        print("No binary mask in the pool")
-    
-    if mapper.cam_pool[0].foundation_mask is not None:
-        print("There is a foundation mask")
-        print(mapper.cam_pool[0].foundation_mask.shape)
-        print(mapper.cam_pool[0].foundation_mask_on)
-    else:
-        print("No foundation mask in the pool")
-
 
     # Initializing Neural Grid
-    print("Map intitialization...")
+    print("Neural Map Intitialization...")
     mapper.map_initialization(points_torch, colors_torch, static_timestamps)
     mapper.static_map_points = points_torch
     mapper.static_map_colors = colors_torch
@@ -409,13 +387,13 @@ def run_pin_slam(
 
     remove_gpu_cache()
     print("SDF Training...")
-    mapper.mapping(20) # config.iters * config.init_iter_ratio
+    mapper.mapping(2000) # config.iters * config.init_iter_ratio
 
     remove_gpu_cache()
     print("GSDF Training...")
     print(f"There are {len(mapper.cam_pool)} images in the pool")
     #mapper.joint_gsdf_mapping(config.gs_iters * len(mapper.cam_pool)) # 10000
-    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 110) # 22000
+    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 100) # 22000
 
     # VI. Save results
     remove_gpu_cache()
