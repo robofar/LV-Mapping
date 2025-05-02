@@ -3,7 +3,7 @@ import os
 import sys
 
 # Path to images directory
-image_folder = "eval_images_static_sampling"
+image_folder = "eval_images_static_sampling_binary_mask_no_sdf_consistency"
 
 video_paths = ["front_normal_2.mp4", "left_normal_2.mp4", "right_normal_2.mp4", "rear_normal_2.mp4"] # namesof videos
 ends_with = ["front_normal_2.png", "left_normal_2.png", "right_normal_2.png", "rear_normal_2.png"] # names of photos

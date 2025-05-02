@@ -267,6 +267,10 @@ def run_pin_slam(
     print(f"Freeze SDF decoders after {config.freeze_after_iter_sdf} iterations")
     print(f"Freeze Gaussian decoders after {config.freeze_after_iter_gaussians} iterations")
     print(f"Using data pool for SDF training: {config.use_pool}")
+    print(f"SDF Lambda: {config.lambda_sdf}")
+    print(f"SDF Consistency Lambda: {config.lambda_sdf_cons}")
+    print(f"SDF Normal Consistency Lambda: {config.lambda_sdf_normal_cons}")
+    print(f"Depth and normal consistency: {config.lambda_normal_depth_consist}")
 
     mapper.load_gt_poses()
     #pcd_sequence = o3d.geometry.PointCloud()
@@ -387,13 +391,13 @@ def run_pin_slam(
 
     remove_gpu_cache()
     print("SDF Training...")
-    mapper.mapping(2000) # config.iters * config.init_iter_ratio
+    mapper.mapping(10000) # config.iters * config.init_iter_ratio
 
     remove_gpu_cache()
     print("GSDF Training...")
     print(f"There are {len(mapper.cam_pool)} images in the pool")
     #mapper.joint_gsdf_mapping(config.gs_iters * len(mapper.cam_pool)) # 10000
-    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 100) # 22000
+    mapper.joint_gsdf_mapping(len(mapper.cam_pool) * 100) # 20000
 
     # VI. Save results
     remove_gpu_cache()
