@@ -75,11 +75,11 @@ gs:
   # lambda_invalid_opacity: 1e-3 # TODO
   lambda_area: 1e-3 # 2e-4 # 1e-3 # test turning on this (TODO)
   # consist_normal_fixed: True # TODO
-  lambda_normal_depth: 0.0 # # better to be off
+  lambda_normal_depth: 0.01 # # better to be off
   consist_shift_count: 0 # not for ipb car set, on for oxford
-  lambda_sdf_cons: 0.0 # 0.05
-  lambda_sdf_normal_cons: 0.0 # 0.05
-  lambda_sdf: 0.0 # 0.5 # what should this value be like # I don't know # 1.0
+  lambda_sdf_cons: 0.02 # 0.05
+  lambda_sdf_normal_cons: 0.02 # 0.05
+  lambda_sdf: 0.5 # 0.5 # what should this value be like # I don't know # 1.0
   min_alpha: 0.05 # TODO # 0.05
   # displacement_range_ratio: 5.0 
   # max_scale_ratio: 5.0

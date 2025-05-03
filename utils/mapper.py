@@ -1366,7 +1366,6 @@ class Mapper:
                 # Normal-Depth consistency regularization loss
                 normal_depth_consist_loss = 0.0
                 if rendered_normal is not None and depth_normal is not None and self.config.lambda_normal_depth_consist > 0.0:
-                    print("d2n")
                     depth_normal_norm = depth_normal.norm(2, dim=0).detach()
                     normal_valid_mask = (rendered_normal_norm > 0) & (depth_normal_norm > 0)
                     if self.config.gs_consist_normal_fixed:
@@ -1518,8 +1517,6 @@ class Mapper:
                     
                     # Gaussian SDF consistency loss
                     if self.config.lambda_sdf_normal_cons > 0 or self.config.lambda_sdf_cons > 0:
-
-                        print("here consistency")
                         
                         sampled_guassians_xyz = gaussian_xyz[sampled_indices]
                         sampled_guassians_normals = rotation2normal(gaussian_rot[sampled_indices]) # N, 3 # this is definitely normalized
@@ -1615,7 +1612,6 @@ class Mapper:
                 color_loss = 0.0
 
                 if sdf_loss_on and self.config.lambda_sdf > 0.0:
-                    print("here sdf loss")
                     if self.config.use_pool:
                         # with batch size bs (this is done for all the sdf samples in the local map)
                         coord, sdf_label, ts, _, sem_label, color_label, weight = self.get_batch()
