@@ -1196,6 +1196,7 @@ class NeuralPoints(nn.Module):
 
         neural_pc_o3d = o3d.geometry.PointCloud()
 
+        # Points XYZ
         if query_global:
             neural_points_np = (
                 self.neural_points[::random_down_ratio]
@@ -1214,6 +1215,7 @@ class NeuralPoints(nn.Module):
                 .astype(np.float64)
             )
 
+        # Points RGB
         if color_mode == 0 and (self.point_colors is not None): # raw color
             if query_global:
                 point_colors_np = (

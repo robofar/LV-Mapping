@@ -50,6 +50,9 @@ from fused_ssim import fused_ssim
 from gs_gui import slam_gui
 from gs_gui.gui_utils import VisPacket, ParamsGUI
 
+import pypatchworkpp
+import copy
+
 # TODO
 
 '''
@@ -83,6 +86,7 @@ parser.add_argument('--render_down_rate', type=int, default=-1, help='Down rate 
 args, unknown = parser.parse_known_args()
 
 def inspect_pings_map():
+    
 
     experiment_path = args.experiment_path
 
@@ -95,6 +99,8 @@ def inspect_pings_map():
     
     config = Config()
     config.load(yaml_files[0])
+    config.MOT = False # should be false by default to be able to load saved depth and binary masks
+    print(f"config.MOT: {config.MOT}")
 
     model_path = os.path.join(experiment_path, "model", "pin_map.pth")
 
@@ -122,9 +128,11 @@ def inspect_pings_map():
     if args.input_path is not None:
         config.pc_path = args.input_path
 
+    '''
     print("Please provide the path to the result folder.\n\
             Try: python inspect_pings.py xxx/result/path\
             [optional: -f center_frame]")
+    '''
 
     # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_11-46-52 -g
     # example: python inspect_pings.py ./experiments/test_ipbcar_gs_ipb_car__2024-10-25_13-31-54 -f 10
@@ -219,7 +227,8 @@ def inspect_pings_map():
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
         gui_process.start()
-        time.sleep(2) # second
+        time.sleep(20) # second
+    
 
     # default case, we use the pose file of the experiment run (then it would be the train & interpolation test views)
     if args.pose_path is None or (not os.path.exists(args.pose_path)):
@@ -228,34 +237,49 @@ def inspect_pings_map():
             pose_path_used = os.path.join(experiment_path, "gt_poses_kitti.txt")
     else:
         pose_path_used = args.pose_path
+    
+
+    print(f"Pose path used: {pose_path_used}")
+
+    # Patchwork++ initialization
+    params = pypatchworkpp.Parameters()
+    params.verbose = False
+    PatchworkPLUSPLUS = pypatchworkpp.patchworkpp(params)
 
     # dataset
-    dataset = SLAMDataset(config)
+    dataset = SLAMDataset(config, PatchworkPLUSPLUS)
     # print(dataset.cam_names)
 
     config.pose_path = pose_path_used # but how is this used?
     poses_used = read_kitti_format_poses(pose_path_used)
 
+    print(f"poses_used len: {len(poses_used)}") # list of numpy matrices
+
     if args.eval_seq:
-        poses_for_render = dataset.gt_poses # need to guarantee gt_poses exist
+        poses_for_render = dataset.gt_poses # need to guarantee gt_poses exist (poses only from frames that were used for training (NOT all and NOT one specified by --range flag !!!))
         print("Evaluate the map built by the experiment {}".format(experiment_path))
     else:
-        poses_for_render = poses_used
+        poses_for_render = poses_used # all poses 9341
+    
+    print(f"poses_for_render len: {len(poses_for_render)}") # list of numpy matrices
 
     if args.range is not None:
         frame_begin, frame_end, frame_step = args.range
         poses_for_render_show = poses_for_render[frame_begin:frame_end]
     else:
         poses_for_render_show = poses_for_render
+    
 
-    # reset neural points
+    print(f"poses_for_render_show len: {len(poses_for_render_show)}") # list of numpy matrices
+
+    # reset neural points (maybe change this so that it uses poses_for_render or poses_for_render_show check later)
     center_frame_id = int(args.center_frame_id)
     frame_count = len(poses_used)
     center_frame_id = min(center_frame_id, frame_count-1)
-    ref_pose = torch.tensor(poses_used[center_frame_id], device=config.device, dtype=config.dtype)
-    ref_position = ref_pose[:3,3]
+    #ref_pose = torch.tensor(poses_used[center_frame_id], device=config.device, dtype=config.dtype)
+    #ref_position = ref_pose[:3,3]
 
-    neural_points.recreate_hash(ref_position, with_ts=False)
+    #neural_points.recreate_hash(ref_position, with_ts=False)
 
     # mesh reconstructor
     mesher = Mesher(config, neural_points, mlp_dict)
@@ -283,6 +307,7 @@ def inspect_pings_map():
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, mesh_vox_size_m, out_mesh_path, False, False, \
                                                     config.color_on, filter_isolated_mesh=True, mesh_min_nn=mesh_min_nn_k_used)
 
+        print(cur_mesh)
         if not args.vis_off and cur_mesh is not None:
             packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
             packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
@@ -297,6 +322,8 @@ def inspect_pings_map():
         cam_names = ["free_cam"]
     else:
         cam_names = dataset.cam_names 
+    
+    print(cam_names)
 
     # used_poses
     if args.render_video or args.recon_3d or args.eval_seq:
@@ -316,7 +343,7 @@ def inspect_pings_map():
             q_main2vis=q_main2vis, 
             q_vis2main=q_vis2main)
     
-    neural_points.recreate_hash(ref_position, with_ts=False)
+    #neural_points.recreate_hash(ref_position, with_ts=False)
 
     if not args.vis_off:
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
@@ -330,6 +357,7 @@ def inspect_pings_map():
             if not q_vis2main.empty():
                 while q_vis2main.get().flag_pause:
                     continue
+    
 
 
 
@@ -346,12 +374,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                       mesh_save_base_path: str = None,
                       eval_down_rate: int = 0, 
                       normal_in_world_frame: bool = True,
-                      normal_with_alpha: bool = True,
+                      normal_with_alpha: bool = False, # False - gray sky (aka normal_2)
                       tsdf_fusion_voxel_size: float = None,
                       tsdf_fusion_max_range: float = None,
                       tsdf_fusion_space_carving_on: bool = False,
                       lpips_eval_on: bool = True,
-                      pc_cd_eval_on: bool = True,
+                      pc_cd_eval_on: bool = False,
                       q_main2vis=None, 
                       q_vis2main=None,
                       ):
@@ -385,7 +413,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     #                                     sdf_trunc,
     #                                     space_carving_on)
 
-
+    gt_rgb_cam_dict = {}
     rendered_rgb_cam_dict = {}
     rendered_depth_cam_dict = {}
     rendered_normal_cam_dict = {}
@@ -424,6 +452,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
     for cur_cam_name in cam_list: 
         # initialize lists for video
+        gt_rgb_cam_dict[cur_cam_name] = []
         rendered_rgb_cam_dict[cur_cam_name] = []
         rendered_depth_cam_dict[cur_cam_name] = []
         rendered_normal_cam_dict[cur_cam_name] = []
@@ -464,12 +493,19 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     frame_end = -1
     frame_step = 1
 
+
     if args.range is not None:
         frame_begin, frame_end, frame_step = args.range
+    
+
+    print(frame_begin)
+    print(frame_end)
+    print(frame_count)
 
     frame_end = min(frame_count, frame_end)
 
     for frame_id in tqdm(range(frame_begin, frame_end, frame_step), desc="Render views along the trajectory"):
+        print(f"Frame ID: {frame_id}")
         remove_gpu_cache()
 
         T_w_l_np = view_poses[frame_id] # for the usual case, we use LiDAR pose and a preset camera-LiDAR calibration
@@ -478,47 +514,61 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         cur_frame_position_np = T_w_l_np[:3,3]
         cur_frame_position_torch = T_w_l[:3,3]
 
+
+        '''
         if frame_id % 100 == 0:
             neural_points.recreate_hash(cur_frame_position_torch, kept_points=True, with_ts=False) # and at the same time reset local map
         else:
             neural_points.reset_local_map(cur_frame_position_torch, cur_ts=frame_id)
+        '''
 
-        neural_points_data, sorrounding_neural_points_data = neural_points.gather_local_data()
-    
-        sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
-                    decoders, None, cur_frame_position_torch,
-                    dist_concat_on=config.dist_concat_on, 
-                    view_concat_on=config.view_concat_on, 
-                    scale_filter_on=True,
-                    z_far=config.sorrounding_map_radius,
-                    learn_color_residual=config.learn_color_residual,
-                    gs_type=config.gs_type,
-                    displacement_range_ratio=config.displacement_range_ratio,
-                    max_scale_ratio=config.max_scale_ratio,
-                    unit_scale_ratio=config.unit_scale_ratio)
+        neural_points.reset_local_map(cur_frame_position_torch)
+        neural_points_data, sorrounding_neural_points_data = neural_points.gather_local_data(with_sorroundings=True)
+
+        # spawning gaussians for sorrounding map
+        sorrounding_spawn_results = None
+        if sorrounding_neural_points_data is not None:
+            print(f"Sorrounding neural points data is NOT None, spawn sorrounding map")
+            sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
+                        decoders, None, cur_frame_position_torch,
+                        dist_concat_on=config.dist_concat_on, 
+                        view_concat_on=config.view_concat_on, 
+                        scale_filter_on=True,
+                        z_far=config.sorrounding_map_radius,
+                        learn_color_residual=config.learn_color_residual,
+                        gs_type=config.gs_type,
+                        displacement_range_ratio=config.displacement_range_ratio,
+                        max_scale_ratio=config.max_scale_ratio,
+                        unit_scale_ratio=config.unit_scale_ratio)
+        
         
         # may not load images
         # print("Begin data loading")
-        dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=config.monodepth_on) 
+        dataset.init_temp_data()
+        dataset.read_frame_with_loader(frame_id, init_pose = True, use_image=config.gs_on, monodepth_on=config.monodepth_on) 
         # print("Data loading done")
 
         cur_frame_measured_pcd_o3d = None
 
         tran_in_frame = None
 
-        if eval_on:
+        # not going to be executed for now
+        if eval_on and pc_cd_eval_on:
+            '''
             dataset.filter_and_correct()
 
             # deskew and reset depth map
             if config.deskew and frame_id > 0:
                 tran_in_frame = dataset.get_tran_in_frame(frame_id)
                 dataset.deskew_at_frame(tran_in_frame)
+            '''
+            dataset.preprocess_frame() # includes preprocessing, deskewing and downsampling
 
             if not dataset.is_rgbd:
-                dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) 
+                dataset.project_pointcloud_to_cams(None, use_only_colorized_points=True, use_odom_tran=False) 
     
             if pc_cd_eval_on:
-                cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
+                cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud() # measured
 
                 cur_frame_measured_xyz_np = (
                     dataset.cur_point_cloud_torch[:,:3].detach().cpu().numpy().astype(np.float64)
@@ -532,7 +582,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                 cur_frame_measured_pcd_o3d.transform(T_w_l_np)
 
-        cur_frame_rendered_pcd_o3d = None
+        cur_frame_rendered_pcd_o3d = None # rendered
         if recon_3d_on:
             cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
@@ -571,7 +621,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 T_w_c = T_w_l_cam_ts @ torch.linalg.inv(T_c_l) # need to convert to cam frame
 
                 # you need to also load the camera exposure coefficients here
-                cur_view_cam: CamImage = dataset.cur_cam_img[cur_cam_name]
+                cur_view_cam: CamImage = copy.deepcopy(dataset.cur_cam_img[cur_cam_name])
+                cur_view_cam.move_to_device()
                 cur_view_cam.set_pose(T_w_c)
         
                 gt_rgb_image = cur_view_cam.rgb_image
@@ -580,6 +631,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     gt_depth_image = cur_view_cam.depth_image
                     valid_depth_mask = (gt_depth_image > eval_depth_min) & (gt_depth_image < eval_depth_max)
 
+            # not executed for now
             if eval_on and config.gs_eval_cam_refine_on and gt_rgb_image is not None:
 
                 opt = setup_optimizer(config, cams = [cur_view_cam])
@@ -650,7 +702,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                     if converged:
                         break     
-
+            
             # current values
             render_pkg = render(cur_view_cam, None, neural_points_data, 
                 decoders, sorrounding_spawn_results, background, 
@@ -667,15 +719,19 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 unit_scale_ratio=config.unit_scale_ratio,
                 verbose=args.log_on)
             
+            
             # rendered results
             # TODO: add rendered Ellipsoid
             if render_pkg is not None:
                 rendered_rgb_image, rendered_depth, rendered_normal, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_normal"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
                 
-                # rgb 
+                # rgb (rendered and gt)
                 rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
                 rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
+                gt_rgb_image = torch.clamp(gt_rgb_image, 0, 1)
+                gt_rgb_np = (gt_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
                 if save_video_on:
+                    gt_rgb_cam_dict[cur_cam_name].append(gt_rgb_np)
                     rendered_rgb_cam_dict[cur_cam_name].append(rendered_rgb_np)
 
                 alpha_mask = None
@@ -783,6 +839,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                     # TODO
 
+            # not executed for now
             if recon_3d_on:
                 
                 cur_frame_rendered_pcd_o3d.transform(T_w_l_np) # convert to world frame
@@ -813,6 +870,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     if args.log_on:
                         print("TSDF fusion done")
 
+        # not executed for now
         if vis_on:
             if q_main2vis is not None:
                     # add the eval frame to vis
@@ -840,7 +898,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 if not q_vis2main.empty():
                     while q_vis2main.get().flag_pause:
                         continue
-
+    
     if eval_on:
         
         cam_count = len(dataset.cam_names) # better to also compute for each cam
@@ -909,7 +967,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         print("Write the evaluation to: ", gs_output_csv_path)
 
-
+    # not for now
     if recon_3d_tsdf_on:
 
         # Extract triangle mesh (numpy arrays)
@@ -939,9 +997,14 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         dt = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
         for cur_cam_name in cam_list: 
+            cur_gt_rgb_list = gt_rgb_cam_dict[cur_cam_name]
             cur_rendered_rgb_list = rendered_rgb_cam_dict[cur_cam_name]
             # cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
             cur_rendered_normal_list = rendered_normal_cam_dict[cur_cam_name]
+
+            if len(cur_gt_rgb_list) > 0:
+                cur_gt_rgb_video_save_path = os.path.join(video_save_base_path, "gt_rgb_{}_{}.mp4".format(cur_cam_name, dt))
+                save_video_np(cur_gt_rgb_list, cur_gt_rgb_video_save_path)
 
             if len(cur_rendered_rgb_list) > 0:
                 cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}_{}.mp4".format(cur_cam_name, dt))
@@ -957,6 +1020,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
             # free the lists
             rendered_rgb_cam_dict[cur_cam_name] = []
+            gt_rgb_cam_dict[cur_cam_name] = []
             # rendered_depth_cam_dict[cur_cam_name] = []
             rendered_normal_cam_dict[cur_cam_name] = []
 
@@ -965,6 +1029,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     
 if __name__ == "__main__":
     inspect_pings_map()
+    print("Done...")
 
 
 

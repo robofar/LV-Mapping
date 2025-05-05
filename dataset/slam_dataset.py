@@ -1034,7 +1034,6 @@ class SLAMDataset():
 
     # would be same as calling deskew_at_frame(self.last_odom_tran_torch)
     def deskew_scan(self):
-
         self.cur_point_cloud_torch = deskewing(
             self.cur_point_cloud_torch,
             self.cur_point_ts_torch,
@@ -1159,7 +1158,7 @@ class SLAMDataset():
 
         return cur_cam_ref_ts_ratio
 
-    def project_pointcloud_to_cams(self, dynamic, use_only_colorized_points: bool = False, use_odom_tran = False):
+    def project_pointcloud_to_cams(self, dynamic = None, use_only_colorized_points: bool = False, use_odom_tran = False):
         # done after deskewing
         # to get a refined depth map and colorized point cloud
 
@@ -1254,32 +1253,32 @@ class SLAMDataset():
                 self.cur_sem_labels_torch = self.cur_sem_labels_torch[with_rgb_mask]
                 self.cur_sem_labels_full = self.cur_sem_labels_full[with_rgb_mask]
         
+        if dynamic is not None:
+            # Convert to world frame
+            cur_point_cloud_world_torch = torch.zeros_like(self.cur_point_cloud_torch)
+            cur_point_cloud_world_torch[:,:3] = transform_torch(self.cur_point_cloud_torch[:,:3], self.cur_pose_torch) # xyz
+            cur_point_cloud_world_torch[:,3:] = self.cur_point_cloud_torch[:,3:] # rgb
 
-        # Convert to world frame
-        cur_point_cloud_world_torch = torch.zeros_like(self.cur_point_cloud_torch)
-        cur_point_cloud_world_torch[:,:3] = transform_torch(self.cur_point_cloud_torch[:,:3], self.cur_pose_torch) # xyz
-        cur_point_cloud_world_torch[:,3:] = self.cur_point_cloud_torch[:,3:] # rgb
+            # Convert normals to world frame if you decide to use them, then send them to dynamic, and save them also so you have normals
 
-        # Convert normals to world frame if you decide to use them, then send them to dynamic, and save them also so you have normals
+            # Fill dynamic (I have to iterate thgough all cameras because of filtering above)
 
-        # Fill dynamic (I have to iterate thgough all cameras because of filtering above)
+            # 1. Store out of FOV points (need data from all 4 cameras. points that has -1 instance id in all cameras are outside FOV)
+            # Stack all instance ID arrays into a 2D array: shape = (num_cameras, num_points)
+            all_instance_ids = torch.stack([instance_ids_cam_name[cam_name] for cam_name in cur_cam_names], dim=0) # purpose just for creating outside_fov_mask
+            outside_fov_mask = (all_instance_ids == -1).all(dim=0).squeeze(1)  # shape: (num_points,)
 
-        # 1. Store out of FOV points (need data from all 4 cameras. points that has -1 instance id in all cameras are outside FOV)
-        # Stack all instance ID arrays into a 2D array: shape = (num_cameras, num_points)
-        all_instance_ids = torch.stack([instance_ids_cam_name[cam_name] for cam_name in cur_cam_names], dim=0) # purpose just for creating outside_fov_mask
-        outside_fov_mask = (all_instance_ids == -1).all(dim=0).squeeze(1)  # shape: (num_points,)
+            dynamic.append_outside_fov_points(cur_point_cloud_world_torch, outside_fov_mask, points_timestamp)
 
-        dynamic.append_outside_fov_points(cur_point_cloud_world_torch, outside_fov_mask, points_timestamp)
+            # 2. >=0 (-1 not gonna be processed in append_instance_points function)
+            for cam_name in cur_cam_names:
+                cam_img: CamImage = self.cur_cam_img[cam_name]
+                point_instance_ids = instance_ids_cam_name[cam_name] # instance id for every point in point cloud for that camera
 
-        # 2. >=0 (-1 not gonna be processed in append_instance_points function)
-        for cam_name in cur_cam_names:
-            cam_img: CamImage = self.cur_cam_img[cam_name]
-            point_instance_ids = instance_ids_cam_name[cam_name] # instance id for every point in point cloud for that camera
-
-            if(cam_img.foundation_mask is not None): # or if instance_ids is not None, whatever
-                # Add points to dynamic dictionary
-                unique_ids = torch.unique(point_instance_ids, sorted=True)
-                dynamic.append_instance_points(cur_point_cloud_world_torch, point_instance_ids, unique_ids, cam_name, self.cur_ground_mask_torch, points_timestamp)
+                if(cam_img.foundation_mask is not None): # or if instance_ids is not None, whatever
+                    # Add points to dynamic dictionary
+                    unique_ids = torch.unique(point_instance_ids, sorted=True)
+                    dynamic.append_instance_points(cur_point_cloud_world_torch, point_instance_ids, unique_ids, cam_name, self.cur_ground_mask_torch, points_timestamp)
 
 
     def update_poses_after_pgo(self, pgo_poses):

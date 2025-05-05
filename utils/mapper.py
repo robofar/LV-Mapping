@@ -1850,7 +1850,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_static_sampling_binary_mask_no_sdf_consistency"
+            save_folder = "eval_images_delete"
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 

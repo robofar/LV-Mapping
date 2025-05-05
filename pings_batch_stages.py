@@ -258,6 +258,7 @@ def run_pin_slam(
 
     print("Some config info:")
     print(f"GS On: {config.gs_on}")
+    print(f"Color On: {config.color_on}")
     print(f"Dynamic Filtering using SDF: {config.dynamic_filter_on}")
     print(f"GS Invalid Check (neural_points.valid_gs_mask): {config.gs_invalid_check_on}")
     print(f"Estimating Normal for Input PointCloud: {config.estimate_normal}")
@@ -411,15 +412,20 @@ def run_pin_slam(
     
 
     remove_gpu_cache()
-    color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+    color_mode_for_neural_point_output = 5 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
 
     if config.save_map:
         remove_gpu_cache()
-        print("Saving neural point map")
+        print("Saving neural points as PointCloud .ply file in map subdirectory...")
         neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
         print(f"save the neural point map to {neural_points_path}")
+
+        print("Saving neural points and MLPs in model subdirectory...")
+        save_implicit_map(run_path, neural_points, mlp_dict)
+
+
     if config.save_mesh and cur_mesh is None:
         remove_gpu_cache()
         print("Saving mesh...")
