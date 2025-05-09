@@ -1,3 +1,7 @@
+
+gl_issue = True # if your computer has some issue working with OpenGL, set this to True
+
+
 from typing import Dict, List, Tuple
 import pathlib
 import threading
@@ -6,7 +10,7 @@ from datetime import datetime
 
 import cv2
 import os
-import glfw
+
 import matplotlib.cm as cm
 import numpy as np
 import copy
@@ -15,40 +19,42 @@ import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import torch
 import torch.nn.functional as F
-from OpenGL import GL as gl
-# from brisque import BRISQUE
 
 from pickle import load, dump
 
+# from brisque import BRISQUE
 
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gaussian_splatting.utils.image_utils import psnr
-from gs_gui.gl_render import util, util_gau
-from gs_gui.gl_render.render_ogl import OpenGLRenderer
+from gaussian_splatting.utils.cameras import CamImage
 from gs_gui.gui_utils import (
     VisPacket,
     ControlPacket,
     create_frustum,
     cv_gl,
-    get_latest_queue,
+    get_latest_queue,   
 )
-# from utils.camera_utils import Camera
-from gaussian_splatting.utils.cameras import CamImage
-# from utils.logging_utils import Log
 
-from utils.tools import colorize_depth_maps, seed_anything, get_time, remove_gpu_cache
+if not gl_issue:
+    from OpenGL import GL as gl
+    import glfw
+    from gs_gui.gl_render import util, util_gau
+    from gs_gui.gl_render.render_ogl import OpenGLRenderer
+    os.environ["PYOPENGL_PLATFORM"] = "osmesa"
+
+from utils.tools import colorize_depth_maps, seed_anything, get_time, remove_gpu_cache, find_closest_prime
 
 # o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
-YELLOW = np.array([1, 0.706, 0])
 RED = np.array([255, 0, 0]) / 255.0
 PURPLE = np.array([238, 130, 238]) / 255.0
 BLACK = np.array([0, 0, 0]) / 255.0
-GOLDEN = np.array([1.0, 0.843, 0.0])
+GOLDEN = np.array([255, 215, 0]) / 255.0
+SILVER = np.array([192, 192, 192]) / 255.0
 GREEN = np.array([0, 128, 0]) / 255.0
 BLUE = np.array([0, 0, 128]) / 255.0
-LIGHTBLUE = np.array([0.00, 0.65, 0.93])
+LIGHTBLUE = np.array([0, 166, 237]) / 255.0
 
 ToGLCamera = np.array([
     [1,  0,  0,  0],
@@ -59,9 +65,6 @@ ToGLCamera = np.array([
 FromGLGamera = np.linalg.inv(ToGLCamera)
 
 
-os.environ["PYOPENGL_PLATFORM"] = "osmesa"
-
-no_gl_issue = False
 
 class SLAM_GUI:
     def __init__(self, params_gui=None):
@@ -87,11 +90,21 @@ class SLAM_GUI:
         self.kf_window = None
         self.render_img = None
 
-        self.brisque_score_on = False # turn this off for now
+        self.show_rendered_img = True
+
+        self.brisque_score_on = False # this is deprecated
 
         self.neural_point_vis_down_rate = 1
 
         self.frustum_size = 0.05
+
+        self.local_map_default_on = True
+        self.mesh_default_on = False
+        self.sdf_default_on = False
+        self.neural_point_map_default_on = False
+        self.robot_default_on = True
+        self.neural_point_color_default_mode = 1
+        self.neural_point_vis_down_rate = 1
 
         if params_gui is not None:
             self.decoders = params_gui.decoders
@@ -102,12 +115,14 @@ class SLAM_GUI:
             self.config = params_gui.config
             self.gs_default_on = params_gui.gs_default_on
             self.robot_default_on = params_gui.robot_default_on
-            self.neural_point_default_on = params_gui.neural_point_default_on
+            self.neural_point_map_default_on = params_gui.neural_point_map_default_on
             self.mesh_default_on = params_gui.mesh_default_on
+            self.sdf_default_on = params_gui.sdf_default_on
             self.neural_point_color_default_mode = params_gui.neural_point_color_default_mode
             self.is_rgbd = params_gui.is_rgbd
             self.neural_point_vis_down_rate = params_gui.neural_point_vis_down_rate
             self.frustum_size = params_gui.frustum_size
+            self.local_map_default_on = params_gui.local_map_default_on
 
             
         if self.config is not None:
@@ -128,14 +143,12 @@ class SLAM_GUI:
 
         # these are only used for the elliopsoid rendering 
 
-        if no_gl_issue:
+        if not gl_issue:
       
             self.g_camera = util.Camera(self.window_h, self.window_w)
             self.window_gl = self.init_glfw() # this has no issue
 
-            # TODO: something wrong here with the glfw (just crash) after I use mini-forge
-            # exactly this line here
-
+            # something wrong here with the glfw (just crash) after I use mini-forge
             # solution:
             # os.environ["PYOPENGL_PLATFORM"] = "osmesa"
             # or set in your conda environment
@@ -151,16 +164,21 @@ class SLAM_GUI:
             self.gaussians_gl = util_gau.GaussianData(0, 0, 0, 0, 0)
 
         # screenshot saving path
-        self.save_path = "."
-        self.save_path = pathlib.Path(self.save_path)
-        self.save_path.mkdir(parents=True, exist_ok=True)
+        save_path = os.path.join(self.config.run_path, "log")
+        os.makedirs(save_path, 0o755, exist_ok=True)
+
+        self.save_dir_2d_screenshots = os.path.join(save_path, "2d_screenshots")
+        os.makedirs(self.save_dir_2d_screenshots, 0o755, exist_ok=True)
+
+        self.save_dir_3d_screenshots = os.path.join(save_path, "3d_screenshots")
+        os.makedirs(self.save_dir_3d_screenshots, 0o755, exist_ok=True)
 
         threading.Thread(target=self._update_thread).start()
 
     # has some issue here
     def init_widget(self):
-        # self.window_w, self.window_h = 1600, 900
-        self.window_w, self.window_h = 2560, 1600
+        self.window_w, self.window_h = 1600, 900
+        # self.window_w, self.window_h = 2560, 1600
 
         self.window = gui.Application.instance.create_window(
            "📍 PINGS Viewer", self.window_w, self.window_h
@@ -191,13 +209,15 @@ class SLAM_GUI:
         # scan
         self.scan_render = rendering.MaterialRecord()
         self.scan_render.shader = "defaultLit" # "defaultUnlit", "normals", "depth"
-        self.scan_render.point_size = 2 * self.window.scaling
+        self.scan_render_init_size_unit = 2
+        self.scan_render.point_size = self.scan_render_init_size_unit * self.window.scaling
         self.scan_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # neural points
         self.neural_points_render = rendering.MaterialRecord()
         self.neural_points_render.shader = "defaultLit"
-        self.neural_points_render.point_size = 4 * self.window.scaling
+        self.neural_points_render_init_size_unit = 3
+        self.neural_points_render.point_size = self.neural_points_render_init_size_unit * self.window.scaling
         self.neural_points_render.base_color = [0.9, 0.9, 0.9, 0.8]
 
         # sdf slice
@@ -218,8 +238,6 @@ class SLAM_GUI:
             self.mesh_render.shader = "defaultLit"
         else:
             self.mesh_render.shader = "normals" 
-        
-        # self.mesh_render.base_color = [0.5, 0.5, 0.5, 0.5]
 
         # trajectory
         self.traj_render = rendering.MaterialRecord()
@@ -245,7 +263,7 @@ class SLAM_GUI:
         self.cad_render.shader = "defaultLit"
         self.cad_render.base_color = [0.9, 0.9, 0.9, 1.0]
 
-        # deprecated
+        # deprecated, coordinate frame
         self.axis = o3d.geometry.TriangleMesh.create_coordinate_frame(
             size=0.5, origin=[0, 0, 0]
         )
@@ -295,7 +313,11 @@ class SLAM_GUI:
         
         self.panel = gui.Vert(0.5 * em, gui.Margins(margin))
 
-        # tabs.add_tab("Setting", tab_info) # FIXME
+        tab_margins = gui.Margins(0, int(np.round(0.5 * em)), 0, 0)
+
+        tabs0 = gui.TabControl()
+
+        tab_setting = gui.Vert(0.2 * em, tab_margins)
 
         slider_line = gui.Horiz(1.0 * em, gui.Margins(margin))
         
@@ -310,66 +332,63 @@ class SLAM_GUI:
         self.slider_render.set_on_clicked(self._on_vis_slider)
         slider_line.add_child(self.slider_render)
 
-        self.slider_recording = gui.ToggleSwitch("Pause / Resume Recording")
-        self.slider_recording.is_on = False # default off
-        slider_line.add_child(self.slider_recording)
+        # self.slider_recording = gui.ToggleSwitch("Pause / Resume Recording")
+        # self.slider_recording.is_on = False # default off
+        # slider_line.add_child(self.slider_recording)
 
+        tab_setting.add_child(slider_line)
 
-        self.panel.add_child(slider_line)
-
-        # self.panel.add_child(gui.Label("Viewpoint Options"))
+        # ------------------------------------------------------------
+        # View Options
+        collapse_view = gui.CollapsableVert("View Options", 0.2 * em,
+                                       gui.Margins(margin))
+        collapse_view.set_is_open(True) 
 
         viewpoint_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
-        vp_subtile1 = gui.Vert(0.5 * em, gui.Margins(margin))
-        vp_subtile2 = gui.Vert(0.5 * em, gui.Margins(margin))
-        vp_subtile3 = gui.Vert(0.5 * em, gui.Margins(margin))
-        vp_subtile4 = gui.Vert(0.5 * em, gui.Margins(margin))
-
-        # self.panel.add_child(h)
 
         ##Check boxes
-        vp_subtile1.add_child(gui.Label("Camera view options"))
-        chbox_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        self.local_map_chbox = gui.Checkbox("Local")
+        self.local_map_chbox.checked = self.local_map_default_on
+        viewpoint_tile.add_child(self.local_map_chbox)
         
         self.followcam_chbox = gui.Checkbox("Follow")
         self.followcam_chbox.checked = True
-        chbox_tile.add_child(self.followcam_chbox)
+        viewpoint_tile.add_child(self.followcam_chbox)
 
         self.staybehind_chbox = gui.Checkbox("Behind")
         self.staybehind_chbox.checked = True
-        chbox_tile.add_child(self.staybehind_chbox)
+        viewpoint_tile.add_child(self.staybehind_chbox)
 
         self.still_chbox = gui.Checkbox("Still")
-        self.still_chbox.checked = False
-        chbox_tile.add_child(self.still_chbox)
+        self.still_chbox.checked = True
+        viewpoint_tile.add_child(self.still_chbox)
 
         self.fly_chbox = gui.Checkbox("Fly")
         # NOTE: in fly mode, you can control like a game using WASD,Q,Z,E,R, up, right, left, down
         self.fly_chbox.checked = False
         self.fly_chbox.set_on_checked(self._set_mouse_mode)
-        chbox_tile.add_child(self.fly_chbox)
+        viewpoint_tile.add_child(self.fly_chbox)
         
-        vp_subtile1.add_child(chbox_tile)
+        collapse_view.add_child(viewpoint_tile)
+
+        viewpoint_tile_2 = gui.Horiz(0.2 * em, tab_margins)
 
         ##Combo panels for current frames
-        combo_tile = gui.Vert(0.5 * em, gui.Margins(margin))
-
+        combo_tile = gui.Vert(0.0 * em, gui.Margins(margin))
         self.combo_cams = gui.Combobox()
         self.combo_cams.set_on_selection_changed(self._on_combo_cams)
-        combo_tile.add_child(gui.Label("Cur. cameras"))
+        combo_tile.add_child(gui.Label("Cameras"))
         combo_tile.add_child(self.combo_cams)
-        vp_subtile2.add_child(combo_tile)
 
         ##Combo panels for train frames
-        combo_tile2 = gui.Vert(0.5 * em, gui.Margins(margin))
+        combo_tile2 = gui.Vert(0.0 * em, gui.Margins(margin))
         self.combo_train_cams = gui.Combobox()
         self.combo_train_cams.set_on_selection_changed(self._on_combo_train_cams)
-        combo_tile2.add_child(gui.Label("Train cameras"))
+        combo_tile2.add_child(gui.Label("Train Frames"))
         combo_tile2.add_child(self.combo_train_cams)
-        vp_subtile3.add_child(combo_tile2)
 
         ##Combo panels for preset views 
-        combo_tile3 = gui.Vert(0.5 * em, gui.Margins(margin))
+        combo_tile3 = gui.Vert(0.0 * em, gui.Margins(margin))
         self.combo_preset_cams = gui.Combobox()
         for i in range(30):
             self.combo_preset_cams.add_item(str(i))
@@ -377,7 +396,6 @@ class SLAM_GUI:
         # self.combo_preset_cams.set_on_selection_changed(self._on_combo_preset_cams) 
         combo_tile3.add_child(gui.Label("Preset"))
         combo_tile3.add_child(self.combo_preset_cams)
-        vp_subtile4.add_child(combo_tile3)
 
         self.save_view_btn = gui.Button("Save")
         self.save_view_btn.set_on_clicked(
@@ -394,18 +412,23 @@ class SLAM_GUI:
             self._on_reset_view_btn
         )  # set the callback function
 
-        viewpoint_tile.add_child(vp_subtile1)
-        viewpoint_tile.add_child(vp_subtile2)
-        viewpoint_tile.add_child(vp_subtile3)
-        viewpoint_tile.add_child(vp_subtile4)
+        viewpoint_tile_2.add_child(combo_tile)
+        viewpoint_tile_2.add_child(combo_tile2)
+        viewpoint_tile_2.add_child(combo_tile3)
 
-        viewpoint_tile.add_child(self.save_view_btn)
-        viewpoint_tile.add_child(self.load_view_btn)
-        viewpoint_tile.add_child(self.reset_view_btn)
+        viewpoint_tile_2.add_child(self.save_view_btn)
+        viewpoint_tile_2.add_child(self.load_view_btn)
+        viewpoint_tile_2.add_child(self.reset_view_btn)
         
-        self.panel.add_child(viewpoint_tile)
+        collapse_view.add_child(viewpoint_tile_2)
 
-        self.panel.add_child(gui.Label("3D Objects"))
+        tab_setting.add_child(collapse_view)
+
+        # ------------------------------------------------------------  
+        # 3D Entities
+        collapse_3dobj = gui.CollapsableVert("3D Entities", 0.4 * em,
+                                       gui.Margins(margin))
+        collapse_3dobj.set_is_open(True)
 
         chbox_tile_3dobj = gui.Horiz(0.5 * em, gui.Margins(margin))
 
@@ -415,59 +438,31 @@ class SLAM_GUI:
         chbox_tile_3dobj.add_child(self.gs_chbox)
 
         self.cameras_chbox = gui.Checkbox("Cameras")
-        self.cameras_chbox.checked = True
+        self.cameras_chbox.checked = False # default True
         self.cameras_chbox.set_on_checked(self._on_cameras_chbox)
         chbox_tile_3dobj.add_child(self.cameras_chbox)
 
         self.keyframe_chbox = gui.Checkbox("Train Cameras")
-        self.keyframe_chbox.checked = True
+        self.keyframe_chbox.checked = False
         self.keyframe_chbox.set_on_checked(self._on_keyframes_chbox)
         chbox_tile_3dobj.add_child(self.keyframe_chbox)
 
-        # disable this for now
-        # self.kf_window_chbox = gui.Checkbox("Active window")
-        # self.kf_window_chbox.set_on_checked(self._on_kf_window_chbox)
-        # chbox_tile_3dobj.add_child(self.kf_window_chbox)
-
-        # disable this for now
-        # self.axis_chbox = gui.Checkbox("Axis")
-        # self.axis_chbox.checked = False
-        # self.axis_chbox.set_on_checked(self._on_axis_chbox)
-        # chbox_tile_3dobj.add_child(self.axis_chbox)
-
-        self.mesh_chbox = gui.Checkbox("PIN Mesh")
+        self.mesh_chbox = gui.Checkbox("Mesh")
         self.mesh_chbox.checked = self.mesh_default_on
         self.mesh_chbox.set_on_checked(self._on_mesh_chbox)
         chbox_tile_3dobj.add_child(self.mesh_chbox)
         self.mesh_name = "pin_mesh"
 
-        self.cmesh_chbox = gui.Checkbox("Colorized Mesh")
-        self.cmesh_chbox.checked = self.mesh_default_on
-        self.cmesh_chbox.set_on_checked(self._on_cmesh_chbox)
-        chbox_tile_3dobj.add_child(self.cmesh_chbox)
-
         self.scan_chbox = gui.Checkbox("Scan")
-        self.scan_chbox.checked = True
+        self.scan_chbox.checked = False # default True
         self.scan_chbox.set_on_checked(self._on_scan_chbox)
         chbox_tile_3dobj.add_child(self.scan_chbox)
         self.scan_name = "cur_scan"
 
-        self.rendered_scan_chbox = gui.Checkbox("Rendered Points")
-        self.rendered_scan_chbox.checked = True
-        self.rendered_scan_chbox.set_on_checked(self._on_rendered_scan_chbox)
-        chbox_tile_3dobj.add_child(self.rendered_scan_chbox)
-        self.rendered_scan_name = "cur_rendered_scan"
-
-        # self.sky_chbox = gui.Checkbox("Sky")
-        # self.sky_chbox.checked = False
-        # self.sky_chbox.set_on_checked(self._on_sky_chbox)
-        # chbox_tile_3dobj.add_child(self.sky_chbox)
-        # self.widget3d.scene.show_skybox(True) # does not work
-
         chbox_tile_3dobj_2 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
-        self.neural_point_chbox = gui.Checkbox("Neural Points")
-        self.neural_point_chbox.checked = self.neural_point_default_on
+        self.neural_point_chbox = gui.Checkbox("Neural Point Map")
+        self.neural_point_chbox.checked = self.neural_point_map_default_on
         self.neural_point_chbox.set_on_checked(self._on_neural_point_chbox)
         chbox_tile_3dobj_2.add_child(self.neural_point_chbox)
         self.neural_point_name = "neural_points"
@@ -478,84 +473,76 @@ class SLAM_GUI:
         chbox_tile_3dobj_2.add_child(self.invalid_neural_point_chbox)
         self.invalid_neural_point_name = "invalid_neural_points"
 
-        self.sdf_chbox = gui.Checkbox("SDF")
-        self.sdf_chbox.checked = False
-        self.sdf_chbox.set_on_checked(self._on_sdf_chbox)
-        chbox_tile_3dobj_2.add_child(self.sdf_chbox)
-        self.sdf_name = "cur_sdf_slice"
+        self.rendered_scan_chbox = gui.Checkbox("Rendered Points")
+        self.rendered_scan_chbox.checked = False
+        self.rendered_scan_chbox.set_on_checked(self._on_rendered_scan_chbox)
+        chbox_tile_3dobj_2.add_child(self.rendered_scan_chbox)
+        self.rendered_scan_name = "cur_rendered_scan"
+        
+        chbox_tile_3dobj_3 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         self.cad_chbox = gui.Checkbox("Robot")
         self.cad_chbox.checked = self.robot_default_on
         self.cad_chbox.set_on_checked(self._on_cad_chbox)
-        chbox_tile_3dobj_2.add_child(self.cad_chbox)
+        chbox_tile_3dobj_3.add_child(self.cad_chbox)
         self.cad_name = "sensor_cad"
 
         self.gt_traj_chbox = gui.Checkbox("GT Traj.")
         self.gt_traj_chbox.checked = False
         self.gt_traj_chbox.set_on_checked(self._on_gt_traj_chbox)
-        chbox_tile_3dobj_2.add_child(self.gt_traj_chbox)
+        chbox_tile_3dobj_3.add_child(self.gt_traj_chbox)
         self.gt_traj_name = "gt_trajectory"
 
         self.slam_traj_chbox = gui.Checkbox("SLAM Traj.")
         self.slam_traj_chbox.checked = False
         self.slam_traj_chbox.set_on_checked(self._on_slam_traj_chbox)
-        chbox_tile_3dobj_2.add_child(self.slam_traj_chbox)
+        chbox_tile_3dobj_3.add_child(self.slam_traj_chbox)
         self.slam_traj_name = "slam_trajectory"
 
-        self.loop_edges_chbox = gui.Checkbox("Loops")
-        self.loop_edges_chbox.checked = False
-        chbox_tile_3dobj_2.add_child(self.loop_edges_chbox)
-        self.loop_edges_name = "loop_edges"
+        self.odom_traj_chbox = gui.Checkbox("Odom Traj.")
+        self.odom_traj_chbox.checked = False
+        self.odom_traj_chbox.set_on_checked(self._on_odom_traj_chbox)
+        chbox_tile_3dobj_3.add_child(self.odom_traj_chbox)
+        self.odom_traj_name = "odom_trajectory"
 
-        self.range_circle_chbox = gui.Checkbox("Ring")
-        self.range_circle_chbox.checked = False
-        self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
-        chbox_tile_3dobj_2.add_child(self.range_circle_chbox)
-        self.range_circle_name = "range_circle"
+        chbox_tile_3dobj_4 = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        self.sdf_chbox = gui.Checkbox("SDF Slice")
+        self.sdf_chbox.checked = False
+        self.sdf_chbox.set_on_checked(self._on_sdf_chbox)
+        chbox_tile_3dobj_4.add_child(self.sdf_chbox)
+        self.sdf_name = "cur_sdf_slice"
 
         self.sdf_pool_chbox = gui.Checkbox("SDF Samples")
         self.sdf_pool_chbox.checked = False
         self.sdf_pool_chbox.set_on_checked(self._on_sdf_pool_chbox)
-        chbox_tile_3dobj_2.add_child(self.sdf_pool_chbox)
+        chbox_tile_3dobj_4.add_child(self.sdf_pool_chbox)
         self.sdf_pool_name = "sdf_sample_pool"
 
-        self.panel.add_child(chbox_tile_3dobj)
+        self.loop_edges_chbox = gui.Checkbox("Loop")
+        self.loop_edges_chbox.checked = False
+        chbox_tile_3dobj_4.add_child(self.loop_edges_chbox)
+        self.loop_edges_name = "loop_edges"
 
-        self.panel.add_child(chbox_tile_3dobj_2)
+        self.range_circle_chbox = gui.Checkbox("Range Rings")
+        self.range_circle_chbox.checked = False
+        self.range_circle_chbox.set_on_checked(self._on_range_circle_chbox)
+        chbox_tile_3dobj_4.add_child(self.range_circle_chbox)
+        self.range_circle_name = "range_circle"
 
+        collapse_3dobj.add_child(chbox_tile_3dobj)
+        collapse_3dobj.add_child(chbox_tile_3dobj_2)
+        collapse_3dobj.add_child(chbox_tile_3dobj_3)
+        collapse_3dobj.add_child(chbox_tile_3dobj_4)
 
-        self.panel.add_child(gui.Label("Neural Point Color Options"))
-        chbox_tile_neuralpoint = gui.Horiz(0.5 * em, gui.Margins(margin))
+        tab_setting.add_child(collapse_3dobj)
 
-        # default mode 0: original rgb color
+        # ------------------------------------------------------------
+        # GS Rendering Options
+        gs_vis_collapse = gui.CollapsableVert("GS Rendering Options", 0.2 * em,
+                                       gui.Margins(margin))
+        gs_vis_collapse.set_is_open(False)
 
-        # mode 1
-        self.neuralpoint_geofeature_chbox = gui.Checkbox("Geometric Feature")
-        self.neuralpoint_geofeature_chbox.checked = (self.neural_point_color_default_mode==1)
-        self.neuralpoint_geofeature_chbox.set_on_checked(self._on_neuralpoint_geofeature_chbox)
-        chbox_tile_neuralpoint.add_child(self.neuralpoint_geofeature_chbox)
-
-        # mode 2
-        self.neuralpoint_colorfeature_chbox = gui.Checkbox("Photometric Feature")
-        self.neuralpoint_colorfeature_chbox.checked = (self.neural_point_color_default_mode==2)
-        self.neuralpoint_colorfeature_chbox.set_on_checked(self._on_neuralpoint_colorfeature_chbox)
-        chbox_tile_neuralpoint.add_child(self.neuralpoint_colorfeature_chbox)
-
-        # mode 3
-        self.neuralpoint_ts_chbox = gui.Checkbox("Timestep")
-        self.neuralpoint_ts_chbox.checked = (self.neural_point_color_default_mode==3)
-        self.neuralpoint_ts_chbox.set_on_checked(self._on_neuralpoint_ts_chbox)
-        chbox_tile_neuralpoint.add_child(self.neuralpoint_ts_chbox)
-
-        # mode 4
-        self.neuralpoint_stability_chbox = gui.Checkbox("Stability")
-        self.neuralpoint_stability_chbox.checked = (self.neural_point_color_default_mode==4)
-        self.neuralpoint_stability_chbox.set_on_checked(self._on_neuralpoint_stability_chbox)
-        chbox_tile_neuralpoint.add_child(self.neuralpoint_stability_chbox)
-
-        self.panel.add_child(chbox_tile_neuralpoint)
-
-        self.panel.add_child(gui.Label("GS Rendering Options"))
         chbox_tile_gsrender_1 = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         # these cannot be on at the same time
@@ -590,7 +577,7 @@ class SLAM_GUI:
         # self.time_shader_chbox.checked = False
         # chbox_tile_gsrender_2.add_child(self.time_shader_chbox)
 
-        self.backface_chbox = gui.Checkbox("Back")
+        self.backface_chbox = gui.Checkbox("Backface")
         self.backface_chbox.checked = False
         # self.backface_chbox.set_on_checked(self._on_backface_chbox)
         chbox_tile_gsrender_2.add_child(self.backface_chbox)
@@ -600,32 +587,36 @@ class SLAM_GUI:
             self.elliopsoid_2d_chbox.checked = False
         else:
             self.elliopsoid_2d_chbox.checked = True
+
         chbox_tile_gsrender_2.add_child(self.elliopsoid_2d_chbox)
 
         self.normal_in_world_chbox = gui.Checkbox("Normal in World")
         self.normal_in_world_chbox.checked = True
         chbox_tile_gsrender_2.add_child(self.normal_in_world_chbox)
 
+        chbox_tile_gsrender_3 = gui.Horiz(0.5 * em, gui.Margins(margin))
+
         self.normal_with_alpha_chbox = gui.Checkbox("Normal with Alpha")
         self.normal_with_alpha_chbox.checked = True
-        chbox_tile_gsrender_2.add_child(self.normal_with_alpha_chbox)
+        chbox_tile_gsrender_3.add_child(self.normal_with_alpha_chbox)
 
         self.depth_filter_with_alpha_chbox = gui.Checkbox("Depth with Alpha")
         self.depth_filter_with_alpha_chbox.checked = True
-        chbox_tile_gsrender_2.add_child(self.depth_filter_with_alpha_chbox)
+        chbox_tile_gsrender_3.add_child(self.depth_filter_with_alpha_chbox)
 
-        self.panel.add_child(chbox_tile_gsrender_1)
-        self.panel.add_child(chbox_tile_gsrender_2)
+        gs_vis_collapse.add_child(chbox_tile_gsrender_1)
+        gs_vis_collapse.add_child(chbox_tile_gsrender_2)
+        gs_vis_collapse.add_child(chbox_tile_gsrender_3)
 
         slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
-        slider_label = gui.Label("Gaussian Scale (0.0-1.0)")
+        slider_label = gui.Label("Gaussian Visualization Scale (0.0-1.0)")
         self.scaling_slider = gui.Slider(gui.Slider.DOUBLE)
         # Scaling Modifier to control the size of the displayed Gaussians
         self.scaling_slider.set_limits(0.001, 1.0)
         self.scaling_slider.double_value = 1.0
         slider_tile.add_child(slider_label)
         slider_tile.add_child(self.scaling_slider)
-        self.panel.add_child(slider_tile)
+        gs_vis_collapse.add_child(slider_tile)
 
         slider_tile_down_rate = gui.Horiz(0.5 * em, gui.Margins(margin))
         slider_label_down_rate = gui.Label("Render Image Downsample Rate (0-3)")
@@ -634,29 +625,221 @@ class SLAM_GUI:
         self.scaling_slider_downrate.int_value = 0
         slider_tile_down_rate.add_child(slider_label_down_rate)
         slider_tile_down_rate.add_child(self.scaling_slider_downrate)
-        self.panel.add_child(slider_tile_down_rate)
+        gs_vis_collapse.add_child(slider_tile_down_rate)
 
+        tab_setting.add_child(gs_vis_collapse)
 
+        # ------------------------------------------------------------
+        # Scan Options
+        scan_vis_collapse = gui.CollapsableVert("Scan Options", 0.2 * em,
+                                       gui.Margins(margin))
+        scan_vis_collapse.set_is_open(False)
+
+        chbox_tile_scan_color = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        # mode 1
+        self.scan_color_chbox = gui.Checkbox("Color")
+        self.scan_color_chbox.checked = True
+        self.scan_color_chbox.set_on_checked(self._on_scan_color_chbox)
+        chbox_tile_scan_color.add_child(self.scan_color_chbox)
+        
+        # mode 2
+        self.scan_regis_color_chbox = gui.Checkbox("Registration Weight")
+        self.scan_regis_color_chbox.checked = False
+        self.scan_regis_color_chbox.set_on_checked(self._on_scan_regis_color_chbox)
+        chbox_tile_scan_color.add_child(self.scan_regis_color_chbox)
+
+        # mode 3
+        self.scan_height_color_chbox = gui.Checkbox("Height")
+        self.scan_height_color_chbox.checked = False
+        self.scan_height_color_chbox.set_on_checked(self._on_scan_height_color_chbox)
+        chbox_tile_scan_color.add_child(self.scan_height_color_chbox)
+
+        scan_vis_collapse.add_child(chbox_tile_scan_color)
+        
+        scan_point_size_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        scan_point_size_slider_label = gui.Label("Scan point size (1-6)   ")
+        self.scan_point_size_slider = gui.Slider(gui.Slider.INT)
+        self.scan_point_size_slider.set_limits(1, 6)
+        self.scan_point_size_slider.int_value = self.scan_render_init_size_unit
+        self.scan_point_size_slider.set_on_value_changed(self._on_scan_point_size_changed)
+        scan_point_size_slider_tile.add_child(scan_point_size_slider_label)
+        scan_point_size_slider_tile.add_child(self.scan_point_size_slider)
+        scan_vis_collapse.add_child(scan_point_size_slider_tile)
+
+        tab_setting.add_child(scan_vis_collapse)
+
+        # ------------------------------------------------------------
+        # Neural Point Options
+        neural_point_vis_collapse = gui.CollapsableVert("Neural Point Options", 0.2 * em,
+                                       gui.Margins(margin))
+        neural_point_vis_collapse.set_is_open(False)
+
+        chbox_tile_neuralpoint = gui.Horiz(0.5 * em, gui.Margins(margin))
+
+        # default mode 0: original rgb color
+
+        # mode 1
+        self.neuralpoint_geofeature_chbox = gui.Checkbox("Geo. Feature")
+        self.neuralpoint_geofeature_chbox.checked = (self.neural_point_color_default_mode==1)
+        self.neuralpoint_geofeature_chbox.set_on_checked(self._on_neuralpoint_geofeature_chbox)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_geofeature_chbox)
+
+        # mode 2
+        self.neuralpoint_colorfeature_chbox = gui.Checkbox("Photo. Feature")
+        self.neuralpoint_colorfeature_chbox.checked = (self.neural_point_color_default_mode==2)
+        self.neuralpoint_colorfeature_chbox.set_on_checked(self._on_neuralpoint_colorfeature_chbox)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_colorfeature_chbox)
+
+        # mode 3
+        self.neuralpoint_ts_chbox = gui.Checkbox("Time")
+        self.neuralpoint_ts_chbox.checked = (self.neural_point_color_default_mode==3)
+        self.neuralpoint_ts_chbox.set_on_checked(self._on_neuralpoint_ts_chbox)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_ts_chbox)
+
+        # mode 4
+        self.neuralpoint_height_chbox = gui.Checkbox("Height")
+        self.neuralpoint_height_chbox.checked = (self.neural_point_color_default_mode==4)
+        self.neuralpoint_height_chbox.set_on_checked(self._on_neuralpoint_height_chbox)
+        chbox_tile_neuralpoint.add_child(self.neuralpoint_height_chbox)
+
+        neural_point_vis_collapse.add_child(chbox_tile_neuralpoint)
+
+        map_point_size_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        map_point_size_slider_label = gui.Label("Neural point size (1-6)")
+        self.map_point_size_slider = gui.Slider(gui.Slider.INT)
+        self.map_point_size_slider.set_limits(1, 6)
+        self.map_point_size_slider.int_value = self.neural_points_render_init_size_unit
+        self.map_point_size_slider.set_on_value_changed(self._on_neural_point_point_size_changed)
+        map_point_size_slider_tile.add_child(map_point_size_slider_label)
+        map_point_size_slider_tile.add_child(self.map_point_size_slider)
+        neural_point_vis_collapse.add_child(map_point_size_slider_tile)
+
+        tab_setting.add_child(neural_point_vis_collapse)
+
+        # ------------------------------------------------------------
+        # Mesh Options
+        mesh_vis_collapse = gui.CollapsableVert("Mesh Options", 0.2 * em,
+                                       gui.Margins(margin))
+        mesh_vis_collapse.set_is_open(False)    
+
+        chbox_tile_mesh_color = gui.Horiz(0.5 * em, gui.Margins(margin))
+        
+        # mode 1
+        self.mesh_normal_chbox = gui.Checkbox("Normal")
+        self.mesh_normal_chbox.checked = True
+        self.mesh_normal_chbox.set_on_checked(self._on_mesh_normal_chbox)
+        chbox_tile_mesh_color.add_child(self.mesh_normal_chbox)
+
+        # mode 2
+        self.mesh_color_chbox = gui.Checkbox("Color")
+        self.mesh_color_chbox.checked = False
+        self.mesh_color_chbox.set_on_checked(self._on_mesh_color_chbox)
+        chbox_tile_mesh_color.add_child(self.mesh_color_chbox)
+        
+        # mode 3
+        self.mesh_height_chbox = gui.Checkbox("Height")
+        self.mesh_height_chbox.checked = False
+        self.mesh_height_chbox.set_on_checked(self._on_mesh_height_chbox)
+        chbox_tile_mesh_color.add_child(self.mesh_height_chbox)
+
+        mesh_vis_collapse.add_child(chbox_tile_mesh_color)
+
+        mesh_freq_frame_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        mesh_freq_frame_slider_label = gui.Label("Mesh update per X frames (1-100)")
+        self.mesh_freq_frame_slider = gui.Slider(gui.Slider.INT)
+        self.mesh_freq_frame_slider.set_limits(1, 100)
+        self.mesh_freq_frame_slider.int_value = self.config.mesh_freq_frame
+        mesh_freq_frame_slider_tile.add_child(mesh_freq_frame_slider_label)
+        mesh_freq_frame_slider_tile.add_child(self.mesh_freq_frame_slider)
+        mesh_vis_collapse.add_child(mesh_freq_frame_slider_tile)
+        
+        mesh_mc_res_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        mesh_mc_res_slider_label = gui.Label("Mesh MC resolution (1cm-100cm)")
+        self.mesh_mc_res_slider = gui.Slider(gui.Slider.INT)
+        self.mesh_mc_res_slider.set_limits(1, 100)
+        self.mesh_mc_res_slider.int_value = int(self.config.mc_res_m * 100)
+        mesh_mc_res_slider_tile.add_child(mesh_mc_res_slider_label)
+        mesh_mc_res_slider_tile.add_child(self.mesh_mc_res_slider)
+        mesh_vis_collapse.add_child(mesh_mc_res_slider_tile)
+
+        mesh_min_nn_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        mesh_min_nn_slider_label = gui.Label("Mesh query min neighbors (5-25)  ")
+        self.mesh_min_nn_slider = gui.Slider(gui.Slider.INT)
+        self.mesh_min_nn_slider.set_limits(5, 25)
+        self.mesh_min_nn_slider.int_value = self.config.mesh_min_nn
+        mesh_min_nn_slider_tile.add_child(mesh_min_nn_slider_label)
+        mesh_min_nn_slider_tile.add_child(self.mesh_min_nn_slider)
+        mesh_vis_collapse.add_child(mesh_min_nn_slider_tile)
+
+        tab_setting.add_child(mesh_vis_collapse)
+
+        # ------------------------------------------------------------
+        # SDF Slice Options
+        sdf_slice_vis_collapse = gui.CollapsableVert("SDF Slice Options", 0.2 * em,
+                                       gui.Margins(margin))
+        sdf_slice_vis_collapse.set_is_open(False)
+
+        sdf_freq_frame_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        sdf_freq_frame_slider_label = gui.Label("SDF slice update per X frames (1-100) ")
+        self.sdf_freq_frame_slider = gui.Slider(gui.Slider.INT)
+        self.sdf_freq_frame_slider.set_limits(1, 100)
+        self.sdf_freq_frame_slider.int_value = self.config.sdfslice_freq_frame
+        sdf_freq_frame_slider_tile.add_child(sdf_freq_frame_slider_label)
+        sdf_freq_frame_slider_tile.add_child(self.sdf_freq_frame_slider)
+        sdf_slice_vis_collapse.add_child(sdf_freq_frame_slider_tile)
+
+        sdf_slice_height_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        sdf_slice_height_slider_label = gui.Label("SDF slice height (m)                                 ")
+        self.sdf_slice_height_slider = gui.Slider(gui.Slider.DOUBLE)
+        self.sdf_slice_height_slider.set_limits(-2.0, 3.0)
+        self.sdf_slice_height_slider.double_value = self.config.sdf_slice_height
+        sdf_slice_height_slider_tile.add_child(sdf_slice_height_slider_label)
+        sdf_slice_height_slider_tile.add_child(self.sdf_slice_height_slider)
+        sdf_slice_vis_collapse.add_child(sdf_slice_height_slider_tile)
+
+        sdf_res_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        sdf_res_slider_label = gui.Label("SDF slice resolution (5cm-30cm)          ")
+        self.sdf_res_slider = gui.Slider(gui.Slider.INT)
+        self.sdf_res_slider.set_limits(5, 30)
+        self.sdf_res_slider.int_value = int(self.config.vis_sdf_res_m * 100)
+        sdf_res_slider_tile.add_child(sdf_res_slider_label)
+        sdf_res_slider_tile.add_child(self.sdf_res_slider)
+        sdf_slice_vis_collapse.add_child(sdf_res_slider_tile)
+
+        tab_setting.add_child(sdf_slice_vis_collapse)
+
+        # ------------------------------------------------------------
+        # Save Options
         chbox_save_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
 
         # screenshot buttom
-        self.screenshot_btn = gui.Button("Screenshot")
+        self.screenshot_btn = gui.Button("2D Screenshot")
         self.screenshot_btn.set_on_clicked(
             self._on_screenshot_btn
         )  # set the callback function
         chbox_save_tile.add_child(self.screenshot_btn)
 
-        self.save_recording_btn = gui.Button("Save Recording")
-        self.save_recording_btn.set_on_clicked(
-            self._on_save_recording_btn
-        ) 
-        chbox_save_tile.add_child(self.save_recording_btn)
+        self.screenshot_3d_btn = gui.Button("3D Screenshot")
+        self.screenshot_3d_btn.set_on_clicked(
+            self._on_screenshot_3d_btn
+        )  # set the callback function
+        chbox_save_tile.add_child(self.screenshot_3d_btn)
+
+        # self.save_recording_btn = gui.Button("Save Recording")
+        # self.save_recording_btn.set_on_clicked(
+        #     self._on_save_recording_btn
+        # ) 
+        # chbox_save_tile.add_child(self.save_recording_btn)
         
-        self.panel.add_child(chbox_save_tile)
+        tab_setting.add_child(chbox_save_tile)
+
+        tabs0.add_tab("Setting", tab_setting)   
+
+        self.panel.add_child(tabs0)
 
 
         ## Info Tab
-        tab_margins = gui.Margins(0, int(np.round(0.5 * em)), 0, 0)
         tabs = gui.TabControl()
         tab_info = gui.Vert(0, tab_margins)
 
@@ -666,20 +849,25 @@ class SLAM_GUI:
         self.frame_info = gui.Label("Frame: ")
         tab_info.add_child(self.frame_info)
 
-        self.loop_info = gui.Label("# Loop Closures: 0")
-        tab_info.add_child(self.loop_info)
-
         self.neural_points_info = gui.Label("# Neural points: ")
         tab_info.add_child(self.neural_points_info)
 
-        self.gaussian_info = gui.Label("# Current view Gaussians: ")
-        tab_info.add_child(self.gaussian_info)
+        if self.config.gs_on:
+            self.gaussian_info = gui.Label("# Current view Gaussians: ")
+            tab_info.add_child(self.gaussian_info)
 
-        self.freq_info = gui.Label("Render FPS: ")
-        tab_info.add_child(self.freq_info)
+            self.freq_info = gui.Label("Render FPS: ")
+            tab_info.add_child(self.freq_info)
+        
+        if self.config.pgo_on:
+            self.loop_info = gui.Label("# Loop Closures: 0")
+            tab_info.add_child(self.loop_info)
 
         # self.brisque_score_info = gui.Label("Current view BRISQUE score: ")
         # tab_info.add_child(self.brisque_score_info)
+
+        self.gpu_mem_info = gui.Label("GPU Memory Usage: 0.00 GB")
+        tab_info.add_child(self.gpu_mem_info)
 
         tabs.add_tab("Info", tab_info)
         self.panel.add_child(tabs)
@@ -695,6 +883,7 @@ class SLAM_GUI:
         self.in_normal_widget = gui.ImageWidget()
 
         self.rendered_rgb_widget = gui.ImageWidget()
+        self.rendered_normal_widget = gui.ImageWidget()
         self.rendered_depth_widget = gui.ImageWidget()
         self.rendered_depth_error_widget = gui.ImageWidget()
 
@@ -715,20 +904,41 @@ class SLAM_GUI:
     
         # tab_input.add_child(view_info_tile)
 
-        # TODO: add it back
-        # tab_input.add_child(gui.Label("GT Color | Rendered Color | Projected Depth"))
+        rgb_input_collapse = gui.CollapsableVert("RGB Image", 0.1 * em, gui.Margins(margin))
+        rgb_input_collapse.set_is_open(self.config.gs_on)
+        rgb_input_collapse.add_child(self.in_rgb_widget)
+        tab_input.add_child(rgb_input_collapse)
+
+        if self.show_rendered_img:
+            rendered_collapse = gui.CollapsableVert("Rendered Image", 0.1 * em, gui.Margins(margin))
+            rendered_collapse.set_is_open(False)
+            rendered_collapse.add_child(self.rendered_rgb_widget)
+            tab_input.add_child(rendered_collapse)
+
+            rendered_normal_collapse = gui.CollapsableVert("Rendered Normal", 0.1 * em, gui.Margins(margin))
+            rendered_normal_collapse.set_is_open(False)
+            rendered_normal_collapse.add_child(self.rendered_normal_widget)
+            tab_input.add_child(rendered_normal_collapse)
+
+            rendered_depth_collapse = gui.CollapsableVert("Rendered Depth", 0.1 * em, gui.Margins(margin))
+            rendered_depth_collapse.set_is_open(False)
+            rendered_depth_collapse.add_child(self.rendered_depth_widget)
+            tab_input.add_child(rendered_depth_collapse)
         
-        # tab_input.add_child(gui.Label("GT Color | Rendered Color | GT Depth | Depth Error | Normal"))
+        depth_input_collapse = gui.CollapsableVert("Depth Projection", 0.1 * em, gui.Margins(margin))
+        depth_input_collapse.set_is_open(self.config.gs_on)
+        depth_input_collapse.add_child(self.in_depth_widget)
 
-        # view_info_tile2 = gui.Horiz(1.5 * em, gui.Margins(margin)) # empty one
+        pixel_size_slider_tile = gui.Horiz(0.5 * em, gui.Margins(margin))
+        pixel_size_slider_label = gui.Label("Projected pixel size (1-10)   ")
+        self.pixel_size_slider = gui.Slider(gui.Slider.INT)
+        self.pixel_size_slider.set_limits(1, 10)
+        self.pixel_size_slider.int_value = 5
+        pixel_size_slider_tile.add_child(pixel_size_slider_label)
+        pixel_size_slider_tile.add_child(self.pixel_size_slider)
+        depth_input_collapse.add_child(pixel_size_slider_tile)
 
-        # tab_input.add_child(view_info_tile2)
-
-        tab_input.add_child(self.in_rgb_widget)
-
-        # tab_input.add_child(self.rendered_rgb_widget) # TODO: add it back
-        
-        tab_input.add_child(self.in_depth_widget)
+        tab_input.add_child(depth_input_collapse)
 
         # tab_input.add_child(self.rendered_depth_error_widget)
         
@@ -739,7 +949,7 @@ class SLAM_GUI:
 
         self.window.add_child(self.panel)
 
-    # something wrong here
+
     def init_glfw(self):
         window_name = "headless rendering"
 
@@ -747,7 +957,6 @@ class SLAM_GUI:
             exit(1)
 
         # check by: glxinfo | grep "OpenGL version"
-
         # set opengl version hint (FIXME)
         glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
@@ -859,15 +1068,6 @@ class SLAM_GUI:
         model_idx = self.model_dict[new_val]
         self.global_map.active_map_idx = model_idx
 
-    # # not used now
-    # def _on_combo_kf(self, new_val, new_idx):
-    #     frustum = self.frustum_dict[new_val]
-    #     viewpoint = frustum.view_dir
-
-    #     # look_at(center, eye, up): sets the camera view so that the camera is located at ‘eye’, pointing towards ‘center’, and oriented so that the up vector is ‘up’
-    #     # both center, eye, up are 3x1 np arrays
-    #     self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
-
     def _on_combo_cams(self, new_val, new_idx):
         frustum = self.frustum_dict[new_val]
         viewpoint = (
@@ -907,14 +1107,6 @@ class SLAM_GUI:
         for name in names:
             self.widget3d.scene.show_geometry(name, is_checked)
 
-    # def _on_axis_chbox(self, is_checked):
-    #     name = "axis"
-    #     if is_checked:
-    #         self.widget3d.scene.remove_geometry(name)
-    #         self.widget3d.scene.add_geometry(name, self.axis, self.lit_geo)
-    #     else:
-    #         self.widget3d.scene.remove_geometry(name)
-
     def _on_cad_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.cad_name)
@@ -923,65 +1115,26 @@ class SLAM_GUI:
             self.widget3d.scene.remove_geometry(self.cad_name)
     
     def _on_neural_point_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.neural_point_name)
-            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
-        else:
-            self.widget3d.scene.remove_geometry(self.neural_point_name)
+        self.widget3d.scene.show_geometry(self.neural_point_name, is_checked)
 
     def _on_invalid_neural_point_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
-            self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render) 
-        else:
-            self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
+        self.widget3d.scene.show_geometry(self.invalid_neural_point_name, is_checked)
 
-    # TODO: rendering shader is not good
     def _on_mesh_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) 
-        else:
-            self.widget3d.scene.remove_geometry(self.mesh_name)
-
-        # packet = Packet_vis2main()
-        # packet.flag_mesh = is_checked
-        # self.q_vis2main.put(packet)
-    
-    def _on_cmesh_chbox(self, is_checked):
-        if is_checked:
-            self.mesh_render.shader = "defaultLit"
-        else:
-            self.mesh_render.shader = "normals"
-        if self.mesh_chbox.checked:
-            self.widget3d.scene.remove_geometry(self.mesh_name)
-            self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
-
+        self.widget3d.scene.show_geometry(self.mesh_name, is_checked)
 
     def _on_scan_chbox(self, is_checked):
-        self.visualize_scan()
+        self.widget3d.scene.show_geometry(self.scan_name, is_checked)
 
     def _on_rendered_scan_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.rendered_scan_name)
-            self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
-        else:
-            self.widget3d.scene.remove_geometry(self.rendered_scan_name)
+        self.widget3d.scene.show_geometry(self.rendered_scan_name, is_checked)
     
     def _on_sdf_pool_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.sdf_pool_name)
-            self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
-        else:
-            self.widget3d.scene.remove_geometry(self.sdf_pool_name)
-
+        self.widget3d.scene.show_geometry(self.sdf_pool_name, is_checked)
+       
     # sdf slice
     def _on_sdf_chbox(self, is_checked):
-        if is_checked:
-            self.widget3d.scene.remove_geometry(self.sdf_name)
-            self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
-        else:
-            self.widget3d.scene.remove_geometry(self.sdf_name)
+        self.widget3d.scene.show_geometry(self.sdf_name, is_checked)
 
     def _on_gt_traj_chbox(self, is_checked):
         if is_checked:
@@ -997,12 +1150,37 @@ class SLAM_GUI:
         else:
             self.widget3d.scene.remove_geometry(self.slam_traj_name)
 
+    def _on_odom_traj_chbox(self, is_checked):
+        if is_checked:
+            self.widget3d.scene.remove_geometry(self.odom_traj_name)
+            self.widget3d.scene.add_geometry(self.odom_traj_name, self.odom_traj, self.traj_render)
+        else:
+            self.widget3d.scene.remove_geometry(self.odom_traj_name)
+
     def _on_range_circle_chbox(self, is_checked):
         if is_checked:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
             self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
         else:
             self.widget3d.scene.remove_geometry(self.range_circle_name)
+
+    def _on_scan_point_size_changed(self, value):
+        self.scan_render.point_size = value * self.window.scaling
+
+        self.widget3d.scene.remove_geometry(self.scan_name)
+        self.widget3d.scene.add_geometry(self.scan_name, self.scan, self.scan_render)
+        self.widget3d.scene.show_geometry(self.scan_name, self.scan_chbox.checked)
+
+    def _on_neural_point_point_size_changed(self, value):
+        self.neural_points_render.point_size = value * self.window.scaling
+
+        self.widget3d.scene.remove_geometry(self.neural_point_name)
+        self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
+        self.widget3d.scene.show_geometry(self.neural_point_name, self.neural_point_chbox.checked)
+
+        self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
+        self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
+        self.widget3d.scene.show_geometry(self.invalid_neural_point_name, self.invalid_neural_point_chbox.checked)
 
     # only one can be selected at the same time
     def _on_ellipsoid_chbox(self, is_checked):
@@ -1042,29 +1220,72 @@ class SLAM_GUI:
             self.d2n_chbox.checked = False
             self.depth_chbox.checked = False
 
+    def _on_scan_color_chbox(self, is_checked):
+        if is_checked:
+            self.scan_height_color_chbox.checked = False
+            self.scan_regis_color_chbox.checked = False
+        self.visualize_scan()
+    
+    def _on_scan_regis_color_chbox(self, is_checked):
+        if is_checked:
+            self.scan_height_color_chbox.checked = False
+            self.scan_color_chbox.checked = False
+        self.visualize_scan()
+
+    def _on_scan_height_color_chbox(self, is_checked):
+        if is_checked:
+            self.scan_color_chbox.checked = False
+            self.scan_regis_color_chbox.checked = False
+        self.visualize_scan()
+
     def _on_neuralpoint_geofeature_chbox(self, is_checked):
         if is_checked:
             self.neuralpoint_colorfeature_chbox.checked = False
-            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_height_chbox.checked = False
             self.neuralpoint_ts_chbox.checked = False
+        self.visualize_neural_points()
 
     def _on_neuralpoint_colorfeature_chbox(self, is_checked):
         if is_checked:
             self.neuralpoint_geofeature_chbox.checked = False
-            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_height_chbox.checked = False
             self.neuralpoint_ts_chbox.checked = False
+        self.visualize_neural_points()
 
     def _on_neuralpoint_ts_chbox(self, is_checked):
         if is_checked:
             self.neuralpoint_geofeature_chbox.checked = False
-            self.neuralpoint_stability_chbox.checked = False
+            self.neuralpoint_height_chbox.checked = False
             self.neuralpoint_colorfeature_chbox.checked = False
+        self.visualize_neural_points()
 
-    def _on_neuralpoint_stability_chbox(self, is_checked):
+    def _on_neuralpoint_height_chbox(self, is_checked):
         if is_checked:
             self.neuralpoint_geofeature_chbox.checked = False
             self.neuralpoint_ts_chbox.checked = False
             self.neuralpoint_colorfeature_chbox.checked = False
+        self.visualize_neural_points()
+
+    def _on_mesh_normal_chbox(self, is_checked):
+        if is_checked:
+            self.mesh_render.shader = "normals"
+            self.mesh_color_chbox.checked = False
+            self.mesh_height_chbox.checked = False
+        self.visualize_mesh()
+
+    def _on_mesh_color_chbox(self, is_checked):
+        if is_checked:
+            self.mesh_render.shader = "defaultLit"
+            self.mesh_normal_chbox.checked = False
+            self.mesh_height_chbox.checked = False
+        self.visualize_mesh()
+
+    def _on_mesh_height_chbox(self, is_checked):
+        if is_checked:
+            self.mesh_render.shader = "defaultLit"
+            self.mesh_normal_chbox.checked = False
+            self.mesh_color_chbox.checked = False
+        self.visualize_mesh()
 
     def _on_sky_chbox(self, is_checked):
         self.widget3d.scene.show_skybox(is_checked)
@@ -1086,26 +1307,59 @@ class SLAM_GUI:
             print("[GUI] Visualization paused")
 
     def _on_screenshot_btn(self):
-        
         dt = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        save_dir = self.save_path / "screenshots" / dt
-        save_dir.mkdir(parents=True, exist_ok=True)
-        # create the filename
-        filename = save_dir / "screenshot"
+        filename = os.path.join(self.save_dir_2d_screenshots, f"{dt}-gui.png")
         height = self.window.size.height
         width = self.widget3d_width
         app = o3d.visualization.gui.Application.instance
         img = np.asarray(app.render_to_image(self.widget3d.scene, width, height))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(f"{filename}-gui.png", img)
+        cv2.imwrite(filename, img)
 
-        if self.render_img is None:
-            return
-        img = np.asarray(self.render_img)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(f"{filename}.png", img)
+        print("[GUI] 2D Screenshot save at {}".format(filename))
 
-        print("[GUI] Screenshot save at {}.png".format(filename))
+
+    def _on_screenshot_3d_btn(self):
+
+        if self.sdf_pool.has_points() and self.sdf_pool_chbox.checked:
+            data_pool_pc_name = str(self.cur_frame_id) + "_training_sdf_pool"
+            data_pool_pc_path = os.path.join(self.save_dir_3d_screenshots, data_pool_pc_name)
+            o3d.io.write_point_cloud(data_pool_pc_path, self.sdf_pool)
+            print("[GUI] Output current SDF training pool to: ", data_pool_pc_path)
+        if self.scan.has_points() and self.scan_chbox.checked:
+            scan_pc_name = str(self.cur_frame_id) + "_scan"
+            scan_pc_name += ".ply"
+            scan_pc_path = os.path.join(self.save_dir_3d_screenshots, scan_pc_name)
+            o3d.io.write_point_cloud(scan_pc_path, self.scan)
+            print("[GUI] Output current scan to: ", scan_pc_path)
+        if self.neural_points.has_points() and self.neural_point_chbox.checked:
+            neural_point_name = str(self.cur_frame_id) + "_neural_point_map"
+            if self.local_map_chbox.checked:
+                neural_point_name += "_local"
+            neural_point_name += ".ply"
+            neural_point_path = os.path.join(self.save_dir_3d_screenshots, neural_point_name)
+            o3d.io.write_point_cloud(neural_point_path, self.neural_points)
+            print("[GUI] Output current neural point map to: ", neural_point_path)
+        if self.sdf_slice.has_points() and self.sdf_chbox.checked:
+            sdf_slice_name = str(self.cur_frame_id) + "_sdf_slice"
+            sdf_slice_name += ".ply"
+            sdf_slice_path = os.path.join(self.save_dir_3d_screenshots, sdf_slice_name)
+            o3d.io.write_point_cloud(sdf_slice_path, self.sdf_slice)
+            print("[GUI] Output current SDF slice to: ", sdf_slice_path)
+        if self.mesh.has_triangles() and self.mesh_chbox.checked:
+            mesh_name = str(self.cur_frame_id) + "_mesh_vis"
+            if self.local_map_chbox.checked:
+                mesh_name += "_local"
+            mesh_name += ".ply"
+            mesh_path = os.path.join(self.save_dir_3d_screenshots, mesh_name)
+            o3d.io.write_triangle_mesh(mesh_path, self.mesh)
+            print("[GUI] Output current mesh to: ", mesh_path)
+        if self.sensor_cad.has_triangles() and self.cad_chbox.checked:
+            cad_name = str(self.cur_frame_id) + "_sensor_vis"
+            cad_name += ".ply"
+            cad_path = os.path.join(self.save_dir_3d_screenshots, cad_name)
+            o3d.io.write_triangle_mesh(cad_path, self.sensor_cad)
+            print("[GUI] Output current sensor model to: ", cad_path)
 
     def _on_reset_view_btn(self):
         self.center_bev()
@@ -1190,16 +1444,16 @@ class SLAM_GUI:
         packet = ControlPacket()
         packet.flag_pause = not self.slider_slam.is_on
         packet.flag_vis = self.slider_render.is_on
-        # packet.flag_source = self.scan_regis_color_chbox.checked
+        packet.flag_source = self.scan_regis_color_chbox.checked
         packet.flag_mesh = self.mesh_chbox.checked
         packet.flag_sdf = self.sdf_chbox.checked
-        # packet.flag_global = not self.local_map_chbox.checked
-        # packet.mc_res_m = self.mesh_mc_res_slider.int_value / 100.0
-        # packet.mesh_min_nn = self.mesh_min_nn_slider.int_value
-        # packet.mesh_freq_frame = self.mesh_freq_frame_slider.int_value
-        # packet.sdf_freq_frame = self.sdf_freq_frame_slider.int_value
-        # packet.sdf_slice_height = self.sdf_slice_height_slider.double_value
-        # packet.sdf_res_m = self.sdf_res_slider.int_value / 100.0
+        packet.flag_global = not self.local_map_chbox.checked
+        packet.mc_res_m = self.mesh_mc_res_slider.int_value / 100.0
+        packet.mesh_min_nn = self.mesh_min_nn_slider.int_value
+        packet.mesh_freq_frame = self.mesh_freq_frame_slider.int_value
+        packet.sdf_freq_frame = self.sdf_freq_frame_slider.int_value
+        packet.sdf_slice_height = self.sdf_slice_height_slider.double_value
+        packet.sdf_res_m = self.sdf_res_slider.int_value / 100.0
         packet.cur_frame_id = self.cur_frame_id
 
         self.q_vis2main.put(packet)
@@ -1226,62 +1480,14 @@ class SLAM_GUI:
                 self.frame_info.text = "Frame: {}".format(data_packet.frame_id)
                     
             if data_packet.has_neural_points:
-                self.neural_points_info.text = "# Neural points: {} (local {}), # Valid: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
+                self.neural_points_info.text = "# Neural points: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
                     data_packet.neural_points_data["count"],
                     data_packet.neural_points_data["local_count"],
-                    data_packet.neural_points_data["valid_count"],
-                    data_packet.neural_points_data["valid_local_count"],
                     data_packet.neural_points_data["map_memory_mb"]
                 )
                 # done every time, could be a bit time consuming here
-                
-                neural_point_position = data_packet.neural_points_data["position"].detach().cpu().numpy()
-                
-                dict_keys = list(data_packet.neural_points_data.keys())
-
-                neural_point_colors = None
-
-                if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
-                    neural_point_colors = data_packet.neural_points_data["color_pca_geo"].detach().cpu().numpy()
-                elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
-                    neural_point_colors = data_packet.neural_points_data["color_pca_color"].detach().cpu().numpy()
-                elif "ts" in dict_keys and self.neuralpoint_ts_chbox.checked:
-                    max_ts = torch.max(data_packet.neural_points_data["ts"]) * 1.0
-                    ts_np = (data_packet.neural_points_data["ts"]/max_ts).detach().cpu().numpy()
-                    color_map = cm.get_cmap("jet")
-                    neural_point_colors = color_map(ts_np)[:, :3].astype(np.float64)
-                elif "stability" in dict_keys and self.neuralpoint_stability_chbox.checked:
-                    stability_vis_np = (1.0 - data_packet.neural_points_data["stability"]/1000.0).detach().cpu().numpy()
-                    certainty_np = np.clip(stability_vis_np, 0.0, 1.0)
-                    neural_point_colors = np.repeat(certainty_np.reshape(-1, 1), 3, axis=1)
-                elif "color" in dict_keys:
-                    neural_point_colors = data_packet.neural_points_data["color"].detach().cpu().numpy()
-                
-                
-                neural_point_valid_mask = data_packet.neural_points_data["valid_mask"].detach().cpu().numpy()
-
-                valid_neural_point_position = neural_point_position[neural_point_valid_mask]                
-                invalid_neural_point_position = neural_point_position[~neural_point_valid_mask]
-
-                self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position[::self.neural_point_vis_down_rate, :])
-                self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position[::self.neural_point_vis_down_rate, :])
-
-                if neural_point_colors is not None:
-                    valid_neural_point_color = neural_point_colors[neural_point_valid_mask]
-                    invalid_neural_point_color = neural_point_colors[~neural_point_valid_mask]
-                    invalid_neural_point_color[:,:] = (0, 0, 0) # invalid part set to black for vis
-
-                    self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_color[::self.neural_point_vis_down_rate, :])                
-                    self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_color[::self.neural_point_vis_down_rate, :])
-
-                self.widget3d.scene.remove_geometry(self.neural_point_name)
-                self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
-                self.widget3d.scene.show_geometry(self.neural_point_name, self.neural_point_chbox.checked)
-            
-                if self.invalid_neural_point_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
-                    self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
-
+                self.visualize_neural_points()
+               
 
             if data_packet.has_sorrounding_points:
                 cur_center_position = data_packet.sorrounding_neural_points_data["center"]
@@ -1324,7 +1530,6 @@ class SLAM_GUI:
                         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
                     # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
-                    # print("Update now")
                     self.update_img_show(selected_cam)                           
 
             if data_packet.keyframes is not None: # as Camera class
@@ -1347,46 +1552,18 @@ class SLAM_GUI:
                         cur_keyframe, name=cur_keyframe.uid, color=frustum_color, size=self.frustum_size
                     ) 
 
+            if data_packet.gpu_mem_usage_gb is not None:
+                self.gpu_mem_info.text = f"GPU Memory Usage: {data_packet.gpu_mem_usage_gb:.2f} GB"
+
             self.visualize_scan(data_packet)
 
-            if data_packet.current_rendered_xyz is not None:
-                self.rendered_scan.points = o3d.utility.Vector3dVector(data_packet.current_rendered_xyz)
-                if data_packet.current_rendered_rgb is not None:
-                    self.rendered_scan.colors = o3d.utility.Vector3dVector(data_packet.current_rendered_rgb)
-                if self.rendered_scan_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.rendered_scan_name)
-                    self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
+            self.visualize_mesh(data_packet)
 
-            if data_packet.sdf_slice_xyz is not None:
-                if self.sdf_chbox.checked:
-                    self.sdf_slice.points = o3d.utility.Vector3dVector(data_packet.sdf_slice_xyz)
-                    if data_packet.sdf_slice_rgb is not None:
-                        self.sdf_slice.colors = o3d.utility.Vector3dVector(data_packet.sdf_slice_rgb)
+            self.visualize_sdf_slice(data_packet)
 
-                    self.widget3d.scene.remove_geometry(self.sdf_name)
-                    self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
+            self.visualize_sdf_pool(data_packet)
 
-            if data_packet.sdf_pool_xyz is not None:
-                if self.sdf_pool_chbox.checked:
-                    self.sdf_pool.points = o3d.utility.Vector3dVector(data_packet.sdf_pool_xyz)
-                    if data_packet.sdf_pool_rgb is not None:
-                        self.sdf_pool.colors = o3d.utility.Vector3dVector(data_packet.sdf_pool_rgb)
-
-                    self.widget3d.scene.remove_geometry(self.sdf_pool_name)
-                    self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
-
-            if data_packet.mesh_verts is not None and data_packet.mesh_faces is not None:
-                self.mesh = o3d.geometry.TriangleMesh(
-                    o3d.utility.Vector3dVector(data_packet.mesh_verts),
-                    o3d.utility.Vector3iVector(data_packet.mesh_faces),
-                    )
-                if data_packet.mesh_verts_rgb is not None:    
-                    self.mesh.vertex_colors = o3d.utility.Vector3dVector(data_packet.mesh_verts_rgb)
-                self.mesh.compute_vertex_normals()
-
-                if self.mesh_chbox.checked:
-                    self.widget3d.scene.remove_geometry(self.mesh_name)
-                    self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render)
+            self.visualize_rendered_scan(data_packet)
 
             if data_packet.gt_poses is not None:
                 gt_position_np = data_packet.gt_poses[:, :3, 3]
@@ -1404,13 +1581,13 @@ class SLAM_GUI:
                     
                     self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
                     self.sensor_cad.transform(data_packet.gt_poses[-1])
+
+                    self.range_circle = copy.deepcopy(self.range_circle_origin)
+                    self.range_circle.transform(data_packet.gt_poses[-1])  
                     
                     if self.cad_chbox.checked:
                         self.widget3d.scene.remove_geometry(self.cad_name)
                         self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
-                    
-                    self.range_circle = copy.deepcopy(self.range_circle_origin)
-                    self.range_circle.transform(data_packet.gt_poses[-1])  
 
                     if self.range_circle_chbox.checked: 
                         self.widget3d.scene.remove_geometry(self.range_circle_name)
@@ -1432,16 +1609,14 @@ class SLAM_GUI:
                 self.sensor_cad = copy.deepcopy(self.sensor_cad_origin)
                 self.sensor_cad.transform(data_packet.slam_poses[-1])
 
-                if self.cad_chbox.checked:
-                    
-                    self.widget3d.scene.remove_geometry(self.cad_name)
-                    self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
-
                 self.range_circle = copy.deepcopy(self.range_circle_origin)
                 self.range_circle.transform(data_packet.slam_poses[-1])
+
+                if self.cad_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.cad_name)
+                    self.widget3d.scene.add_geometry(self.cad_name, self.sensor_cad, self.cad_render)
                 
                 if self.range_circle_chbox.checked: 
-                    
                     self.widget3d.scene.remove_geometry(self.range_circle_name)
                     self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
                 
@@ -1454,16 +1629,28 @@ class SLAM_GUI:
                         self.loop_edges.lines = o3d.utility.Vector2iVector(np.array(data_packet.loop_edges))
                         self.loop_edges.paint_uniform_color(GREEN)
 
-                        if self.ego_chbox.checked:
-                            self.loop_edges.transform(np.linalg.inv(self.cur_pose))
+                        # if self.ego_chbox.checked:
+                        #     self.loop_edges.transform(np.linalg.inv(self.cur_pose))
 
                         self.widget3d.scene.remove_geometry(self.loop_edges_name)
                         self.widget3d.scene.add_geometry(self.loop_edges_name, self.loop_edges, self.traj_render)
                         self.widget3d.scene.show_geometry(self.loop_edges_name, self.loop_edges_chbox.checked)
+        
+            if data_packet.odom_poses is not None:
+            
+                odom_position_np = data_packet.odom_poses[:, :3, 3]
+                if odom_position_np.shape[0] > 1:
+                    self.odom_traj.points = o3d.utility.Vector3dVector(odom_position_np)
+                    odom_edges = np.array([[i, i + 1] for i in range(odom_position_np.shape[0] - 1)])
+                    self.odom_traj.lines = o3d.utility.Vector2iVector(odom_edges)
+                    self.odom_traj.paint_uniform_color(BLUE)
 
+                if self.odom_traj_chbox.checked:
+                    self.widget3d.scene.remove_geometry(self.odom_traj_name)
+                    self.widget3d.scene.add_geometry(self.odom_traj_name, self.odom_traj, self.traj_render)
 
         # set up inital camera # no camera
-        if len(data_packet.cam_list) == 0 and not self.init:
+        if not self.init:
             self.center_bev()
 
         self.init = True
@@ -1490,6 +1677,7 @@ class SLAM_GUI:
                         online_eval_on: bool = True, 
                         show_depth_error: bool = False,
                         alpha_foreground: float = 0.7):
+        
 
         if self.cur_data_packet.current_frames is None:
             return 
@@ -1509,7 +1697,7 @@ class SLAM_GUI:
 
         if selected_gtdepth is not None:
             depth_np = selected_gtdepth.contiguous().cpu().numpy() 
-            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range)*255.0).astype(np.uint8)
+            depth_color_np = (colorize_depth_maps(depth_np, 0.1, self.config.max_range*0.8)*255.0).astype(np.uint8)
             depth_color_np = np.transpose(depth_color_np[0], (1, 2, 0))
 
             if self.is_rgbd:
@@ -1523,12 +1711,13 @@ class SLAM_GUI:
                 uv_coords = np.stack((u_coords, v_coords), axis=1)
 
                 overlay_image = rgb_np.copy()
+                depth_projection_radius = self.pixel_size_slider.int_value
                 
                 for point in uv_coords:
                     u, v = point.astype(int)  # Convert coordinates to integer
                     depth_color = depth_color_np[v, u]
                     depth_color_tuple = (int(depth_color[0]), int(depth_color[1]), int(depth_color[2]))
-                    cv2.circle(overlay_image, (u, v), radius=3, color=depth_color_tuple, thickness=-1)
+                    cv2.circle(overlay_image, (u, v), radius=depth_projection_radius, color=depth_color_tuple, thickness=-1)
 
                 overlay_image = cv2.addWeighted(overlay_image, alpha_foreground, rgb_np, 1 - alpha_foreground, 0)
 
@@ -1557,18 +1746,7 @@ class SLAM_GUI:
         else:
             cur_frame_cam: CamImage = self.cur_data_packet.keyframes[cam_name]
 
-        down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
-
-        # render_mesh_on = True
-        # if render_mesh_on:
-
-        #     depth_image_mesh = self.widget3d.scene.render_to_depth_image(width=640, height=480) # FUCK
-        #     depth_image_mesh_np = np.asarray(depth_image_mesh)
-
-        #     print(depth_image_mesh_np.shape())
-
-        #     # depth_image_mesh_np = (colorize_depth_maps(depth_image_mesh_np, 0.0, self.config.min_range, cmap="inferno_r")[0]*255.0).astype(np.uint8)
-
+        #down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
         if online_eval_on:
 
@@ -1577,7 +1755,7 @@ class SLAM_GUI:
                     None, self.cur_data_packet.neural_points_data, 
                     self.decoders, self.cur_base_gaussians, self.background,
                     scaling_modifier=self.scaling_slider.double_value, 
-                    down_rate=down_rate_used,
+                    #down_rate=down_rate_used,
                     dist_concat_on=self.config.dist_concat_on, 
                     view_concat_on=self.config.view_concat_on, 
                     correct_exposure=self.config.exposure_correction_on,
@@ -1613,12 +1791,26 @@ class SLAM_GUI:
                 diff_depth_max_show = eval_depth_max * 0.05 # unit: m
 
                 rendered_depth = render_results["surf_depth"]
+                
+                rendered_normal = render_results["rend_normal"]
+                if rendered_normal is not None:
+                    rendered_normal = torch.nn.functional.normalize(rendered_normal, dim=0) # normalize to norm==1 # don't do this, for small opacity region, we just downweight its normal
+                    rendered_normal_color = 0.5 * (1 - rendered_normal)
+                    rendered_normal_color_np = np.ascontiguousarray((rendered_normal_color.permute(1,2,0).detach().cpu().numpy() * 255.0).astype(np.uint8))
+                    rendered_normal_o3d = o3d.geometry.Image(rendered_normal_color_np)
+                    self.rendered_normal_widget.update_image(rendered_normal_o3d)
+
                 cur_gt_depth = selected_gtdepth
                 if rendered_depth is not None and cur_gt_depth is not None:
                     
                     depth_valid_mask = (rendered_depth > eval_depth_min) & (cur_gt_depth > eval_depth_min) & (cur_gt_depth < eval_depth_max) & (rendered_depth < eval_depth_max)
                     if render_results["rend_alpha"] is not None:
                         depth_valid_mask = depth_valid_mask & (render_results["rend_alpha"] > self.config.eval_depth_min_accu_alpha)
+                    
+                    depth_color_np = (colorize_depth_maps(rendered_depth.detach().cpu().numpy(), 0.1, self.config.max_range*0.8)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+                    depth_color_np = np.ascontiguousarray(np.transpose(depth_color_np, (1, 2, 0))) # H, W, 3
+                    depth_color_o3d = o3d.geometry.Image(depth_color_np)
+                    self.rendered_depth_widget.update_image(depth_color_o3d)
 
                     diff_depth = torch.abs(rendered_depth - cur_gt_depth)
                     diff_depth_masked = diff_depth[depth_valid_mask].detach().cpu().numpy()
@@ -1641,9 +1833,9 @@ class SLAM_GUI:
                         self.rendered_depth_error_widget.update_image(diff_depth_o3d)
         
         if cur_frame_cam.train_view:
-            train_view_info = "train"
+            train_view_info = "train view"
         else:
-            train_view_info = "test"
+            train_view_info = "test view"
 
         self.cur_view_info.text = "Camera: {} [{}]".format(cur_frame_cam.uid, train_view_info)
         # self.cur_exposure_info.text = "Exposure: ({:.3f} , {:.3f})".format(cur_frame_cam.exposure_a.item(), cur_frame_cam.exposure_b.item())
@@ -1660,49 +1852,6 @@ class SLAM_GUI:
         overlaid_img_np = overlaid_img_np.astype(np.uint8)
 
         return overlaid_img_np
-
-    @staticmethod
-    def depth_to_normal(points, k=3, d_min=1e-3, d_max=10.0):
-        k = (k - 1) // 2
-        # points: (B, 3, H, W)
-        b, _, h, w = points.size()
-        points_pad = F.pad(
-            points, (k, k, k, k), mode="constant", value=0
-        )  # (B, 3, k+H+k, k+W+k)
-        if d_max is not None:
-            valid_pad = (points_pad[:, 2:, :, :] > d_min) & (
-                points_pad[:, 2:, :, :] < d_max
-            )  # (B, 1, k+H+k, k+W+k)
-        else:
-            valid_pad = points_pad[:, 2:, :, :] > d_min
-        valid_pad = valid_pad.float()
-
-        # vertical vector (top - bottom)
-        vec_vert = (
-            points_pad[:, :, :h, k : w + k]
-            - points_pad[:, :, 2 * k : h + (2 * k), k : w + k]
-        )
-
-        # horizontal vector (left - right)
-        vec_hori = (
-            points_pad[:, :, k : h + k, :w]
-            - points_pad[:, :, k : h + k, 2 * k : w + (2 * k)]
-        )
-
-        # valid_mask
-        valid_mask = (
-            valid_pad[:, :, k : h + k, k : w + k]
-            * valid_pad[:, :, :h, k : w + k]
-            * valid_pad[:, :, 2 * k : h + (2 * k), k : w + k]
-            * valid_pad[:, :, k : h + k, :w]
-            * valid_pad[:, :, k : h + k, 2 * k : w + (2 * k)]
-        )
-        valid_mask = valid_mask > 0.5
-
-        # get cross product (B, 3, H, W)
-        cross_product = -torch.linalg.cross(vec_vert, vec_hori, dim=1)
-        normal = F.normalize(cross_product, p=2.0, dim=1, eps=1e-12)
-        return normal, valid_mask
 
     @staticmethod
     def vfov_to_hfov(vfov_deg, height, width):
@@ -1748,30 +1897,137 @@ class SLAM_GUI:
 
         current_cam = CamImage(-1, None, K_mat, self.config.min_range*0.2, self.config.local_map_radius*1.1,
             img_width=W, img_height=H, cam_pose=torch.linalg.inv(T)) # T_wc
-    
-        # print(current_cam.camera_center)
                                                         
         return current_cam
+    
+    def visualize_neural_points(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
+        
+        if data_packet is None:
+            return
+        
+        if self.neural_point_chbox.checked:
+
+            dict_keys = list(data_packet.neural_points_data.keys())
+
+            neural_point_vis_down_rate = self.neural_point_vis_down_rate
+
+            local_mask = None
+            # global map is being loaded here
+            if "local_mask" in dict_keys:
+                local_mask = data_packet.neural_points_data["local_mask"]
+                # check if we need to downsample the global map a bit for fast visualization
+            
+            point_count = data_packet.neural_points_data["count"]
+            if point_count > 300000 and not self.local_map_chbox.checked:
+                neural_point_vis_down_rate = find_closest_prime(point_count // 200000)
+
+            if local_mask is not None and self.local_map_chbox.checked:
+                neural_point_position = data_packet.neural_points_data["position"][local_mask]
+            else:
+                neural_point_position = data_packet.neural_points_data["position"]
+
+            neural_point_position_np = neural_point_position[::neural_point_vis_down_rate, :].detach().cpu().numpy()
+                    
+            neural_point_colors_np = None
+            
+            if "color_pca_geo" in dict_keys and self.neuralpoint_geofeature_chbox.checked:
+                if local_mask is not None and self.local_map_chbox.checked:
+                    neural_point_colors = data_packet.neural_points_data["color_pca_geo"][local_mask]
+                else:
+                    neural_point_colors = data_packet.neural_points_data["color_pca_geo"]
+                neural_point_colors_np = neural_point_colors[::neural_point_vis_down_rate, :].detach().cpu().numpy()
+            elif "color_pca_color" in dict_keys and self.neuralpoint_colorfeature_chbox.checked:
+                if local_mask is not None and self.local_map_chbox.checked:
+                    neural_point_colors = data_packet.neural_points_data["color_pca_color"][local_mask]
+                else:
+                    neural_point_colors = data_packet.neural_points_data["color_pca_color"]
+                neural_point_colors_np = neural_point_colors[::neural_point_vis_down_rate, :].detach().cpu().numpy()
+            elif "ts" in dict_keys and self.neuralpoint_ts_chbox.checked:
+                if local_mask is not None and self.local_map_chbox.checked:
+                    ts_np = (data_packet.neural_points_data["ts"][local_mask])
+                else:
+                    ts_np = (data_packet.neural_points_data["ts"])
+                ts_np = ts_np[::neural_point_vis_down_rate].detach().cpu().numpy()
+                ts_np = ts_np / ts_np.max()
+                color_map = cm.get_cmap("jet")
+                neural_point_colors_np = color_map(ts_np)[:, :3].astype(np.float64)
+            elif self.neuralpoint_height_chbox.checked:
+                z_values = neural_point_position_np[:, 2]
+                z_min, z_max = z_values.min(), z_values.max()
+                z_normalized = (z_values - z_min) / (z_max - z_min + 1e-6)
+                color_map = cm.get_cmap("jet")
+                neural_point_colors_np = color_map(z_normalized)[:, :3].astype(np.float64)
+            elif "color" in dict_keys:
+                if local_mask is not None and self.local_map_chbox.checked:
+                    neural_point_colors = data_packet.neural_points_data["color"][local_mask]
+                else:
+                    neural_point_colors = data_packet.neural_points_data["color"]
+                neural_point_colors_np = neural_point_colors[::neural_point_vis_down_rate, :].detach().cpu().numpy()
+            
+            neural_point_valid_mask = None
+            if "valid_mask" in dict_keys:
+                if local_mask is not None and self.local_map_chbox.checked:
+                    neural_point_valid_mask = data_packet.neural_points_data["valid_mask"][local_mask]
+                else:
+                    neural_point_valid_mask = data_packet.neural_points_data["valid_mask"]
+                neural_point_valid_mask = neural_point_valid_mask[::neural_point_vis_down_rate].detach().cpu().numpy()
+
+                valid_neural_point_position = neural_point_position_np[neural_point_valid_mask]                
+                invalid_neural_point_position = neural_point_position_np[~neural_point_valid_mask]
+
+                self.neural_points.points = o3d.utility.Vector3dVector(valid_neural_point_position)
+                self.invalid_neural_points.points = o3d.utility.Vector3dVector(invalid_neural_point_position)
+                
+                if neural_point_colors_np is not None:
+                    valid_neural_point_colors = neural_point_colors_np[neural_point_valid_mask]
+                    invalid_neural_point_colors = neural_point_colors_np[~neural_point_valid_mask]
+                    invalid_neural_point_colors[:,:] = (0, 0, 0) # invalid part set to black for vis
+
+                    self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_colors)
+                    self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_colors)
+                
+            else:
+                self.neural_points.points = o3d.utility.Vector3dVector(neural_point_position_np)
+                if neural_point_colors_np is not None:
+                    self.neural_points.colors = o3d.utility.Vector3dVector(neural_point_colors_np)
+                self.invalid_neural_points = o3d.geometry.PointCloud()
+
+            # if self.ego_chbox.checked:
+            #     self.neural_points.transform(np.linalg.inv(self.cur_pose))
+
+            self.widget3d.scene.remove_geometry(self.neural_point_name)
+            self.widget3d.scene.add_geometry(self.neural_point_name, self.neural_points, self.neural_points_render)
+            
+            self.widget3d.scene.remove_geometry(self.invalid_neural_point_name)
+            self.widget3d.scene.add_geometry(self.invalid_neural_point_name, self.invalid_neural_points, self.neural_points_render)
+
+        self.widget3d.scene.show_geometry(self.neural_point_name, self.neural_point_chbox.checked)
+        self.widget3d.scene.show_geometry(self.invalid_neural_point_name, self.invalid_neural_point_chbox.checked)
     
     def visualize_scan(self, data_packet = None):
         if data_packet is None:
             data_packet = self.cur_data_packet
+
+        if data_packet is None:
+            return
 
         if self.scan_chbox.checked and data_packet.current_pointcloud_xyz is not None:
             self.scan.points = o3d.utility.Vector3dVector(data_packet.current_pointcloud_xyz)
             if data_packet.current_pointcloud_rgb is not None:
                 self.scan.colors = o3d.utility.Vector3dVector(data_packet.current_pointcloud_rgb)
         
-            # if not (self.config.color_on or self.config.semantic_on or self.scan_regis_color_chbox.checked):
-            #     self.scan.paint_uniform_color(SILVER)
+            if not (self.config.color_on or self.config.semantic_on or self.scan_regis_color_chbox.checked):
+                self.scan.paint_uniform_color(SILVER)
 
-            # if self.scan_height_color_chbox.checked:
-            #     z_values = data_packet.current_pointcloud_xyz[:, 2]
-            #     z_min, z_max = z_values.min(), z_values.max()
-            #     z_normalized = (z_values - z_min) / (z_max - z_min + 1e-6)
-            #     color_map = cm.get_cmap("jet")
-            #     scan_colors_np = color_map(z_normalized)[:, :3].astype(np.float64)
-            #     self.scan.colors = o3d.utility.Vector3dVector(scan_colors_np)
+            if self.scan_height_color_chbox.checked:
+                z_values = data_packet.current_pointcloud_xyz[:, 2]
+                z_min, z_max = z_values.min(), z_values.max()
+                z_normalized = (z_values - z_min) / (z_max - z_min + 1e-6)
+                color_map = cm.get_cmap("jet")
+                scan_colors_np = color_map(z_normalized)[:, :3].astype(np.float64)
+                self.scan.colors = o3d.utility.Vector3dVector(scan_colors_np)
 
             # if self.ego_chbox.checked:
             #     self.scan.transform(np.linalg.inv(self.cur_pose))
@@ -1781,7 +2037,83 @@ class SLAM_GUI:
 
         self.widget3d.scene.show_geometry(self.scan_name, self.scan_chbox.checked)
 
+    def visualize_mesh(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
 
+        if data_packet is None:
+            return
+
+        if data_packet.mesh_verts is not None and data_packet.mesh_faces is not None:
+            self.mesh = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(data_packet.mesh_verts),
+                o3d.utility.Vector3iVector(data_packet.mesh_faces),
+                )
+            self.mesh.compute_vertex_normals()
+
+            if data_packet.mesh_verts_rgb is not None:
+                self.mesh.vertex_colors = o3d.utility.Vector3dVector(data_packet.mesh_verts_rgb)
+            
+            if self.mesh_height_chbox.checked:
+                z_values = np.array(self.mesh.vertices, dtype=np.float64)[:, 2]
+                z_min, z_max = z_values.min(), z_values.max()
+                z_normalized = (z_values - z_min) / (z_max - z_min + 1e-6)
+                color_map = cm.get_cmap("jet")
+                mesh_verts_colors_np = color_map(z_normalized)[:, :3].astype(np.float64)
+                self.mesh.vertex_colors = o3d.utility.Vector3dVector(mesh_verts_colors_np)
+
+        # if self.ego_chbox.checked:
+        #     self.mesh.transform(np.linalg.inv(self.cur_pose))
+
+        self.widget3d.scene.remove_geometry(self.mesh_name)
+        self.widget3d.scene.add_geometry(self.mesh_name, self.mesh, self.mesh_render) 
+        self.widget3d.scene.show_geometry(self.mesh_name, self.mesh_chbox.checked)
+
+    def visualize_sdf_slice(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
+        
+        if data_packet is None:
+            return
+
+        if self.sdf_chbox.checked and data_packet.sdf_slice_xyz is not None and data_packet.sdf_slice_rgb is not None:
+            self.sdf_slice.points = o3d.utility.Vector3dVector(data_packet.sdf_slice_xyz)
+            self.sdf_slice.colors = o3d.utility.Vector3dVector(data_packet.sdf_slice_rgb)
+            self.widget3d.scene.remove_geometry(self.sdf_name)
+            self.widget3d.scene.add_geometry(self.sdf_name, self.sdf_slice, self.sdf_render)
+
+        self.widget3d.scene.show_geometry(self.sdf_name, self.sdf_chbox.checked)
+
+    def visualize_sdf_pool(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
+
+        if data_packet is None:
+            return
+
+        if self.sdf_pool_chbox.checked and data_packet.sdf_pool_xyz is not None and data_packet.sdf_pool_rgb is not None:
+            self.sdf_pool.points = o3d.utility.Vector3dVector(data_packet.sdf_pool_xyz)
+            self.sdf_pool.colors = o3d.utility.Vector3dVector(data_packet.sdf_pool_rgb)
+            self.widget3d.scene.remove_geometry(self.sdf_pool_name)
+            self.widget3d.scene.add_geometry(self.sdf_pool_name, self.sdf_pool, self.sdf_pool_render)
+
+        self.widget3d.scene.show_geometry(self.sdf_pool_name, self.sdf_pool_chbox.checked)
+    
+    def visualize_rendered_scan(self, data_packet = None):
+        if data_packet is None:
+            data_packet = self.cur_data_packet
+
+        if data_packet is None:
+            return
+        
+        if data_packet.current_rendered_xyz is not None:
+            self.rendered_scan.points = o3d.utility.Vector3dVector(data_packet.current_rendered_xyz)
+            if data_packet.current_rendered_rgb is not None:
+                self.rendered_scan.colors = o3d.utility.Vector3dVector(data_packet.current_rendered_rgb)
+            if self.rendered_scan_chbox.checked:
+                self.widget3d.scene.remove_geometry(self.rendered_scan_name)
+                self.widget3d.scene.add_geometry(self.rendered_scan_name, self.rendered_scan, self.scan_render)
+    
     # main rendering function for the 3D visualizer
     def render_o3d_image(self, results, current_cam, normal_in_world_frame: bool = True, normal_with_alpha: bool = True):
 
@@ -1812,7 +2144,7 @@ class SLAM_GUI:
 
             depth = depth.detach().cpu().numpy()
             # max_depth = np.max(depth)
-            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
+            depth_color = (colorize_depth_maps(depth, 0.1, self.config.max_range*0.8)[0]*255.0).astype(np.uint8) # 1, 3, H, W 
             depth_color = np.transpose(depth_color, (1, 2, 0)) # H, W, 3
             depth_color = np.ascontiguousarray(depth_color)
             render_img = o3d.geometry.Image(depth_color)
@@ -1873,7 +2205,7 @@ class SLAM_GUI:
             
             render_img = o3d.geometry.Image(opacity_color)
 
-        elif self.ellipsoid_chbox.checked and no_gl_issue:
+        elif self.ellipsoid_chbox.checked and not gl_issue:
 
             if self.cur_data_packet is None:
                 return
@@ -1952,8 +2284,6 @@ class SLAM_GUI:
         
         else:
             render_img = o3d.geometry.Image(rgb)
-
-
 
         return render_img
 
@@ -2035,6 +2365,7 @@ class SLAM_GUI:
 
     # this is used
     def _update_thread(self):
+        
         while True:
             time.sleep(0.01)
             self.step += 1
@@ -2051,11 +2382,11 @@ class SLAM_GUI:
                     if self.step % 3 == 0: # per 0.03s # 30 Hz
                         self.render_gui() # stucked here
 
-                        if self.slider_recording.is_on:
-                            model_matrix = np.asarray(self.widget3d.scene.camera.get_model_matrix())
-                            cur_extrinsic = model_matrix_to_extrinsic_matrix(model_matrix)
-                            cam_pose = np.linalg.inv(cur_extrinsic)
-                            self.recorded_poses.append(cam_pose)
+                        # if self.slider_recording.is_on:
+                        #     model_matrix = np.asarray(self.widget3d.scene.camera.get_model_matrix())
+                        #     cur_extrinsic = model_matrix_to_extrinsic_matrix(model_matrix)
+                        #     cam_pose = np.linalg.inv(cur_extrinsic)
+                        #     self.recorded_poses.append(cam_pose)
 
                     if self.step % 10 == 0: # per 0.2s # 5 Hz # receive latest data
                         self.receive_data(self.q_main2vis) # this is also slow

@@ -360,6 +360,7 @@ def setup_optimizer(
 
     if config.opt_adam:
         opt = optim.Adam(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps) # 1e-15
+        #opt = optim.AdamW(opt_setting, betas=(0.9, 0.99), eps=config.adam_eps) # 1e-15
     else:
         opt = optim.SGD(opt_setting, momentum=0.9)
 
@@ -1545,3 +1546,45 @@ def save_video_np(
 
     if verbose:
         print("Save the video to {} at {} Hz".format(output_path, fps))
+
+
+def get_gpu_memory_usage_gb(return_cached: bool = True):
+    cuda_available = torch.cuda.is_available()
+    if cuda_available:
+        if return_cached:
+            return torch.cuda.memory_cached() / (1024 ** 3)
+        else:
+            return torch.cuda.memory_allocated() / (1024 ** 3)
+    else:
+        return 0.0
+
+
+def is_prime(n):
+    """Helper function to check if a number is prime."""
+    if n < 2:
+        return False
+    for i in range(2, int(n ** 0.5) + 1):
+        if n % i == 0:
+            return False
+    return True
+
+def find_closest_prime(n):
+    """Find the closest prime number to n."""
+    if n < 2:
+        return 2
+    
+    if is_prime(n):
+        return n
+        
+    # Check numbers both above and below n
+    lower = n - 1
+    upper = n + 1
+    
+    while True:
+        if is_prime(lower):
+            return lower
+        if is_prime(upper):
+            return upper
+        lower -= 1
+        upper += 1
+

@@ -107,6 +107,7 @@ class VisPacket:
         gt_poses=None,
         slam_poses=None,
         local_only=True,
+        gpu_mem_usage_gb=None,
         img_down_rate=0,
     ):
         self.has_gaussians = False
@@ -159,7 +160,7 @@ class VisPacket:
         self.add_cam_frames(current_frames, img_down_rate)
 
         # # add train frames, better to also set the gtcolor, gtdepth, gtnormal
-        self.add_cam_frames(keyframes, img_down_rate) # could take too much memory (FIXME)
+        #self.add_cam_frames(keyframes, img_down_rate) # could take too much memory (FIXME)
         
         self.add_scan(current_pointcloud_xyz, current_pointcloud_rgb)
 
@@ -177,6 +178,8 @@ class VisPacket:
         self.sdf_pool_xyz = None
         self.sdf_pool_rgb = None
 
+        self.gpu_mem_usage_gb = gpu_mem_usage_gb
+
         self.kf_window = kf_window
 
         self.finish = finish
@@ -190,14 +193,14 @@ class VisPacket:
 
                 current_frame = cam_frames[cam]
 
-                cur_img_down_rate = max(img_down_rate, current_frame.cur_best_level)
+                #cur_img_down_rate = max(img_down_rate, current_frame.cur_best_level)
                 
-                if current_frame.rgb_image_list[cur_img_down_rate] is not None:
+                if current_frame.rgb_image is not None:
                     
-                    gtcolor = current_frame.rgb_image_list[cur_img_down_rate]
+                    gtcolor = current_frame.rgb_image
                     if current_frame.sky_mask_on:
                         # mask the sky part
-                        cur_sky_mask = current_frame.sky_mask_list[cur_img_down_rate] # still torch
+                        cur_sky_mask = current_frame.sky_mask # still torch
                         cur_sky_mask_used = cur_sky_mask.expand(3, -1, -1)
                         gtcolor[cur_sky_mask_used] = 1.0
                     
@@ -210,14 +213,14 @@ class VisPacket:
                     self.gtcolor[cam] = gtcolor
                     
                     if current_frame.depth_on:
-                        gtdepth = current_frame.depth_image_list[cur_img_down_rate]
+                        gtdepth = current_frame.depth_image
                         gtdepth = self.resize_img(gtdepth, is_sparse=True)
                     else:
                         gtdepth = None
                     self.gtdepth[cam] = gtdepth
                     
                     if current_frame.mono_normal_on:
-                        gtnormal = current_frame.normal_img_list[cur_img_down_rate]
+                        gtnormal = current_frame.normal_img
                         if current_frame.sky_mask_on:
                             # mask the sky part
                             gtnormal[cur_sky_mask_used] = 0.0
@@ -232,6 +235,7 @@ class VisPacket:
                                add_sorrounding_points: bool = True,
                                pca_color_on: bool = True):
         
+        
         if neural_points is not None:
             self.has_neural_points = True
             self.neural_points_data = {}
@@ -243,6 +247,7 @@ class VisPacket:
             self.neural_points_data["resolution"] = neural_points.resolution
             
             if only_local_map:
+                print(f"Local neural points: ", neural_points.local_neural_points.shape)
                 self.neural_points_data["position"] = neural_points.local_neural_points
                 self.neural_points_data["orientation"] = neural_points.local_point_orientations
                 self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
@@ -280,6 +285,7 @@ class VisPacket:
                         self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
 
             else:
+                print(f"Global neural points: ", neural_points.local_neural_points.shape)
                 self.neural_points_data["position"] = neural_points.neural_points
                 self.neural_points_data["orientation"] = neural_points.point_orientations
                 self.neural_points_data["geo_feature"] = neural_points.geo_features
@@ -290,13 +296,16 @@ class VisPacket:
                 self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
                 self.neural_points_data["ts"] = neural_points.point_ts_update
                 self.neural_points_data["stability"] = neural_points.point_certainties
+                
+                if neural_points.local_mask is not None:
+                    self.neural_points_data["local_mask"] = neural_points.local_mask[:-1]
 
                 if pca_color_on:
-                    geo_feature_3d, _ = feature_pca_torch(neural_points.geo_features[:-1], principal_components=neural_points.geo_feature_pca, down_rate=31)
+                    geo_feature_3d, _ = feature_pca_torch(neural_points.geo_features[:-1], principal_components=neural_points.geo_feature_pca, down_rate=97)
                     self.neural_points_data["color_pca_geo"] = geo_feature_3d
 
                     if neural_points.color_on:
-                        color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=31)
+                        color_feature_3d, _ = feature_pca_torch(neural_points.color_features[:-1], principal_components=neural_points.color_feature_pca, down_rate=97)
                         self.neural_points_data["color_pca_color"] = color_feature_3d
 
             if neural_points.color_on:
@@ -447,9 +456,11 @@ class ParamsGUI:
         config=None, # PINGS configs
         is_rgbd: bool = False,
         gs_default_on: bool = False,
+        local_map_default_on: bool = True,
         robot_default_on: bool = True,
-        neural_point_default_on: bool = False,
+        neural_point_map_default_on: bool = False,
         mesh_default_on: bool = False,
+        sdf_default_on: bool = False,
         neural_point_color_default_mode: int = 1, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
         neural_point_vis_down_rate: int = 1,
         frustum_size: float = 0.05,
@@ -463,10 +474,12 @@ class ParamsGUI:
 
         self.is_rgbd = is_rgbd
         self.gs_default_on = gs_default_on
+        self.local_map_default_on = local_map_default_on
         self.robot_default_on = robot_default_on
-        self.neural_point_default_on = neural_point_default_on
+        self.neural_point_map_default_on = neural_point_map_default_on
         self.mesh_default_on = mesh_default_on
+        self.sdf_default_on = sdf_default_on
         self.neural_point_color_default_mode = neural_point_color_default_mode
         self.neural_point_vis_down_rate = neural_point_vis_down_rate
-        
+       
         self.frustum_size = frustum_size
