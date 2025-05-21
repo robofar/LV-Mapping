@@ -109,6 +109,7 @@ class VisPacket:
         local_only=True,
         gpu_mem_usage_gb=None,
         img_down_rate=0,
+        render_pkg = None
     ):
         self.has_gaussians = False
         self.has_neural_points = False
@@ -184,6 +185,8 @@ class VisPacket:
 
         self.finish = finish
 
+        self.render_pkg = render_pkg
+
 
     def add_cam_frames(self, cam_frames, img_down_rate: int = 0):
 
@@ -250,14 +253,24 @@ class VisPacket:
                 print(f"Local neural points: ", neural_points.local_neural_points.shape)
                 self.neural_points_data["position"] = neural_points.local_neural_points
                 self.neural_points_data["orientation"] = neural_points.local_point_orientations
-                self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
+                #self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
+                local_geo_fts, local_color_fts = neural_points.query_neural_grid(neural_points.local_neural_points, True, True)
+                self.neural_points_data["geo_feature"] = local_geo_fts.detach()
                 if neural_points.color_on:
                     self.neural_points_data["color"] = neural_points.local_point_colors
-                    self.neural_points_data["color_feature"] = neural_points.local_color_features.detach()
+                    #self.neural_points_data["color_feature"] = neural_points.local_color_features.detach()
+                    self.neural_points_data["color_feature"] = local_color_fts.detach()
                 self.neural_points_data["free_mask"] = neural_points.local_free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.local_valid_gs_mask
                 self.neural_points_data["ts"] = neural_points.local_point_ts_update
                 self.neural_points_data["stability"] = neural_points.local_point_certainties
+
+                print(f"neural_points_data[geo_feature] is leaf: {self.neural_points_data['geo_feature'].is_leaf}")
+                print(f"neural_points_data[color_feature] is leaf: {self.neural_points_data['color_feature'].is_leaf}")
+                print(f"neural_points_data[geo_feature] requires grad: {self.neural_points_data['geo_feature'].requires_grad}")
+                print(f"neural_points_data[color_feature] requires grad: {self.neural_points_data['color_feature'].requires_grad}")
+                print(f"neural_points_data[geo_feature] has grad: {self.neural_points_data['geo_feature'].grad is not None}")
+                print(f"neural_points_data[color_feature] has grad: {self.neural_points_data['color_feature'].grad is not None}")
 
                 if pca_color_on:
                     local_geo_feature_3d, _ = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], principal_components=neural_points.geo_feature_pca, down_rate=17)
@@ -276,13 +289,23 @@ class VisPacket:
                         self.sorrounding_neural_points_data["center"] = neural_points.local_position
                         self.sorrounding_neural_points_data["position"] = neural_points.neural_points[sorrounding_mask_a]
                         self.sorrounding_neural_points_data["orientation"] = neural_points.point_orientations[sorrounding_mask_a]
-                        self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
+                        #self.sorrounding_neural_points_data["geo_feature"] = neural_points.geo_features[sorrounding_mask]
+                        sorrounding_geo_fts, sorrounding_color_fts = neural_points.query_neural_grid(neural_points.neural_points[sorrounding_mask_a], True, neural_points.point_colors is not None)
+                        self.sorrounding_neural_points_data["geo_feature"] = sorrounding_geo_fts.detach()
                         if neural_points.color_on:
                             self.sorrounding_neural_points_data["color"] = neural_points.point_colors[sorrounding_mask_a]
-                            self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
+                            #self.sorrounding_neural_points_data["color_feature"] = neural_points.color_features[sorrounding_mask]
+                            self.sorrounding_neural_points_data["color_feature"] = sorrounding_color_fts.detach()
                         self.sorrounding_neural_points_data["resolution"] = neural_points.resolution
                         self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
                         self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
+
+                        print(f"sorrounding_neural_points_data[geo_feature] is leaf: {self.sorrounding_neural_points_data['geo_feature'].is_leaf}")
+                        print(f"sorrounding_neural_points_data[color_feature] is leaf: {self.sorrounding_neural_points_data['color_feature'].is_leaf}")
+                        print(f"sorrounding_neural_points_data[geo_feature] requires grad: {self.sorrounding_neural_points_data['geo_feature'].requires_grad}")
+                        print(f"sorrounding_neural_points_data[color_feature] requires grad: {self.sorrounding_neural_points_data['color_feature'].requires_grad}")
+                        print(f"sorrounding_neural_points_data[geo_feature] has grad: {self.sorrounding_neural_points_data['geo_feature'].grad is not None}")
+                        print(f"sorrounding_neural_points_data[color_feature] has grad: {self.sorrounding_neural_points_data['color_feature'].grad is not None}")
 
             else:
                 print(f"Global neural points: ", neural_points.local_neural_points.shape)

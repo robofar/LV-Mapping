@@ -44,6 +44,7 @@ if not gl_issue:
     os.environ["PYOPENGL_PLATFORM"] = "osmesa"
 
 from utils.tools import colorize_depth_maps, seed_anything, get_time, remove_gpu_cache, find_closest_prime
+import matplotlib.pyplot as plt
 
 # o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -1480,6 +1481,7 @@ class SLAM_GUI:
                 self.frame_info.text = "Frame: {}".format(data_packet.frame_id)
                     
             if data_packet.has_neural_points:
+                print("neural_points recieved")
                 self.neural_points_info.text = "# Neural points: {} (local {}) [PINGS Map size: {:.1f} MB]".format(
                     data_packet.neural_points_data["count"],
                     data_packet.neural_points_data["local_count"],
@@ -1490,6 +1492,7 @@ class SLAM_GUI:
                
 
             if data_packet.has_sorrounding_points:
+                print("sorrounding_points recieved")
                 cur_center_position = data_packet.sorrounding_neural_points_data["center"]
                 
                 # spawn gaussians for the sorrounding map
@@ -1509,15 +1512,24 @@ class SLAM_GUI:
 
             # load cameras
             if data_packet.current_frames is not None and len(data_packet.cam_list)>0: # as Camera class
+                print("current_frames recieved")
                 
+                
+                # this is removing previous things I guess
                 for cam_name in list(self.frustum_dict.keys()): 
                     self.widget3d.scene.remove_geometry(cam_name)
 
+                
+                # I think this is adding like camera viewpoint orientation (for sure not image, but like viewpoint geometry inside visualization)
+                # But Im not sure if it is good idk
+                
                 for cam in data_packet.cam_list:
+                    print(f"Camera name: {cam}")
                     frustum = self.add_camera(
                         data_packet.current_frames[cam], name=cam, color=[0, 1, 0], size=self.frustum_size
                     )
                     # print("Cam added")
+                
                 if self.followcam_chbox.checked:
                     selected_cam = self.combo_cams.selected_text
                     selected_frustum = self.frustum_dict[selected_cam]
@@ -1530,9 +1542,11 @@ class SLAM_GUI:
                         self.widget3d.look_at(viewpoint[0], viewpoint[1], viewpoint[2])
 
                     # show rgb / depth / normal imgs (also the rendered rgb / depth error, etc.)
-                    self.update_img_show(selected_cam)                           
+                    self.update_img_show(selected_cam)            
+                            
 
             if data_packet.keyframes is not None: # as Camera class
+                print("keyframes recieved")
                 
                 # remove old stuff from last frame
                 for keyframe_name in list(self.keyframe_dict.keys()): 
@@ -1553,6 +1567,7 @@ class SLAM_GUI:
                     ) 
 
             if data_packet.gpu_mem_usage_gb is not None:
+                print("gpu_mem_usage_gb recieved")
                 self.gpu_mem_info.text = f"GPU Memory Usage: {data_packet.gpu_mem_usage_gb:.2f} GB"
 
             self.visualize_scan(data_packet)
@@ -1566,6 +1581,7 @@ class SLAM_GUI:
             self.visualize_rendered_scan(data_packet)
 
             if data_packet.gt_poses is not None:
+                print("gt poses received")
                 gt_position_np = data_packet.gt_poses[:, :3, 3]
                 if gt_position_np.shape[0] > 1:
                     self.gt_traj.points = o3d.utility.Vector3dVector(gt_position_np)
@@ -1594,6 +1610,7 @@ class SLAM_GUI:
                         self.widget3d.scene.add_geometry(self.range_circle_name, self.range_circle, self.ring_render)
 
             if data_packet.slam_poses is not None:
+                print("slam_poses received")
                 
                 slam_position_np = data_packet.slam_poses[:, :3, 3]
                 if slam_position_np.shape[0] > 1:
@@ -1637,6 +1654,7 @@ class SLAM_GUI:
                         self.widget3d.scene.show_geometry(self.loop_edges_name, self.loop_edges_chbox.checked)
         
             if data_packet.odom_poses is not None:
+                print("odom poses received")
             
                 odom_position_np = data_packet.odom_poses[:, :3, 3]
                 if odom_position_np.shape[0] > 1:
@@ -1749,7 +1767,6 @@ class SLAM_GUI:
         #down_rate_used = max(self.config.gs_vis_down_rate, cur_frame_cam.cur_best_level)
 
         if online_eval_on:
-
             with torch.no_grad():
                 render_results = render(cur_frame_cam, 
                     None, self.cur_data_packet.neural_points_data, 
@@ -1768,8 +1785,9 @@ class SLAM_GUI:
                     max_scale_ratio=self.config.max_scale_ratio,
                     unit_scale_ratio=self.config.unit_scale_ratio)
                     
-
             if render_results is not None:
+                print(f"cur frame cam uid GUI: {cur_frame_cam.uid}")
+                print(self.cur_data_packet.neural_points_data["position"].shape)
                 
                 rendered_rgb = torch.clamp(render_results["render"], 0.0, 1.0)
 
@@ -1783,6 +1801,11 @@ class SLAM_GUI:
                 )
                 rendered_rgb_o3d = o3d.geometry.Image(rendered_rgb_np)
                 self.rendered_rgb_widget.update_image(rendered_rgb_o3d)
+
+                #print(np.min(rendered_rgb_np))
+                #print(np.max(rendered_rgb_np))
+                #plt.imshow(rendered_rgb_np)
+                #plt.show()
 
                 cur_psnr = psnr(rendered_rgb, rgb).mean().item()
 

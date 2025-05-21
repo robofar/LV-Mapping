@@ -1302,7 +1302,8 @@ def project_points_to_cam_torch(points_torch,
     
     device = points_torch.device
     img_torch = img_torch.to(device) # because now image can be on gpu or cpu
-    foundation_mask = foundation_mask.to(device) # because now image can be on gpu or cpu
+    if foundation_mask is not None:
+        foundation_mask = foundation_mask.to(device) # because now image can be on gpu or cpu
     instance_ids = -1 * torch.ones((points_torch.shape[0], 1), dtype=torch.int16, device=device) # has to be int8 bcs of -1 (if it is uint8 then this -1 would become 255)
 
     # FIXME: check if points_torch would also get changed

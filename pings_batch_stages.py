@@ -318,7 +318,7 @@ def run_pin_slam(
             for k,v in dynamic.dynamic_instance[cam_name].items():
                 print("Key: ", k, " Value: ", v)
             print("------------------")
-
+    
         pcd_static = (
             dynamic.get_outside_fov_pcd_o3d()[0]
             + dynamic.get_instance_pcd_o3d(0, 'rear')[0]

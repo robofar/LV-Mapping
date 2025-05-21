@@ -163,11 +163,44 @@ class Dynamic():
         aspect_ratio = max(extents[0], extents[1]) / min(extents[0], extents[1]) # x and y only (z not important)
         volume = np.prod(extents)  # Bounding box volume
         #point_count = len(pcd.points)
-        point_count = len(pcd.voxel_down_sample(voxel_size=0.1).points)
+        point_count = len(pcd.voxel_down_sample(voxel_size=0.25).points)
 
         bbox.color = (0, 1, 0)  # RGB: Green color
 
         return aspect_ratio, volume, point_count, bbox
+
+    def voxel_downsample_2d(self, points_2d, voxel_size=0.2):
+        """
+        Convert 2D points to 3D, voxel downsample using Open3D, then return back to 2D.
+        """
+        # Convert to Nx3 by padding with zeros
+        points_3d = np.hstack((points_2d, np.zeros((points_2d.shape[0], 1))))
+        
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points_3d)
+
+        pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+
+        downsampled_3d = np.asarray(pcd.points)
+        return downsampled_3d[:, :2]  # Convert back to 2D
+
+    def voxel_downsample_ordered(self, points_2d, voxel_size=0.25):
+        """
+        Voxel downsampling for 2D trajectory points.
+        Keeps only the first point that falls into each voxel.
+        Preserves the original order of points.
+        """
+        voxel_grid = {}
+        downsampled_points = []
+
+        for pt in points_2d:
+            voxel_idx = tuple((pt // voxel_size).astype(int))
+            if voxel_idx not in voxel_grid:
+                voxel_grid[voxel_idx] = True
+                downsampled_points.append(pt)
+
+        return np.array(downsampled_points)
+
     
 
     def compute_curvature(self, points_2d):
@@ -202,7 +235,7 @@ class Dynamic():
 
     
 
-    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=450, curvature_threshold=15000.0):
+    def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=300, curvature_threshold=1000.0, min_length_threshold=1.75, max_length_threshold=6.0):
         """
         Identifies the most likely car trace cluster based on aspect ratio and size.
         """
@@ -220,16 +253,19 @@ class Dynamic():
 
             aspect_ratio, _, point_count, bbox = self.get_bounding_box_properties(cluster_pcd)
             extents = bbox.extent
-            smaller_axis = min(extents[0], extents[1])
+            min_length = min(extents[0], extents[1])
+            max_length = max(extents[0], extents[1])
 
             # New: Compute curvature
             cluster_np = np.asarray(cluster_pcd.points)
             cluster_xy = cluster_np[:, :2]  # Take x and y
-            curvature = self.compute_curvature(cluster_xy)
+            down_pts = self.voxel_downsample_ordered(cluster_xy, voxel_size=0.25)
+            curvature = self.compute_curvature(down_pts)
 
-            print(f"Label {label}: Aspect ratio={aspect_ratio:.2f}, Curvature={curvature:.4f}, Points={point_count}")
+            print(f"Label {label}: Aspect ratio={aspect_ratio:.2f} (max_length={max_length}, min_length={min_length}), Curvature={curvature:.4f}, Points={point_count}")
 
-            if ((aspect_ratio > aspect_threshold) or (curvature > curvature_threshold)) and point_count > min_points:
+            # ((aspect_ration > aspect_threshold) and (max_length > length_threshold or min_length > length_threshold))
+            if ((aspect_ratio > aspect_threshold) and (max_length > max_length_threshold and min_length > min_length_threshold) or (curvature > curvature_threshold)) and point_count >= min_points:
                 if aspect_ratio > best_aspect_ratio:
                     # Store previous best in rest_clusters before replacing
                     if best_trace_cluster is not None:
