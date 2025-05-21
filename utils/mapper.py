@@ -187,6 +187,7 @@ class Mapper:
     def map_initialization(self, points_torch: torch.tensor, colors_torch: torch.tensor, timestamps_torch: torch.tensor):
         
         for i in range(0, points_torch.shape[0], self.config.points_batch_size_initialization):
+            remove_gpu_cache()
             # Take batch of points
             points_batch = points_torch[i : i + self.config.points_batch_size_initialization]
             colors_batch = colors_torch[i : i + self.config.points_batch_size_initialization]
@@ -1122,7 +1123,10 @@ class Mapper:
                     gt_depth_image = None
                 
                 if viewpoint_cam.binary_mask_on:
-                    binary_mask = viewpoint_cam.binary_mask
+                    if (viewpoint_cam.binary_mask.shape[1] == gt_rgb_image.shape[1]) and (viewpoint_cam.binary_mask.shape[2] == gt_rgb_image.shape[2]):
+                        binary_mask = viewpoint_cam.binary_mask
+                    else:
+                        binary_mask = torch.ones_like(gt_depth_image)
                 else:
                     binary_mask = torch.ones_like(gt_depth_image)
 
@@ -1850,7 +1854,7 @@ class Mapper:
         bg_3d = background.view(3, 1, 1)
 
         if self.config.save_image_eval:
-            save_folder = "eval_images_delete"
+            save_folder = os.path.join(self.config.run_path, "offline_eval_images")
             os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
 
 
@@ -2315,6 +2319,7 @@ class Mapper:
             test_f1_np = np.mean(np.array(self.test_f1_list))
             print("Average test frame CD (m) ↓ :", f"{test_cd_np:.3f}")
             print("Average test frame F1 (%) ↑ :", f"{test_f1_np:.3f}")
+        '''
         
 
         
@@ -2330,20 +2335,8 @@ class Mapper:
                 "Recon-F1(%)↑",
                 "Frame-count",
         ]
-        gs_eval = [
-            {
-                gs_csv_columns[0]: "all",
-                gs_csv_columns[1]: psnr_np,
-                gs_csv_columns[2]: ssim_np,
-                gs_csv_columns[3]: lpips_np,
-                gs_csv_columns[4]: depthl1_np,
-                gs_csv_columns[5]: depth_rmse_np,
-                gs_csv_columns[6]: cd_np,
-                gs_csv_columns[7]: f1_np,
-                gs_csv_columns[8]: frame_count,
-            },
-            
-            
+
+        '''
             {
                 gs_csv_columns[0]: "test",
                 gs_csv_columns[1]: test_psnr_np,
@@ -2355,6 +2348,22 @@ class Mapper:
                 gs_csv_columns[7]: test_f1_np,
                 gs_csv_columns[8]: test_frame_count,
             }
+        '''
+
+        
+        gs_eval = [
+            {
+                gs_csv_columns[0]: "all",
+                gs_csv_columns[1]: psnr_np,
+                gs_csv_columns[2]: ssim_np,
+                gs_csv_columns[3]: lpips_np,
+                gs_csv_columns[4]: depthl1_np,
+                gs_csv_columns[5]: depth_rmse_np,
+                gs_csv_columns[6]: cd_np,
+                gs_csv_columns[7]: f1_np,
+                gs_csv_columns[8]: frame_count,
+            }
+            
             
             
         ]
@@ -2370,7 +2379,6 @@ class Mapper:
                     writer.writerow(data)
         except IOError:
             print("I/O error")
-        '''
 
         # if config.save_mesh:
         #     output_mc_res_m = config.mc_res_m*0.6
