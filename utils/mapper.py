@@ -1819,6 +1819,8 @@ class Mapper:
         self.depth_rmse_list = []
         self.cd_list = []
         self.f1_list = []
+        self.static_cd_list = []
+        self.static_f1_list = []
 
     def record_per_cam_param(self):
 
@@ -1838,8 +1840,8 @@ class Mapper:
     def gs_eval_offline(self, q_main2vis=None, q_vis2main=None, 
                         eval_down_rate=0, skip_end_count: int = 0, 
                         sorrounding_map_radius = None,
-                        lpips_eval_on: bool = False,
-                        pc_cd_eval_on: bool = False,
+                        lpips_eval_on: bool = True,
+                        pc_cd_eval_on: bool = True,
                         rerender_tsdf_fusion_on: bool = False,
                         filter_isolated_mesh: bool = True):
         
@@ -1906,7 +1908,7 @@ class Mapper:
                 # spawning gaussians for sorrounding map
                 sorrounding_spawn_results = None
                 if sorrounding_neural_points_data is not None:
-                    print(f"Sorrounding neural points data is NOT None, spawn sorrounding map")
+                    print(f"Spawning Gaussians from neural points in the sorrounding area...")
                     sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
                         self.decoders, None, T_w_l[:3,3],
                         dist_concat_on=self.config.dist_concat_on, 
@@ -1920,7 +1922,8 @@ class Mapper:
                         unit_scale_ratio=self.config.unit_scale_ratio)
 
                 # in lidar frame
-                cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
+                cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud() # scan with dynamic objects in it (local lidar frame)
+                cur_frame_measured_static_pcd_o3d = o3d.geometry.PointCloud() # scan without dynamic objects in it (local lidar frame)
                 cur_frame_rendered_pcd_o3d = o3d.geometry.PointCloud()
 
                 if pc_cd_eval_on and self.dataset.cur_point_cloud_torch is not None:
@@ -1941,7 +1944,9 @@ class Mapper:
 
                     # in lidar frame
                     cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
+                    cur_frame_measured_static_pcd_o3d = o3d.geometry.PointCloud()
 
+                    # Raw scan that contains dynamic objects
                     cur_frame_measured_xyz_np = (
                         self.dataset.cur_point_cloud_torch[:,:3].detach().cpu().numpy().astype(np.float64)
                     )
@@ -1949,8 +1954,25 @@ class Mapper:
                     cur_frame_measured_color_np = (
                         self.dataset.cur_point_cloud_torch[:,3:].detach().cpu().numpy().astype(np.float64)
                     )
+
                     cur_frame_measured_pcd_o3d.points = o3d.utility.Vector3dVector(cur_frame_measured_xyz_np)
                     cur_frame_measured_pcd_o3d.colors = o3d.utility.Vector3dVector(cur_frame_measured_color_np)
+
+                    # Scan from the static map obtained using timestamps
+                    select_points_mask = (self.static_map_timestamps == 0).squeeze(-1)
+                    cur_frame_measured_static_xyz_np = (
+                        self.static_map_points[select_points_mask].detach().cpu().numpy().astype(np.float64)
+                    )
+
+                    cur_frame_measured_static_color_np = (
+                        self.static_map_colors[select_points_mask].detach().cpu().numpy().astype(np.float64)
+                    )
+
+                    cur_frame_measured_static_pcd_o3d.points = o3d.utility.Vector3dVector(cur_frame_measured_static_xyz_np)
+                    cur_frame_measured_static_pcd_o3d.colors = o3d.utility.Vector3dVector(cur_frame_measured_static_color_np)
+
+
+                    
 
                 
                 cur_cam_names = list(self.dataset.cur_cam_img.keys())
@@ -2220,6 +2242,23 @@ class Mapper:
                     self.cd_list.append(cur_cd)
                     self.f1_list.append(cur_f1)
 
+
+                    ##################
+
+                    cd_metrics_static = eval_pair(cur_frame_rendered_pcd_o3d, cur_frame_measured_static_pcd_o3d, 
+                        down_sample_res=0.05, threshold=0.1, 
+                        truncation_acc=1.0, truncation_com=1.0) # FIXME
+                    
+                    cur_cd_static = cd_metrics_static['Chamfer_L1 (m)']
+                    cur_f1_static = cd_metrics_static['F-score (%)']
+
+                    if not self.silence:
+                        print("Current frame Chamfer Distance L1 (m) for static scan ↓ :", f"{cur_cd_static:.3f}")
+                        print("Current frame F1-score (%) for static scan ↑ :", f"{cur_f1_static:.3f}")
+
+                    self.static_cd_list.append(cur_cd_static)
+                    self.static_f1_list.append(cur_f1_static)
+
                 # if rerender_tsdf_fusion_on:
                 #     cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.voxel_down_sample(self.config.vox_down_m)
                 #     cur_frame_rendered_pcd_o3d = cur_frame_rendered_pcd_o3d.transform(T_w_l_cam_ts_np)
@@ -2301,6 +2340,12 @@ class Mapper:
             print("Average CD (m) ↓ :", f"{cd_np:.3f}")
             print("Average F1 (%) ↑ :", f"{f1_np:.3f}")
         
+        if len(self.static_cd_list) > 0:
+            static_cd_np = np.mean(np.array(self.static_cd_list))
+            static_f1_np = np.mean(np.array(self.static_f1_list))
+            print("Average static CD (m) ↓ :", f"{static_cd_np:.3f}")
+            print("Average static F1 (%) ↑ :", f"{static_f1_np:.3f}")
+        
         '''
         test_psnr_np = test_ssim_np = test_lpips_np = test_depthl1_np = test_depth_rmse_np = test_cd_np = test_f1_np = 0.0
 
@@ -2342,6 +2387,8 @@ class Mapper:
                 "Depth-RMSE(m)↓",
                 "Recon-CD(m)↓",
                 "Recon-F1(%)↑",
+                "Static Recon-CD(m)↓",
+                "Static Recon-F1(%)↑",
                 "Frame-count",
         ]
 
@@ -2370,15 +2417,17 @@ class Mapper:
                 gs_csv_columns[5]: depth_rmse_np,
                 gs_csv_columns[6]: cd_np,
                 gs_csv_columns[7]: f1_np,
-                gs_csv_columns[8]: frame_count,
+                gs_csv_columns[8]: static_cd_np,
+                gs_csv_columns[9]: static_f1_np,
+                gs_csv_columns[10]: frame_count,
             }
             
             
             
         ]
         
-        
         gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval.csv")
+        
         try:
             with open(gs_output_csv_path, "w") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
@@ -2388,7 +2437,8 @@ class Mapper:
                     writer.writerow(data)
         except IOError:
             print("I/O error")
-
+        
+        print(f"Evaluation results saved under the path: {gs_output_csv_path}")
         # if config.save_mesh:
         #     output_mc_res_m = config.mc_res_m*0.6
         #     mc_cm_str = str(round(output_mc_res_m*1e2))

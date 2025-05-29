@@ -424,38 +424,59 @@ def run_pin_slam(
     # VI. Save results
     remove_gpu_cache()
     if config.gs_on and config.gs_eval_on: 
-        print("Begin rendering evaluation")
         remove_gpu_cache()
+        print("Begin evaluation...")
         mapper.gs_eval_offline(None, q_vis2main, eval_down_rate=config.gs_vis_down_rate, skip_end_count=0, 
                                lpips_eval_on=True, pc_cd_eval_on=config.rendered_pc_eval_on, 
                                rerender_tsdf_fusion_on=config.rerender_tsdf_fusion_on) # FIXME
+        
+        print("Saving evaluation results (.csv)...")
         mapper.gs_eval_out()
     
 
+    # Save neural points as .ply file
+    # Calculate their colors for saving them
     remove_gpu_cache()
-    color_mode_for_neural_point_output = 5 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+    color_mode_for_neural_point_output = 0 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
     neural_pcd = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
 
     if config.save_map:
         remove_gpu_cache()
-        print("Saving neural points as PointCloud .ply file in map subdirectory...")
+
+        # Im saving static map as well such that I can use it in inspect_pings.py
+        print("Saving static map (.ply) ...")
+        static_map_pcd = o3d.geometry.PointCloud()
+        static_map_pcd.points = o3d.utility.Vector3dVector(mapper.static_map_points.detach().cpu().numpy().astype(np.float64))
+        static_map_pcd.colors = o3d.utility.Vector3dVector(mapper.static_map_colors.detach().cpu().numpy().astype(np.float64))
+        static_map_path = os.path.join(run_path, "map", "static_map.ply")
+        o3d.io.write_point_cloud(static_map_path, static_map_pcd) # write the static map point cloud
+        print(f"static map saved to the path: {static_map_path}")
+
+        remove_gpu_cache()
+
+        print("Saving neural points (.ply) ...")
         neural_points_path = os.path.join(run_path, "map", "neural_points.ply")
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
-        print(f"save the neural point map to {neural_points_path}")
+        print(f"neural points saved to the path: {neural_points_path}")
 
-        print("Saving neural points and MLPs in model subdirectory...")
+        remove_gpu_cache()
+
+        neural_points.clear_temp() # clear temp data for output, so that you dont uneccessary store additional things
+        print("Saving whole map (.pth) ...")
         save_implicit_map(run_path, neural_points, mlp_dict)
 
 
     if config.save_mesh and cur_mesh is None:
         remove_gpu_cache()
+
         print("Saving mesh...")
         chunks_aabb = split_chunks(neural_pcd, neural_pcd.get_axis_aligned_bounding_box(), config.mc_res_m * 100) # reconstruct in chunks
         mc_cm_str = str(round(config.mc_res_m*1e2))
         mesh_path = os.path.join(run_path, "mesh", "mesh_" + mc_cm_str + "cm.ply")
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, config.mc_res_m, mesh_path, False, config.semantic_on, config.color_on, filter_isolated_mesh=True, mesh_min_nn=config.mesh_min_nn)
-        print(cur_mesh)
-        print(f"save the reconstructed mesh to {mesh_path}")
+        
+        print(f"Mesh saved {cur_mesh}")
+        print(f"reconstructed mesh saved to the path: {mesh_path}")
 
 
 if __name__ == "__main__":
