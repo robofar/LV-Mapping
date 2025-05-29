@@ -84,6 +84,7 @@ class IPBCarDataset:
         self.depth_files = {} # depth files
         self.binary_mask_files = {} # binary mask files
         self.mask_files = {} # Maks files from Grounded SAM2 (.npy)
+        self.static_mask_files = {} # Pederstrians (no need for clustering them we assume they gonna move anyways)
 
         self.img_ts = {}
         self.K_mats = {}
@@ -142,6 +143,17 @@ class IPBCarDataset:
                     self.mask_files[cam_name] = None
             else:
                 self.mask_files[cam_name] = None
+            
+
+            if self.MOT:
+                cur_cam_static_mask_dir = os.path.join(data_dir, "camera_{}".format(cam_name), "mask_data_person/")
+                cur_img_static_mask_files = sorted(glob.glob(cur_cam_static_mask_dir + "*.npy"))
+                if len(cur_img_static_mask_files) > 0:
+                    self.static_mask_files[cam_name] = cur_img_static_mask_files
+                else:
+                    self.static_mask_files[cam_name] = None
+            else:
+                self.static_mask_files[cam_name] = None
      
 
             # Depth images
@@ -269,6 +281,7 @@ class IPBCarDataset:
 
             img_dict = {}
             mask_dict = {}
+            static_mask_dict = {}
             depth_img_dict = {}
             binary_mask_dict = {}
 
@@ -332,6 +345,15 @@ class IPBCarDataset:
                 else:
                     #print(f"Maks files for camera {cam_name} do not exist")
                     mask_dict[cam_name] = None
+                
+
+                if self.static_mask_files[cam_name] is not None:
+                    cur_static_mask_file = self.static_mask_files[cam_name][idx] # filename
+                    static_mask_cam = self.read_mask_npy(mask_file=cur_static_mask_file) # load it (create some function to load the mask)
+                    static_mask_dict[cam_name] = static_mask_cam # H, W (mask_cam is numpy array of dtype uint16). Right now it is H,W, but should I use H,W,1 ?
+                else:
+                    #print(f"Maks files for camera {cam_name} do not exist")
+                    static_mask_dict[cam_name] = None
 
                     
                 
@@ -356,6 +378,7 @@ class IPBCarDataset:
             # print(point_ts) # correct
             frame_data["img"] = img_dict
             frame_data["mask"] = mask_dict
+            frame_data["static_mask"] = static_mask_dict
             frame_data["depth"] = depth_img_dict
             frame_data["binary_mask"] = binary_mask_dict  
 

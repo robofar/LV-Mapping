@@ -33,6 +33,7 @@ class CamImage:
         normal_img = None, 
         sky_mask = None, 
         foundation_mask = None,
+        static_foundation_mask = None,
         binary_mask = None,
         device = "cuda", 
         image_device = "cuda",
@@ -152,6 +153,12 @@ class CamImage:
             else:
                 self.foundation_mask_on = False
             
+            if static_foundation_mask is not None:
+                static_foundation_mask = static_foundation_mask.to(self.image_device)
+                self.static_foundation_mask_on = True
+            else:
+                self.static_foundation_mask_on = False
+            
             if binary_mask is not None:
                 binary_mask = binary_mask.to(self.image_device)
                 self.binary_mask_on = True
@@ -164,6 +171,7 @@ class CamImage:
         self.sky_mask = sky_mask
         self.normal_img = normal_img
         self.foundation_mask = foundation_mask # uint16
+        self.static_foundation_mask = static_foundation_mask # uint16
         self.binary_mask = binary_mask # bool
 
             
@@ -235,6 +243,8 @@ class CamImage:
             self.depth_image = self.depth_image.to(self.device)
         if self.foundation_mask_on:
             self.foundation_mask = self.foundation_mask.to(self.device)
+        if self.static_foundation_mask_on:
+            self.static_foundation_mask = self.static_foundation_mask.to(self.device)
         if self.binary_mask_on:
             self.binary_mask = self.binary_mask.to(self.device)
 

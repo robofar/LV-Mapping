@@ -340,10 +340,10 @@ def run_pin_slam(
         print(f"timestamps_static shape: {timestamps_static.shape}")
 
         print("Saving static map and their timestamps...")
-        o3d.io.write_point_cloud("static_map.ply", pcd_static)
+        o3d.io.write_point_cloud("static_map_test.ply", pcd_static)
 
         timestamps_np = timestamps_static.detach().cpu().numpy()  # shape: [N, 1]
-        np.save("static_map_timestamps.npy", timestamps_np)
+        np.save("static_map_timestamps_test.npy", timestamps_np)
 
         print("Saving binary masks...")
         mapper.create_binary_masks()

@@ -1122,6 +1122,7 @@ class Mapper:
                 else:
                     gt_depth_image = None
                 
+                '''
                 if viewpoint_cam.binary_mask_on:
                     if (viewpoint_cam.binary_mask.shape[1] == gt_rgb_image.shape[1]) and (viewpoint_cam.binary_mask.shape[2] == gt_rgb_image.shape[2]):
                         binary_mask = viewpoint_cam.binary_mask
@@ -1129,6 +1130,14 @@ class Mapper:
                         binary_mask = torch.ones_like(gt_depth_image)
                 else:
                     binary_mask = torch.ones_like(gt_depth_image)
+                '''
+
+                if viewpoint_cam.binary_mask_on:
+                    binary_mask = viewpoint_cam.binary_mask
+                else:
+                    binary_mask = torch.ones_like(gt_depth_image)
+
+
 
 
                 
@@ -2810,20 +2819,29 @@ class Mapper:
             true_keys_tensor = torch.tensor(true_keys, dtype=torch.int16, device='cuda:0')
             dynamic_instance_ids[cam_name] = true_keys_tensor
             
-            dir_path = f"{self.config.pc_path}camera_{cam_name}/binary"
+            dir_path = f"{self.config.pc_path}camera_{cam_name}/binary_test"
             os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
         
         print(dynamic_instance_ids)
         
         for cam in self.cam_pool:
-            binary_mask = torch.ones_like(cam.foundation_mask, dtype=torch.bool)
-            mask_to_false = (cam.foundation_mask.unsqueeze(0) == dynamic_instance_ids[cam.cam_id].to(device=cam.foundation_mask.device).unsqueeze(1).unsqueeze(2)).any(dim=0)
-            binary_mask[mask_to_false] = False
+            binary_mask = torch.ones_like(cam.rgb_image[0,:,:].squeeze(0), dtype=torch.bool) # H,W
+
+            # Mask out dynamic objects
+            if (cam.foundation_mask.shape[0] == cam.rgb_image.shape[1]) and (cam.foundation_mask.shape[1] == cam.rgb_image.shape[2]):
+                mask_to_false = (cam.foundation_mask.unsqueeze(0) == dynamic_instance_ids[cam.cam_id].to(device=cam.foundation_mask.device).unsqueeze(1).unsqueeze(2)).any(dim=0)
+                binary_mask[mask_to_false] = False
+
+            # Mask out person objects
+            if (cam.static_foundation_mask.shape[0] == cam.rgb_image.shape[1]) and (cam.static_foundation_mask.shape[1] == cam.rgb_image.shape[2]):
+                static_mask_to_false = (cam.static_foundation_mask.unsqueeze(0) > torch.tensor([0]).to(device=cam.foundation_mask.device)).any(dim=0)
+                binary_mask[static_mask_to_false] = False
+
             mask_img = binary_mask.float().unsqueeze(0)
 
             frame_id_in_folder = self.config.begin_frame + cam.frame_id * self.config.step_frame # global frame_id
             save_path_binary = os.path.join(
-                f"{self.config.pc_path}camera_{cam.cam_id}/binary",
+                f"{self.config.pc_path}camera_{cam.cam_id}/binary_test",
                 f"binary_{frame_id_in_folder:010d}.png"
             )
 

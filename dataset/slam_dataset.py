@@ -397,6 +397,11 @@ class SLAMDataset():
                 else:
                     mask_dict = None
 
+                if "static_mask" in dict_keys:
+                    static_mask_dict: dict = frame_data["static_mask"]
+                else:
+                    static_mask_dict = None
+
                 if "depth" in dict_keys: # have depth img
                     depth_dict: dict = frame_data["depth"]
                 else:
@@ -431,6 +436,15 @@ class SLAMDataset():
 
                         cur_img_mask_torch = torch.tensor(cur_img_mask_np, dtype=torch.int16, device=self.image_device) # has to be int16, because later some instance_id tensor is int16 (int8 would be small cuz there could be more than 255 classes for sequence)
                         #cur_img_mask_torch = cur_img_mask_torch.permute(2,0,1) # N, H, W
+                    
+                    cur_img_static_mask_np = None
+                    cur_img_static_mask_torch = None # optional mask (1: valid, 0: invalid)
+                    if static_mask_dict[cam_name] is not None:
+                        cur_img_static_mask_np = static_mask_dict[cam_name] # H,W
+
+                        cur_img_static_mask_torch = torch.tensor(cur_img_static_mask_np, dtype=torch.int16, device=self.image_device) # has to be int16, because later some instance_id tensor is int16 (int8 would be small cuz there could be more than 255 classes for sequence)
+                        #cur_img_mask_torch = cur_img_mask_torch.permute(2,0,1) # N, H, W
+                    
 
                     cur_img_depth_np = None # numpy
                     cur_img_depth_torch = None # torch
@@ -685,7 +699,9 @@ class SLAMDataset():
                     self.cur_cam_img[cam_name] = CamImage(frame_id, cur_img_rgb_torch, self.K_mats[cam_name], 
                                                           self.config.min_range*0.5, self.config.local_map_radius*1.1,
                                                           cam_name, depth_image=cur_img_depth_torch, normal_img=pred_normal,  
-                                                          sky_mask=cur_sky_mask_torch, foundation_mask = cur_img_mask_torch, binary_mask = cur_binary_mask_torch,
+                                                          sky_mask=cur_sky_mask_torch, foundation_mask = cur_img_mask_torch,
+                                                          static_foundation_mask = cur_img_static_mask_torch,
+                                                          binary_mask = cur_binary_mask_torch,
                                                           device=self.device, image_device=self.image_device)
                     
                 if monodepth_on and use_mono_depth_for_gs_init:
