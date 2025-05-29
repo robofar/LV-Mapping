@@ -371,9 +371,32 @@ def run_pin_slam(
     static_timestamps_np = np.load("static_map_timestamps.npy")
     static_timestamps = torch.from_numpy(static_timestamps_np).to(dtype=torch.int32, device=points_torch.device)
 
+    print("Infor before")
+    print(f"Minimal timestamp: {torch.min(static_timestamps)}")
+    print(f"Maximal timestamp: {torch.max(static_timestamps)}")
     print(points_torch.shape)
     print(colors_torch.shape)
     print(static_timestamps.shape)
+
+
+    print(f"Begin frame: {config.begin_frame}")
+    print(f"End frame: {config.end_frame}")
+
+    timestamp_range_mask = ((static_timestamps >= config.begin_frame) & (static_timestamps < config.end_frame)).squeeze(-1)
+
+    points_torch = points_torch[timestamp_range_mask]
+    colors_torch = colors_torch[timestamp_range_mask]
+    static_timestamps = static_timestamps[timestamp_range_mask]
+
+
+    print("Info after")
+    print(f"Minimal timestamp: {torch.min(static_timestamps)}")
+    print(f"Maximal timestamp: {torch.max(static_timestamps)}")
+    print(points_torch.shape)
+    print(colors_torch.shape)
+    print(static_timestamps.shape)
+
+
 
 
     # Initializing Neural Grid
@@ -382,8 +405,6 @@ def run_pin_slam(
     mapper.static_map_points = points_torch
     mapper.static_map_colors = colors_torch
     mapper.static_map_timestamps = static_timestamps
-
-    print(f"Shape of pool is: {mapper.coord_pool.shape}")
     
     print("Neural points: ", neural_points.neural_points.shape)
     print("Neural grid level 0: ", neural_points.corner_points_list[0].shape)
