@@ -2049,8 +2049,7 @@ class Mapper:
                         
                         gt_rgb_image = cur_view_cam.rgb_image
                         binary_mask = cur_view_cam.binary_mask # H,W
-                        binary_mask_1d = binary_mask.unsqueeze(0) # 1,H,W
-                        binary_mask_3d = binary_mask.unsqueeze(0).expand_as(gt_rgb_image) # H,W -> 1,H,W -> 3,H,W
+                        binary_mask_3d = binary_mask.expand_as(gt_rgb_image) # H,W -> 1,H,W -> 3,H,W
 
                         # if cur_view_cam.sky_mask_on:
                         #     # mask the sky part for eval
@@ -2203,7 +2202,7 @@ class Mapper:
                                 print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
                             
 
-                            binary_depth_mask = valid_depth_mask & binary_mask_1d
+                            binary_depth_mask = valid_depth_mask & binary_mask
                             binary_diff_depth_masked = diff_depth[binary_depth_mask].detach().cpu().numpy()
 
                             cur_masked_depth_l1 = np.mean(binary_diff_depth_masked)

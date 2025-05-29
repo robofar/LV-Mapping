@@ -213,3 +213,7 @@ job_scripts
 
 *.ply
 *.npy
+
+# HPC
+job.bash
+slurm-*.out
