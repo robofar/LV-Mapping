@@ -2819,7 +2819,7 @@ class Mapper:
             true_keys_tensor = torch.tensor(true_keys, dtype=torch.int16, device='cuda:0')
             dynamic_instance_ids[cam_name] = true_keys_tensor
             
-            dir_path = f"{self.config.pc_path}camera_{cam_name}/binary_test"
+            dir_path = f"{self.config.pc_path}camera_{cam_name}/binary"
             os.makedirs(dir_path, exist_ok=True)  # Ensure the directory exists
         
         print(dynamic_instance_ids)
@@ -2841,7 +2841,7 @@ class Mapper:
 
             frame_id_in_folder = self.config.begin_frame + cam.frame_id * self.config.step_frame # global frame_id
             save_path_binary = os.path.join(
-                f"{self.config.pc_path}camera_{cam.cam_id}/binary_test",
+                f"{self.config.pc_path}camera_{cam.cam_id}/binary",
                 f"binary_{frame_id_in_folder:010d}.png"
             )
 
