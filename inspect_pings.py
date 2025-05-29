@@ -1019,12 +1019,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
             }
         ]
 
-        gs_output_csv_path = os.path.join(args.experiment_path, "gs_eval.csv")
+        gs_output_csv_path = os.path.join(args.experiment_path, "gs_eval_inspect.csv")
 
         try:
             with open(gs_output_csv_path, "a") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
-                # writer.writeheader()
+                writer.writeheader()
                 for data in gs_eval:
                     writer.writerow(data)
         except IOError:

@@ -49,7 +49,7 @@ from eval.eval_mesh_utils import eval_pair
 from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.loss_utils import l1_loss, ssim, sky_bce_loss, sky_mask_loss, normal_smooth_loss, tukey_loss, opacity_entropy_loss
 from gaussian_splatting.utils.graphics_utils import focal2fov
-from gaussian_splatting.utils.image_utils import psnr
+from gaussian_splatting.utils.image_utils import psnr, masked_psnr
 from gaussian_splatting.utils.general_utils import rotation2normal
 from gaussian_splatting.utils.sh_utils import RGB2SH, SH2RGB
 from gaussian_splatting.utils.cameras import CamImage
@@ -1822,6 +1822,10 @@ class Mapper:
         self.static_cd_list = []
         self.static_f1_list = []
 
+        self.masked_psnr_list = []
+        self.masked_depthl1_list = []
+        self.masked_depth_rmse_list = []
+
     def record_per_cam_param(self):
 
         exposure_record_uids = list(self.cams_exposure_ab.keys())
@@ -2044,6 +2048,9 @@ class Mapper:
                         opt = setup_optimizer(self.config, cams = [cur_view_cam])
                         
                         gt_rgb_image = cur_view_cam.rgb_image
+                        binary_mask = cur_view_cam.binary_mask # H,W
+                        binary_mask_1d = binary_mask.unsqueeze(0) # 1,H,W
+                        binary_mask_3d = binary_mask.unsqueeze(0).expand_as(gt_rgb_image) # H,W -> 1,H,W -> 3,H,W
 
                         # if cur_view_cam.sky_mask_on:
                         #     # mask the sky part for eval
@@ -2059,6 +2066,7 @@ class Mapper:
                             pixel_h_used = -1
 
                         gt_rgb_image_for_eval = gt_rgb_image[:,:pixel_h_used,:]
+                        binary_mask_3d_for_eval = binary_mask_3d[:,:pixel_h_used,:]
 
                         gt_depth_image = None
                         if cur_view_cam.depth_on: 
@@ -2089,6 +2097,7 @@ class Mapper:
                             # rendered results
                             rendered_rgb_image, rendered_depth, rendered_alpha = render_pkg["render"], render_pkg["surf_depth"], render_pkg["rend_alpha"] # 3, H, W / 1, H, W
                             rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
+
                             rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
 
                             if self.config.save_image_eval:
@@ -2149,19 +2158,27 @@ class Mapper:
                             if converged:
                                 break     
                         
-                        cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                        # Unmasked RGB metric
+                        cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item() # mean bcs of possible batch of images
                         cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
                         # cur_ssim = ssim(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).item()
                         if lpips_eval_on:
                             cur_lpips = self.lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
                         else:
                             cur_lpips = -1.0 # not available
+                        
+                        # Masked RGB metric
+                        cur_masked_psnr = masked_psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, binary_mask_3d_for_eval).item()
 
                         if not self.silence:
                             print("Camera id: {}".format(cur_view_cam.uid))
                             print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
+
+                            print("Current view Masked PSNR  ↑ :", f"{cur_masked_psnr:.3f}")
+
+
                             if self.config.exposure_correction_on and not self.config.affine_exposure_correction:
                                 print("Current view exposure coefficients {:.3f}, {:.3f}".format(cur_exposure[0].item(), cur_exposure[1].item()))
                             
@@ -2178,11 +2195,22 @@ class Mapper:
 
                             # diff_depth[~valid_depth_mask] = 0.0
                             diff_depth_masked = diff_depth[valid_depth_mask].detach().cpu().numpy()
+
                             cur_depth_l1 = np.mean(diff_depth_masked)
                             cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
                             if not self.silence:
                                 print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
                                 print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
+                            
+
+                            binary_depth_mask = valid_depth_mask & binary_mask_1d
+                            binary_diff_depth_masked = diff_depth[binary_depth_mask].detach().cpu().numpy()
+
+                            cur_masked_depth_l1 = np.mean(binary_diff_depth_masked)
+                            cur_masked_depth_rmse = np.sqrt(np.mean(binary_diff_depth_masked**2))
+                            if not self.silence:
+                                print("Current view Depth L1 (m) ↓ :", f"{cur_masked_depth_l1:.3f}")
+                                print("Current view Depth RMSE (m) ↓ :", f"{cur_masked_depth_rmse:.3f}")
 
 
                         if pc_cd_eval_on or rerender_tsdf_fusion_on: 
@@ -2220,9 +2248,17 @@ class Mapper:
                         self.psnr_list.append(cur_psnr)
                         self.ssim_list.append(cur_ssim)
                         self.lpips_list.append(cur_lpips)
+
+                        self.masked_psnr_list.append(cur_masked_psnr)
+                        
                         if cur_view_cam.depth_on and rendered_depth is not None: 
                             self.depthl1_list.append(cur_depth_l1)
                             self.depth_rmse_list.append(cur_depth_rmse)
+
+                            self.masked_depthl1_list.append(cur_masked_depth_l1)
+                            self.masked_depth_rmse_list.append(cur_masked_depth_rmse)
+                        
+                        
 
                         
 
@@ -2315,12 +2351,15 @@ class Mapper:
         frame_count = len(self.psnr_list) 
         
         psnr_np = ssim_np = lpips_np = depthl1_np = depth_rmse_np = cd_np = f1_np = 0.0
+        masked_psnr_np = masked_depthl1_np = masked_depth_rmse_np = 0.0
 
         # TODO: it's even better to print the results for each camera, it's possible
         if frame_count > 0:
             psnr_np = np.mean(np.array(self.psnr_list))
             ssim_np = np.mean(np.array(self.ssim_list))
             lpips_np = np.mean(np.array(self.lpips_list))
+
+            masked_psnr_np = np.mean(np.array(self.masked_psnr_list))
             
             print(f"Calculated on {frame_count} views")
 
@@ -2328,11 +2367,20 @@ class Mapper:
             print("Average SSIM  ↑ :", f"{ssim_np:.3f}")
             print("Average LPIPS ↓ :", f"{lpips_np:.3f}")
 
+            print("Average Masked PSNR  ↑ :", f"{masked_psnr_np:.3f}")
+
         if len(self.depth_rmse_list) > 0:
             depthl1_np = np.mean(np.array(self.depthl1_list))
             depth_rmse_np = np.mean(np.array(self.depth_rmse_list))
+
+            masked_depthl1_np = np.mean(np.array(self.masked_depthl1_list))
+            masked_depth_rmse_np = np.mean(np.array(self.masked_depth_rmse_list))
+
             print("Average Depth L1 (m) ↓ :", f"{depthl1_np:.3f}")
             print("Average Depth RMSE (m) ↓ :", f"{depth_rmse_np:.3f}")
+
+            print("Average Masked Depth L1 (m) ↓ :", f"{masked_depthl1_np:.3f}")
+            print("Average Masked Depth RMSE (m) ↓ :", f"{masked_depth_rmse_np:.3f}")
 
         if len(self.cd_list) > 0:
             cd_np = np.mean(np.array(self.cd_list))
@@ -2389,6 +2437,9 @@ class Mapper:
                 "Recon-F1(%)↑",
                 "Static Recon-CD(m)↓",
                 "Static Recon-F1(%)↑",
+                "Masked PSNR↑",
+                "Masked Depth-L1(m)↓",
+                "Masked Depth-RMSE(m)↓",
                 "Frame-count",
         ]
 
@@ -2419,21 +2470,23 @@ class Mapper:
                 gs_csv_columns[7]: f1_np,
                 gs_csv_columns[8]: static_cd_np,
                 gs_csv_columns[9]: static_f1_np,
-                gs_csv_columns[10]: frame_count,
+                gs_csv_columns[10]: masked_psnr_np,
+                gs_csv_columns[11]: masked_depthl1_np,
+                gs_csv_columns[12]: masked_depth_rmse_np,
+                gs_csv_columns[13]: frame_count,
             }
             
             
             
         ]
         
-        gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval.csv")
+        gs_output_csv_path = os.path.join(self.config.run_path, "gs_eval_mapper.csv")
         
         try:
             with open(gs_output_csv_path, "w") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=gs_csv_columns)
                 writer.writeheader()
                 for data in gs_eval:
-                    print(f"data is {data}")
                     writer.writerow(data)
         except IOError:
             print("I/O error")
