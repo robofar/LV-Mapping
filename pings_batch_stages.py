@@ -272,6 +272,9 @@ def run_pin_slam(
     print(f"SDF Consistency Lambda: {config.lambda_sdf_cons}")
     print(f"SDF Normal Consistency Lambda: {config.lambda_sdf_normal_cons}")
     print(f"Depth and normal consistency: {config.lambda_normal_depth_consist}")
+    print(f"Rendered_pc_eval_on : {config.rendered_pc_eval_on}")
+    print(f"Local map radius: {config.local_map_radius} meters")
+    print(f"Sorrounding map radius: {config.sorrounding_map_radius} meters")
 
     mapper.load_gt_poses()
     #pcd_sequence = o3d.geometry.PointCloud()
@@ -459,11 +462,26 @@ def run_pin_slam(
         o3d.io.write_point_cloud(neural_points_path, neural_pcd) # write the neural point cloud
         print(f"neural points saved to the path: {neural_points_path}")
 
-        remove_gpu_cache()
+        color_mode_for_neural_point_output = 1 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+        neural_pcd_1 = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+        print("Saving neural points (.ply) with color 1...")
+        neural_points_path_1 = os.path.join(run_path, "map", "neural_points_1.ply")
+        o3d.io.write_point_cloud(neural_points_path_1, neural_pcd_1) # write the neural point cloud
+        print(f"neural points saved to the path: {neural_points_path_1}")
 
-        neural_points.clear_temp() # clear temp data for output, so that you dont uneccessary store additional things
-        print("Saving whole map (.pth) ...")
-        save_implicit_map(run_path, neural_points, mlp_dict)
+        color_mode_for_neural_point_output = 2 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+        neural_pcd_2 = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+        print("Saving neural points (.ply) with color 2...")
+        neural_points_path_2 = os.path.join(run_path, "map", "neural_points_2.ply")
+        o3d.io.write_point_cloud(neural_points_path_2, neural_pcd_2) # write the neural point cloud
+        print(f"neural points saved to the path: {neural_points_path_2}")
+
+        color_mode_for_neural_point_output = 5 # 0: original rgb, 1: geo_feature pca, 2: color_feature_pca, 3: ts, 4: certainty, 5: random
+        neural_pcd_5 = neural_points.get_neural_points_o3d(query_global=True, color_mode = color_mode_for_neural_point_output)
+        print("Saving neural points (.ply) with color 5...")
+        neural_points_path_5 = os.path.join(run_path, "map", "neural_points_5.ply")
+        o3d.io.write_point_cloud(neural_points_path_5, neural_pcd_5) # write the neural point cloud
+        print(f"neural points saved to the path: {neural_points_path_5}")
 
 
     if config.save_mesh and cur_mesh is None:
@@ -477,6 +495,15 @@ def run_pin_slam(
         
         print(f"Mesh saved {cur_mesh}")
         print(f"reconstructed mesh saved to the path: {mesh_path}")
+    
+    # Have to go last, because if I clear temp before save_mesh then mesh will not be able to be saved
+    if config.save_map:
+        remove_gpu_cache()
+
+        neural_points.clear_temp() # clear temp data for output, so that you dont uneccessary store additional things
+        print("Saving whole map (.pth) ...")
+        save_implicit_map(run_path, neural_points, mlp_dict)
+    
 
 
 if __name__ == "__main__":

@@ -1180,7 +1180,25 @@ class Mapper:
                 T2 = get_time()
 
                 self.neural_points.reset_local_map(viewpoint_cam.camera_center) # use either local map or global map. In render, anyways only neural points in current FoV will be used for spawning Gaussians
-                neural_points_data, _ = self.neural_points.gather_local_data(with_sorroundings=False)
+                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data(with_sorroundings=True)
+
+                sorrounding_spawn_results = None
+                # spawning gaussians for sorrounding map
+                sorrounding_spawn_results = None
+                if sorrounding_neural_points_data is not None and (iter > self.config.freeze_after_iter_gaussians):
+                    #print(f"Spawning Gaussians from neural points in the sorrounding area...")
+                    sorrounding_spawn_results = spawn_gaussians(sorrounding_neural_points_data, 
+                        self.decoders, None, viewpoint_cam.camera_center,
+                        dist_concat_on=self.config.dist_concat_on, 
+                        view_concat_on=self.config.view_concat_on, 
+                        scale_filter_on=True,
+                        z_far=self.config.sorrounding_map_radius,
+                        learn_color_residual=self.config.learn_color_residual,
+                        gs_type=self.config.gs_type,
+                        displacement_range_ratio=self.config.displacement_range_ratio,
+                        max_scale_ratio=self.config.max_scale_ratio,
+                        unit_scale_ratio=self.config.unit_scale_ratio)
+
 
                 cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
 
@@ -1888,7 +1906,7 @@ class Mapper:
                 self.dataset.init_temp_data()
 
                 # load the cam datas to cur_cam_img
-                self.dataset.read_frame_with_loader(frame_id, init_pose = False, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
+                self.dataset.read_frame_with_loader(frame_id, init_pose = True, use_image=True, monodepth_on=self.config.monodepth_on) # because we want to use the sky mask here
                 
                 # should at least have cam images
                 if self.dataset.cur_cam_img is None: 
@@ -1933,7 +1951,8 @@ class Mapper:
                 if pc_cd_eval_on and self.dataset.cur_point_cloud_torch is not None:
                     
                     # deal with no point cloud
-
+                    self.dataset.preprocess_frame()
+                    '''
                     # crop frames and possibly do LiDAR intrinsic corrections
                     self.dataset.filter_and_correct()
 
@@ -1942,9 +1961,10 @@ class Mapper:
                     if self.config.deskew and frame_id > 0:
                         tran_in_frame = self.dataset.get_tran_in_frame(frame_id)
                         self.dataset.deskew_at_frame(tran_in_frame)
+                    '''
                     
                     if not self.dataset.is_rgbd:
-                        self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True, tran_in_frame=tran_in_frame) # self.config.learn_color_residual)
+                        self.dataset.project_pointcloud_to_cams(use_only_colorized_points=True) # self.config.learn_color_residual)
 
                     # in lidar frame
                     cur_frame_measured_pcd_o3d = o3d.geometry.PointCloud()
@@ -1962,10 +1982,19 @@ class Mapper:
                     cur_frame_measured_pcd_o3d.points = o3d.utility.Vector3dVector(cur_frame_measured_xyz_np)
                     cur_frame_measured_pcd_o3d.colors = o3d.utility.Vector3dVector(cur_frame_measured_color_np)
 
+
                     # Scan from the static map obtained using timestamps
-                    select_points_mask = (self.static_map_timestamps == 0).squeeze(-1)
+                    select_points_mask = (self.static_map_timestamps == (self.config.begin_frame + frame_id)).squeeze(-1)
+
+                    selected_timestamps = self.static_map_timestamps[select_points_mask]
+                    pose_per_point = self.all_poses[selected_timestamps.squeeze(-1)]  # (N, 4, 4)
+                    inverse_pose_per_point = torch.linalg.inv(pose_per_point)
+
+                    cur_frame_measured_static_xyz_np_local_frame = transform_torch(self.static_map_points[select_points_mask], inverse_pose_per_point)  # (N, 3) # this is good
+
+
                     cur_frame_measured_static_xyz_np = (
-                        self.static_map_points[select_points_mask].detach().cpu().numpy().astype(np.float64)
+                        cur_frame_measured_static_xyz_np_local_frame.detach().cpu().numpy().astype(np.float64)
                     )
 
                     cur_frame_measured_static_color_np = (
@@ -2267,8 +2296,8 @@ class Mapper:
                         down_sample_res=0.05, threshold=0.1, 
                         truncation_acc=1.0, truncation_com=1.0) # FIXME
                     
-                    cur_cd = cd_metrics['Chamfer_L1 (m)']
-                    cur_f1 = cd_metrics['F-score (%)']
+                    cur_cd = cd_metrics['Chamfer_L1(m)']
+                    cur_f1 = cd_metrics['F-score(%)']
 
                     if not self.silence:
                         print("Current frame Chamfer Distance L1 (m) ↓ :", f"{cur_cd:.3f}")
@@ -2284,8 +2313,8 @@ class Mapper:
                         down_sample_res=0.05, threshold=0.1, 
                         truncation_acc=1.0, truncation_com=1.0) # FIXME
                     
-                    cur_cd_static = cd_metrics_static['Chamfer_L1 (m)']
-                    cur_f1_static = cd_metrics_static['F-score (%)']
+                    cur_cd_static = cd_metrics_static['Chamfer_L1(m)']
+                    cur_f1_static = cd_metrics_static['F-score(%)']
 
                     if not self.silence:
                         print("Current frame Chamfer Distance L1 (m) for static scan ↓ :", f"{cur_cd_static:.3f}")
