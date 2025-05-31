@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 import sys
+from collections import defaultdict
 
 
 
@@ -233,7 +234,82 @@ class Dynamic():
 
         return curvature_score
 
-    
+    def find_car_trace_cluster_centroid(self, pcd, points_timestamp, labels):
+        unique_labels = np.unique(labels[labels >= 0])  # Ignore noise (-1)
+        best_trace_cluster = None
+        best_trace_timestamps = None
+        best_bbox = None
+        best_aspect_ratio = 0
+        rest_clusters = []
+
+        largest_cluster_N = -1
+        largest_cluster_indices = None
+
+        for label in unique_labels:
+            cluster_indices = np.where(labels == label)[0]
+            if len(cluster_indices) > largest_cluster_N:
+                largest_cluster_N = len(cluster_indices)
+                largest_cluster_indices = cluster_indices
+        
+
+        largest_cluster_pcd = pcd.select_by_index(largest_cluster_indices)
+        largest_cluster_timestamps = points_timestamp[largest_cluster_indices]
+        largest_cluster_points_np = np.asarray(largest_cluster_pcd.points)
+
+        o3d.visualization.draw_geometries([largest_cluster_pcd, largest_cluster_pcd.get_axis_aligned_bounding_box()])
+
+        # Centroid per points filtered by timestamp
+        timestamp_points = defaultdict(list)
+
+        # group pts by timestamps
+        for pt, t in zip(largest_cluster_points_np, largest_cluster_timestamps):
+            timestamp_points[t].append(pt)
+        
+        centroids = []
+        timestamps_sorted = sorted(timestamp_points.keys())
+
+        for t in timestamps_sorted:
+            pts = np.array(timestamp_points[t])
+            centroid = np.mean(pts, axis=0)
+            centroids.append(centroid)
+
+        centroids = np.array(centroids)  # Shape (M, 3)
+
+        length = np.linalg.norm(centroids[-1] - centroids[0]) # condition (1)
+        
+        centroids_xy = centroids[:, :2]  # Only x,y
+        x_vals = centroids_xy[:, 0]
+        y_vals = centroids_xy[:, 1]
+        poly_coeffs = np.polyfit(x_vals, y_vals, deg=2)
+        curvature_strength = np.abs(poly_coeffs[0])
+
+        print(f"Trace length: {length:.3f} meters")
+        print(f"Curvature strength: {curvature_strength:.6f}")
+
+        # Plot
+        plt.figure(figsize=(10, 8))
+        plt.scatter(largest_cluster_points_np[:, 0], largest_cluster_points_np[:, 1], c='gray', s=2, label='Largest Cluster')
+        plt.scatter(centroids_xy[:, 0], centroids_xy[:, 1], c='red', s=20, label='Centroids')
+
+        # Plot fitted polynomial
+        x_fit = np.linspace(min(x_vals), max(x_vals), 100)
+        y_fit = np.polyval(poly_coeffs, x_fit)
+        plt.plot(x_fit, y_fit, c='blue', linewidth=2, label='Fitted Polynomial')
+
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.legend()
+        plt.title('Car Trace: Cluster, Centroids and Fitted Polynomial')
+        plt.grid(True)
+        plt.show()
+
+        return centroids, length, curvature_strength
+
+
+
+
+
+
 
     def find_car_trace_cluster(self, pcd, points_timestamp, labels, aspect_threshold=4.5, min_points=300, curvature_threshold=1000.0, min_length_threshold=1.75, max_length_threshold=6.0):
         """
@@ -391,13 +467,16 @@ class Dynamic():
         print(f"Point cloud has {max_label + 1} clusters.")
 
         # Visualize using color (just for visualization)
-        #colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-        #colors[labels < 0] = 0
-        #pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-        #o3d.visualization.draw_geometries([pcd])
+        colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+        colors[labels < 0] = 0
+        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        o3d.visualization.draw_geometries([pcd])
 
         ###############################
-
+        self.find_car_trace_cluster_centroid(pcd, points_timestamp, labels)
+        return True
+        ###############################
+        '''
         # Find the best car trace cluster
         car_trace_pcd, car_trace_timestamps, car_trace_bbox, best_aspect_ratio, rest_clusters = self.find_car_trace_cluster(pcd, points_timestamp, labels, aspect_threshold=4.1)
 
@@ -413,11 +492,12 @@ class Dynamic():
 
         #o3d.visualization.draw_geometries([car_trace_pcd, car_trace_bbox])
         return True
+        '''
     
 
     def process_all(self):
         for cam_name in self.instances_pcd.keys():
             for key in self.instances_pcd[cam_name].keys():
-                if key not in [-1, 0]: # -1 is outside of FOV, 0 is background
+                if key not in [-1, 0] and cam_name == "front": # -1 is outside of FOV, 0 is background
                     result = self.process_instance(cam_name, key)
                     self.dynamic_instance[cam_name][key] = result

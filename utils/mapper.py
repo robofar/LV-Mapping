@@ -1183,7 +1183,12 @@ class Mapper:
                 neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data(with_sorroundings=True)
 
                 sorrounding_spawn_results = None
+                '''
                 # spawning gaussians for sorrounding map
+                # do not improve results. maybe because Im querying and tehrefore also optimizing these
+                # features in sorrounding map
+                # Yue is not optimizing them he is only using them for rendering
+                # Maybe thats why but idk does not matter
                 sorrounding_spawn_results = None
                 if sorrounding_neural_points_data is not None and (iter > self.config.freeze_after_iter_gaussians):
                     #print(f"Spawning Gaussians from neural points in the sorrounding area...")
@@ -1198,6 +1203,7 @@ class Mapper:
                         displacement_range_ratio=self.config.displacement_range_ratio,
                         max_scale_ratio=self.config.max_scale_ratio,
                         unit_scale_ratio=self.config.unit_scale_ratio)
+                '''
 
 
                 cur_min_visible_neural_point_ratio = 0.01 # don't restrict this to much
