@@ -288,7 +288,7 @@ class Dynamic():
 
         # Plot
         plt.figure(figsize=(10, 8))
-        plt.scatter(largest_cluster_points_np[:, 0], largest_cluster_points_np[:, 1], c='gray', s=2, label='Largest Cluster')
+        plt.scatter(largest_cluster_points_np[:, 0], largest_cluster_points_np[:, 1], c='gray', s=3, label='Largest Cluster')
         plt.scatter(centroids_xy[:, 0], centroids_xy[:, 1], c='red', s=20, label='Centroids')
 
         # Plot fitted polynomial
@@ -464,7 +464,7 @@ class Dynamic():
         #clustering = HDBSCAN(min_samples=20, cluster_selection_epsilon=0.6).fit(points_np)
         labels = clustering.labels_
         max_label = labels.max()
-        print(f"Point cloud has {max_label + 1} clusters.")
+        #print(f"Point cloud has {max_label + 1} clusters.")
 
         # Visualize using color (just for visualization)
         colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))

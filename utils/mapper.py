@@ -1180,7 +1180,7 @@ class Mapper:
                 T2 = get_time()
 
                 self.neural_points.reset_local_map(viewpoint_cam.camera_center) # use either local map or global map. In render, anyways only neural points in current FoV will be used for spawning Gaussians
-                neural_points_data, sorrounding_neural_points_data = self.neural_points.gather_local_data(with_sorroundings=True)
+                neural_points_data, _ = self.neural_points.gather_local_data(with_sorroundings=False)
 
                 sorrounding_spawn_results = None
                 '''
