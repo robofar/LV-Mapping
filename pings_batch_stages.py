@@ -43,12 +43,15 @@ from utils.tools import (
     split_chunks,
     transform_torch,
     remove_gpu_cache,
+    colorize_depth_maps
 )
 from utils.tracker import Tracker
 from utils.dynamic import Dynamic
 
 from gs_gui import slam_gui
 from gs_gui.gui_utils import VisPacket, ParamsGUI, ControlPacket, get_latest_queue
+
+import matplotlib.pyplot as plt
 
 import pypatchworkpp
 
@@ -277,7 +280,7 @@ def run_pin_slam(
     print(f"Sorrounding map radius: {config.sorrounding_map_radius} meters")
 
     mapper.load_gt_poses()
-    #pcd_sequence = o3d.geometry.PointCloud()
+    pcd_sequence = o3d.geometry.PointCloud()
         
     # for each frame
     for frame_id in tqdm(range(dataset.total_pc_count)): # frame id as the processed frame, possible skipping done in data loader
@@ -294,8 +297,8 @@ def run_pin_slam(
                 dataset.project_pointcloud_to_cams(dynamic, use_only_colorized_points = config.learn_color_residual, use_odom_tran=False)
 
 
-        #dataset.update_o3d_map() # fills cur_frame_o3d with current frame point cloud
-        #pcd_sequence += dataset.cur_frame_o3d # appends
+        dataset.update_o3d_map() # fills cur_frame_o3d with current frame point cloud
+        pcd_sequence += dataset.cur_frame_o3d # appends
 
         #mapper.process_frame(dataset.cur_point_cloud_torch, dataset.cur_sem_labels_torch, dataset.cur_point_normals, dataset.cur_pose_torch, frame_id, (config.dynamic_filter_on and frame_id > 0))
 
@@ -304,7 +307,12 @@ def run_pin_slam(
         if config.gs_on: # only when color available
             if dataset.cur_cam_img is not None:
                 mapper.update_cam_pool(frame_id)
-
+        
+        #depth_color_np = (colorize_depth_maps(dataset.cur_cam_img["front"].depth_image.detach().cpu().numpy().astype(np.float32), 0.1, config.max_range, cmap="inferno_r")[0]*255.0).astype(np.uint8)
+        #plt.figure(figsize=(10, 8), dpi=400)
+        #plt.imshow(depth_color_np.transpose(1, 2, 0), interpolation='bilinear')
+        #plt.axis('off')  # optional: turn off axis
+        #plt.show()
 
 
         dataset.processed_frame += 1
@@ -313,6 +321,7 @@ def run_pin_slam(
 
 
     if config.MOT:
+        
         dynamic.process_all() # to decide what are dynamic instances, and append everything that is not dynamic to static map
         
 
@@ -321,6 +330,11 @@ def run_pin_slam(
             for k,v in dynamic.dynamic_instance[cam_name].items():
                 print("Key: ", k, " Value: ", v)
             print("------------------")
+        
+
+        
+        
+
     
         pcd_static = (
             dynamic.get_outside_fov_pcd_o3d()[0]
@@ -337,6 +351,19 @@ def run_pin_slam(
             dynamic.get_instance_pcd_o3d(0, 'right')[1],
             dynamic.get_instance_pcd_o3d(0, 'front')[1],
         ], dim=0)
+
+
+        
+        pcd_sequence.paint_uniform_color([1.0, 0.0, 0.0])
+        pcd_static.paint_uniform_color([0.0, 0.0, 1.0])
+        
+
+        o3d.visualization.draw_geometries([pcd_sequence])
+        o3d.visualization.draw_geometries([pcd_static])
+        o3d.visualization.draw_geometries([pcd_sequence, pcd_static])
+
+
+        sys.exit("testing centroids...")
 
 
         print(f"pcd_static point count: {len(pcd_static.points)}")

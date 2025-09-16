@@ -250,7 +250,7 @@ class VisPacket:
             self.neural_points_data["resolution"] = neural_points.resolution
             
             if only_local_map:
-                print(f"Local neural points: ", neural_points.local_neural_points.shape)
+                #print(f"Local neural points: ", neural_points.local_neural_points.shape)
                 self.neural_points_data["position"] = neural_points.local_neural_points
                 self.neural_points_data["orientation"] = neural_points.local_point_orientations
                 #self.neural_points_data["geo_feature"] = neural_points.local_geo_features.detach()
@@ -265,12 +265,14 @@ class VisPacket:
                 self.neural_points_data["ts"] = neural_points.local_point_ts_update
                 self.neural_points_data["stability"] = neural_points.local_point_certainties
 
+                '''
                 print(f"neural_points_data[geo_feature] is leaf: {self.neural_points_data['geo_feature'].is_leaf}")
                 print(f"neural_points_data[color_feature] is leaf: {self.neural_points_data['color_feature'].is_leaf}")
                 print(f"neural_points_data[geo_feature] requires grad: {self.neural_points_data['geo_feature'].requires_grad}")
                 print(f"neural_points_data[color_feature] requires grad: {self.neural_points_data['color_feature'].requires_grad}")
                 print(f"neural_points_data[geo_feature] has grad: {self.neural_points_data['geo_feature'].grad is not None}")
                 print(f"neural_points_data[color_feature] has grad: {self.neural_points_data['color_feature'].grad is not None}")
+                '''
 
                 if pca_color_on:
                     local_geo_feature_3d, _ = feature_pca_torch((self.neural_points_data["geo_feature"])[:-1], principal_components=neural_points.geo_feature_pca, down_rate=17)
@@ -300,21 +302,26 @@ class VisPacket:
                         self.sorrounding_neural_points_data["free_mask"] = neural_points.free_gs_mask[sorrounding_mask_a] # but now this is actually per neural point
                         self.sorrounding_neural_points_data["valid_mask"] = neural_points.valid_gs_mask[sorrounding_mask_a]
 
+                        '''
                         print(f"sorrounding_neural_points_data[geo_feature] is leaf: {self.sorrounding_neural_points_data['geo_feature'].is_leaf}")
                         print(f"sorrounding_neural_points_data[color_feature] is leaf: {self.sorrounding_neural_points_data['color_feature'].is_leaf}")
                         print(f"sorrounding_neural_points_data[geo_feature] requires grad: {self.sorrounding_neural_points_data['geo_feature'].requires_grad}")
                         print(f"sorrounding_neural_points_data[color_feature] requires grad: {self.sorrounding_neural_points_data['color_feature'].requires_grad}")
                         print(f"sorrounding_neural_points_data[geo_feature] has grad: {self.sorrounding_neural_points_data['geo_feature'].grad is not None}")
                         print(f"sorrounding_neural_points_data[color_feature] has grad: {self.sorrounding_neural_points_data['color_feature'].grad is not None}")
+                        '''
 
             else:
-                print(f"Global neural points: ", neural_points.local_neural_points.shape)
+                #print(f"Global neural points: ", neural_points.local_neural_points.shape)
                 self.neural_points_data["position"] = neural_points.neural_points
                 self.neural_points_data["orientation"] = neural_points.point_orientations
-                self.neural_points_data["geo_feature"] = neural_points.geo_features
+                geo_fts, color_fts = neural_points.query_neural_grid(neural_points.neural_points, True, True)
+                #self.neural_points_data["geo_feature"] = neural_points.geo_features
+                self.neural_points_data["geo_feature"] = geo_fts.detach()
                 if neural_points.color_on:
                     self.neural_points_data["color"] = neural_points.point_colors
-                    self.neural_points_data["color_feature"] = neural_points.color_features
+                    #self.neural_points_data["color_feature"] = neural_points.color_features
+                    self.neural_points_data["color_feature"] = color_fts.detach()
                 self.neural_points_data["free_mask"] = neural_points.free_gs_mask
                 self.neural_points_data["valid_mask"] = neural_points.valid_gs_mask
                 self.neural_points_data["ts"] = neural_points.point_ts_update

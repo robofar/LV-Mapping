@@ -2006,7 +2006,7 @@ class SLAM_GUI:
                 if neural_point_colors_np is not None:
                     valid_neural_point_colors = neural_point_colors_np[neural_point_valid_mask]
                     invalid_neural_point_colors = neural_point_colors_np[~neural_point_valid_mask]
-                    invalid_neural_point_colors[:,:] = (0, 0, 0) # invalid part set to black for vis
+                    invalid_neural_point_colors[:,:] = (1, 0, 0) # invalid part set to black for vis
 
                     self.neural_points.colors = o3d.utility.Vector3dVector(valid_neural_point_colors)
                     self.invalid_neural_points.colors = o3d.utility.Vector3dVector(invalid_neural_point_colors)

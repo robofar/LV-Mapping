@@ -43,7 +43,7 @@ from gaussian_splatting.gaussian_renderer import render, spawn_gaussians
 from gaussian_splatting.utils.cameras import CamImage
 from gaussian_splatting.utils.graphics_utils import fov2focal, getWorld2View2
 from gaussian_splatting.utils.loss_utils import l1_loss, tukey_loss
-from gaussian_splatting.utils.image_utils import psnr
+from gaussian_splatting.utils.image_utils import psnr, masked_psnr, masked_psnr_2
 
 from fused_ssim import fused_ssim
 
@@ -227,9 +227,9 @@ def inspect_pings_map():
             q_vis2main=q_vis2main,
             config=config,
             gs_default_on = True, # does not work if here is False and I tick it later
-            local_map_default_on = True, # does not work if here is False and I tick it later
+            local_map_default_on = False, # does not work if here is False and I tick it later
             robot_default_on = False,
-            neural_point_map_default_on = True, # does not work if here is False and I tick it later
+            neural_point_map_default_on = False, # does not work if here is False and I tick it later
             mesh_default_on = False, # does work if here is False and I tick it later
             sdf_default_on = False,
             neural_point_color_default_mode=args.neural_point_color_mode, # 0: original rgb, 1: geo feature pca, 2: photo feature pca, 3: time, 4: stability
@@ -238,6 +238,7 @@ def inspect_pings_map():
 
         gui_process = mp.Process(target=slam_gui.run, args=(params_gui,)) # TODO: something is wrong here
         gui_process.start()
+        print("Sleeping for few seconds")
         time.sleep(5) # second
     
     ######################################################################
@@ -296,10 +297,12 @@ def inspect_pings_map():
     center_frame_id = int(args.center_frame_id)
     frame_count = len(poses_used)
     center_frame_id = min(center_frame_id, frame_count-1)
-    #ref_pose = torch.tensor(poses_used[center_frame_id], device=config.device, dtype=config.dtype)
-    #ref_position = ref_pose[:3,3]
+    ref_pose = torch.tensor(poses_used[center_frame_id], device=config.device, dtype=config.dtype)
+    ref_position = ref_pose[:3,3]
 
     #neural_points.recreate_hash(ref_position, with_ts=False)
+    #print(f"ref position is: {ref_position}")
+    #neural_points.reset_local_map(ref_position)
 
     ######################################################################
 
@@ -310,7 +313,7 @@ def inspect_pings_map():
     if args.show_mesh:
 
         print("Reconstruct mesh from the SDF")
-
+        
         down_rate = 17 # prime number
         mesh_vox_size_m = args.mesh_mc_m
         mesh_min_nn_k_used = args.mesh_min_nn_k
@@ -328,20 +331,27 @@ def inspect_pings_map():
         out_mesh_path = None
         cur_mesh = mesher.recon_aabb_collections_mesh(chunks_aabb, mesh_vox_size_m, out_mesh_path, False, False, \
                                                     config.color_on, filter_isolated_mesh=True, mesh_min_nn=mesh_min_nn_k_used)
-
+        print(cur_mesh)
+        '''
+        saved_mesh_folder_path = os.path.join(experiment_path, "mesh", "mesh_15cm.ply")
+        cur_mesh = o3d.io.read_triangle_mesh(saved_mesh_folder_path)
+        #cur_mesh.compute_vertex_normals()
         print(neural_points.neural_points.shape)
         print(neural_points.local_neural_points.shape)
         print(cur_mesh)
+        '''
         if not args.vis_off and cur_mesh is not None:
             print("Sending packet to visualizer...")
             packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id)
-            packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
+            packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global))
             
             packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))
 
             packet_to_vis.add_mesh(np.array(cur_mesh.vertices, dtype=np.float64), np.array(cur_mesh.triangles), np.array(cur_mesh.vertex_colors, dtype=np.float64))
             
             q_main2vis.put(packet_to_vis)
+        
+
     
 
     ######################################################################
@@ -352,6 +362,7 @@ def inspect_pings_map():
         cam_names = dataset.cam_names 
     
     print(cam_names)
+    
 
     ######################################################################
 
@@ -377,10 +388,10 @@ def inspect_pings_map():
     #neural_points.recreate_hash(ref_position, with_ts=False)
 
     # If cur_mesh is None that means I did not use -m flag. And if I used -m flag, then already I have visualized same things above where -m flag is used
-    if not args.vis_off and cur_mesh is None and False:
+    if not args.vis_off and cur_mesh is None:
         print("7")
         packet_to_vis: VisPacket = VisPacket(frame_id=center_frame_id, img_down_rate=config.gs_vis_down_rate)
-        packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global), pca_color_on=True)
+        packet_to_vis.add_neural_points_data(neural_points, only_local_map=(not args.show_global))
         packet_to_vis.add_traj(gt_poses=np.array(poses_used), slam_poses=np.array(poses_for_render_show))  
         
         q_main2vis.put(packet_to_vis)
@@ -461,10 +472,16 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
     eval_down_scale = 2**(eval_down_rate)
 
     psnr_list = []
+    psnr_binary_list = []
+    psnr_binary_filter_list = []
     ssim_list = []
     lpips_list = []
+    ssim_binary_list = []
+    lpips_binary_list = []
     depthl1_list = []
     depth_rmse_list = []
+    depthl1_binary_list = []
+    depth_rmse_binary_list = []
     cd_list = []
     f1_list = []
 
@@ -560,7 +577,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         else:
             neural_points.reset_local_map(cur_frame_position_torch, cur_ts=frame_id)
         '''
-
+        print(f"cur_frame_position_torch is {cur_frame_position_torch}")
         neural_points.reset_local_map(cur_frame_position_torch)
         neural_points_data, sorrounding_neural_points_data = neural_points.gather_local_data(with_sorroundings=True)
 
@@ -638,6 +655,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 
                 gt_rgb_image = None
                 gt_depth_image = None
+                binary_mask_image = None
+                binary_mask_image_3d = None
 
                 if args.use_free_view_camera and (not eval_on): # in this case, we do not do evaluation
                     K_mat = free_cam_K_mat #  # as np.array
@@ -668,6 +687,8 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     cur_view_cam.set_pose(T_w_c)
             
                     gt_rgb_image = cur_view_cam.rgb_image
+                    binary_mask_image = cur_view_cam.binary_mask
+                    binary_mask_image_3d = binary_mask_image.expand(3,-1,-1)
 
                     if cur_view_cam.depth_on:
                         gt_depth_image = cur_view_cam.depth_image
@@ -779,6 +800,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     rendered_rgb_image = torch.clamp(rendered_rgb_image, 0, 1)
                     rendered_rgb_np = (rendered_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
                     
+                    
 
                     gt_rgb_image = torch.clamp(gt_rgb_image, 0, 1)
                     gt_rgb_np = (gt_rgb_image * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().astype(np.uint8)  # value 0-255
@@ -858,41 +880,62 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
                         rendered_rgb_image_for_eval = rendered_rgb_image[:,:pixel_h_used,:]
                         gt_rgb_image_for_eval = gt_rgb_image[:,:pixel_h_used,:]
+                        binary_mask_image_for_eval = binary_mask_image[:,:pixel_h_used,:]
+                        binary_mask_image_3d_for_eval = binary_mask_image_3d[:,:pixel_h_used,:]
 
                         cur_psnr = psnr(rendered_rgb_image_for_eval, gt_rgb_image_for_eval).mean().item()
+                        cur_psnr_binary = psnr(rendered_rgb_image_for_eval * binary_mask_image_for_eval, gt_rgb_image_for_eval * binary_mask_image_for_eval).mean().item()
+                        cur_psnr_binary_filter = masked_psnr_2(rendered_rgb_image_for_eval, gt_rgb_image_for_eval, binary_mask_image_3d_for_eval).item()
                         cur_ssim = fused_ssim(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0), train=False).item()
+                        cur_ssim_binary = fused_ssim((rendered_rgb_image_for_eval * binary_mask_image_for_eval).unsqueeze(0), (gt_rgb_image_for_eval * binary_mask_image_for_eval).unsqueeze(0), train=False).item()
 
                         if lpips_eval_on:
                             cur_lpips = lpips(rendered_rgb_image_for_eval.unsqueeze(0), gt_rgb_image_for_eval.unsqueeze(0)).item()
+                            cur_lpips_binary = lpips((rendered_rgb_image_for_eval * binary_mask_image_for_eval).unsqueeze(0), (gt_rgb_image_for_eval * binary_mask_image_for_eval).unsqueeze(0)).item()
                         else:
                             cur_lpips = -1.0 # not available
 
                         psnr_list.append(cur_psnr)
+                        psnr_binary_list.append(cur_psnr_binary)
+                        psnr_binary_filter_list.append(cur_psnr_binary_filter)
                         ssim_list.append(cur_ssim)
                         lpips_list.append(cur_lpips)
+                        ssim_binary_list.append(cur_ssim_binary)
+                        lpips_binary_list.append(cur_lpips_binary)
 
                         
                         if args.log_on:
                             print("Camera id: {}".format(cur_view_cam.uid))
                             print("Current view PSNR  ↑ :", f"{cur_psnr:.3f}")
+                            print("Current view PSNR Binary  ↑ :", f"{cur_psnr_binary:.3f}")
+                            print("Current view PSNR Binary Filter  ↑ :", f"{cur_psnr_binary_filter:.3f}")
                             print("Current view SSIM  ↑ :", f"{cur_ssim:.3f}")
                             print("Current view LPIPS ↓ :", f"{cur_lpips:.3f}")
                     
                         if gt_depth_image is not None and rendered_depth is not None: 
                             gt_depth_image = cur_view_cam.depth_image # torch.tensor
                             valid_depth_mask = (gt_depth_image > eval_depth_min) & (rendered_depth > eval_depth_min) & (gt_depth_image < eval_depth_max) & (rendered_depth < eval_depth_max)
-                            
+                            binary_depth_mask = valid_depth_mask & binary_mask_image
+
                             diff_depth = torch.abs(gt_depth_image - rendered_depth) # already abs
                             # diff_depth[~depth_valid_mask] = 0.0
                             diff_depth_masked = diff_depth[valid_depth_mask].detach().cpu().numpy()
+                            diff_depth_binary_masked = diff_depth[binary_depth_mask].detach().cpu().numpy()
+
                             cur_depth_l1 = np.mean(diff_depth_masked)
                             cur_depth_rmse = np.sqrt(np.mean(diff_depth_masked**2))
+                            cur_depth_binary_l1 = np.mean(diff_depth_binary_masked)
+                            cur_depth_binary_rmse = np.sqrt(np.mean(diff_depth_binary_masked**2))
                             if args.log_on:
                                 print("Current view Depth L1 (m) ↓ :", f"{cur_depth_l1:.3f}")
                                 print("Current view Depth RMSE (m) ↓ :", f"{cur_depth_rmse:.3f}")
+                                print("Current view Depth Binary L1 (m) ↓ :", f"{cur_depth_binary_l1:.3f}")
+                                print("Current view Depth Binary RMSE (m) ↓ :", f"{cur_depth_binary_rmse:.3f}")
 
                             depthl1_list.append(cur_depth_l1)
                             depth_rmse_list.append(cur_depth_rmse)
+                            depthl1_binary_list.append(cur_depth_binary_l1)
+                            depth_rmse_binary_list.append(cur_depth_binary_rmse)
 
                             
 
@@ -939,7 +982,7 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     current_frames=cur_cam_img_temp, 
                     img_down_rate=eval_down_rate) # eval_down_rate is 0
                 
-                packet_to_vis.add_neural_points_data(neural_points, only_local_map=True)
+                packet_to_vis.add_neural_points_data(neural_points, only_local_map=False)
                 
                 # if cur_frame_rendered_pcd_o3d is not None:
                 #     packet_to_vis.add_scan(np.array(cur_frame_rendered_pcd_o3d.points, dtype=np.float64), np.array(cur_frame_rendered_pcd_o3d.colors, dtype=np.float64))
@@ -960,9 +1003,9 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                     while q_vis2main.get().flag_pause:
                         continue
         
-        print("sleeping for 3 secs")
+        print("sleeping...s")
         print("-----")
-        time.sleep(3)
+        time.sleep(1)
     
     # calculating final metrics
     if eval_on:
@@ -972,19 +1015,31 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
 
         print(f"Calculated on {eval_frame_count} eval views")
         psnr_np = np.mean(np.array(psnr_list))
+        psnr_binary_np = np.mean(np.array(psnr_binary_list))
+        psnr_binary_filter_np = np.mean(np.array(psnr_binary_filter_list))
         ssim_np = np.mean(np.array(ssim_list))
         lpips_np = np.mean(np.array(lpips_list))
+        ssim_binary_np = np.mean(np.array(ssim_binary_list))
+        lpips_binary_np = np.mean(np.array(lpips_binary_list))
 
         print("Average eval view PSNR  ↑ :", f"{psnr_np:.3f}")
+        print("Average eval view PSNR Binary  ↑ :", f"{psnr_binary_np:.3f}")
+        print("Average eval view PSNR Binary Filter ↑ :", f"{psnr_binary_filter_np:.3f}")
         print("Average eval view SSIM  ↑ :", f"{ssim_np:.3f}")
         print("Average eval view LPIPS ↓ :", f"{lpips_np:.3f}")
+        print("Average eval view SSIM Binary  ↑ :", f"{ssim_binary_np:.3f}")
+        print("Average eval view LPIPS Binary ↓ :", f"{lpips_binary_np:.3f}")
 
         if len(depthl1_list) > 0:
             depthl1_np = np.mean(np.array(depthl1_list))
             depth_rmse_np = np.mean(np.array(depth_rmse_list))
+            depthl1_binary_np = np.mean(np.array(depthl1_binary_list))
+            depth_rmse_binary_np = np.mean(np.array(depth_rmse_binary_list))
 
             print("Average eval view Depth L1 (m) ↓ :", f"{depthl1_np:.3f}")
             print("Average eval view Depth RMSE (m) ↓ :", f"{depth_rmse_np:.3f}")
+            print("Average eval view Depth L1 Binary (m) ↓ :", f"{depthl1_binary_np:.3f}")
+            print("Average eval view Depth RMSE Binary (m) ↓ :", f"{depth_rmse_binary_np:.3f}")
 
         if len(cd_list) > 0:
             cd_np = np.mean(np.array(cd_list))
@@ -1003,6 +1058,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 "Recon-CD(m)↓",
                 "Recon-F1(%)↑",
                 "Frame-count",
+                "PSNR Binary↑",
+                "PSNR Binary Filter↑",
+                "Depth-L1 Binary(m)↓",
+                "Depth-RMSE Binary(m)↓",
+                "SSIM Binary↑",
+                "LPIPS Binary↓"
         ]
 
         gs_eval = [
@@ -1016,6 +1077,12 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
                 gs_csv_columns[6]: cd_np,
                 gs_csv_columns[7]: f1_np,
                 gs_csv_columns[8]: eval_frame_count,
+                gs_csv_columns[9]: psnr_binary_np,
+                gs_csv_columns[10]: psnr_binary_filter_np,
+                gs_csv_columns[11]: depthl1_binary_np,
+                gs_csv_columns[12]: depth_rmse_binary_np,
+                gs_csv_columns[13]: ssim_binary_np,
+                gs_csv_columns[14]: lpips_binary_np,
             }
         ]
 
@@ -1066,29 +1133,29 @@ def render_with_poses(config: Config, dataset: SLAMDataset,
         for cur_cam_name in cam_list: 
             cur_gt_rgb_list = gt_rgb_cam_dict[cur_cam_name]
             cur_rendered_rgb_list = rendered_rgb_cam_dict[cur_cam_name]
-            # cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
+            cur_rendered_depth_list = rendered_depth_cam_dict[cur_cam_name]
             cur_rendered_normal_list = rendered_normal_cam_dict[cur_cam_name]
 
             if len(cur_gt_rgb_list) > 0:
-                cur_gt_rgb_video_save_path = os.path.join(video_save_base_path, "gt_rgb_{}_{}.mp4".format(cur_cam_name, dt))
+                cur_gt_rgb_video_save_path = os.path.join(video_save_base_path, "gt_rgb_{}.mp4".format(cur_cam_name))
                 save_video_np(cur_gt_rgb_list, cur_gt_rgb_video_save_path)
 
             if len(cur_rendered_rgb_list) > 0:
-                cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}_{}.mp4".format(cur_cam_name, dt))
+                cur_rgb_video_save_path = os.path.join(video_save_base_path, "rendered_rgb_{}.mp4".format(cur_cam_name))
                 save_video_np(cur_rendered_rgb_list, cur_rgb_video_save_path)
 
-            # if len(cur_rendered_depth_list) > 0:
-            #     cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}_{}.mp4".format(cur_cam_name, dt))
-            #     save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
+            if len(cur_rendered_depth_list) > 0:
+                cur_depth_video_save_path = os.path.join(video_save_base_path, "rendered_depth_{}.mp4".format(cur_cam_name))
+                save_video_np(cur_rendered_depth_list, cur_depth_video_save_path)
 
             if len(cur_rendered_normal_list) > 0:    
-                cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}_{}.mp4".format(cur_cam_name, dt))
+                cur_normal_video_save_path = os.path.join(video_save_base_path, "rendered_normal_{}.mp4".format(cur_cam_name))
                 save_video_np(cur_rendered_normal_list, cur_normal_video_save_path)
 
             # free the lists
             rendered_rgb_cam_dict[cur_cam_name] = []
             gt_rgb_cam_dict[cur_cam_name] = []
-            # rendered_depth_cam_dict[cur_cam_name] = []
+            rendered_depth_cam_dict[cur_cam_name] = []
             rendered_normal_cam_dict[cur_cam_name] = []
 
     # NOTE: CPU memory might not be enough for all of these videos, maybe output it one by one

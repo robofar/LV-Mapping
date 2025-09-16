@@ -27,6 +27,22 @@ def masked_psnr(img1, img2, mask3d):
     mse = torch.mean((img1_valid - img2_valid) ** 2)
     return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
+def masked_psnr_2(img1, img2, mask, eps=1e-8):
+    # Ensure mask has shape (3, H, W)
+    if mask.shape[0] == 1:
+        mask = mask.expand(3, -1, -1)
+    
+    # Apply mask to select valid pixels
+    valid_pixels = mask.bool()
+    diff = img1[valid_pixels] - img2[valid_pixels]
+
+    # Compute MSE over valid pixels
+    mse = torch.mean(diff ** 2)
+
+    # Avoid division by zero
+    psnr = 20 * torch.log10(1.0 / (torch.sqrt(mse) + eps))
+    return psnr
+
 def gradient_map(image):
     sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]).float().unsqueeze(0).unsqueeze(0).cuda()/4
     sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]]).float().unsqueeze(0).unsqueeze(0).cuda()/4

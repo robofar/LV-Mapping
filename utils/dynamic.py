@@ -234,14 +234,14 @@ class Dynamic():
 
         return curvature_score
 
+
+
+
+
+
     def find_car_trace_cluster_centroid(self, pcd, points_timestamp, labels):
         unique_labels = np.unique(labels[labels >= 0])  # Ignore noise (-1)
-        best_trace_cluster = None
-        best_trace_timestamps = None
-        best_bbox = None
-        best_aspect_ratio = 0
-        rest_clusters = []
-
+        
         largest_cluster_N = -1
         largest_cluster_indices = None
 
@@ -250,60 +250,191 @@ class Dynamic():
             if len(cluster_indices) > largest_cluster_N:
                 largest_cluster_N = len(cluster_indices)
                 largest_cluster_indices = cluster_indices
-        
 
         largest_cluster_pcd = pcd.select_by_index(largest_cluster_indices)
         largest_cluster_timestamps = points_timestamp[largest_cluster_indices]
         largest_cluster_points_np = np.asarray(largest_cluster_pcd.points)
+        largest_cluster_timestamps = largest_cluster_timestamps.cpu().numpy().astype(np.int32)
 
-        o3d.visualization.draw_geometries([largest_cluster_pcd, largest_cluster_pcd.get_axis_aligned_bounding_box()])
-
-        # Centroid per points filtered by timestamp
-        timestamp_points = defaultdict(list)
-
-        # group pts by timestamps
-        for pt, t in zip(largest_cluster_points_np, largest_cluster_timestamps):
-            timestamp_points[t].append(pt)
+        # Group points by timestamp
         
+        timestamp_points = defaultdict(list)
+        for pt, t in zip(largest_cluster_points_np, largest_cluster_timestamps):
+            timestamp_points[int(t)].append(pt)
+
         centroids = []
         timestamps_sorted = sorted(timestamp_points.keys())
-
         for t in timestamps_sorted:
             pts = np.array(timestamp_points[t])
             centroid = np.mean(pts, axis=0)
             centroids.append(centroid)
+        centroids = np.array(centroids)  # (M, 3)
 
-        centroids = np.array(centroids)  # Shape (M, 3)
+        # Visualize
+        #o3d.visualization.draw_geometries([largest_cluster_pcd, largest_cluster_pcd.get_axis_aligned_bounding_box()])
 
-        length = np.linalg.norm(centroids[-1] - centroids[0]) # condition (1)
-        
-        centroids_xy = centroids[:, :2]  # Only x,y
-        x_vals = centroids_xy[:, 0]
-        y_vals = centroids_xy[:, 1]
+        # poly in world frame
+
+        # Fit polynomial
+        poly_coeffs_w = np.polyfit(centroids[:,0], centroids[:,1], deg=2)
+        curvature_strength_w = np.abs(poly_coeffs_w[0])
+
+        # Uniform sampling in x-space
+        x_sample_w = np.linspace(np.min(centroids[:,0]), np.max(centroids[:,0]), 100)
+        y_sample_w = np.polyval(poly_coeffs_w, x_sample_w)
+
+        # Compute distances
+        sampled_points_w = np.stack([x_sample_w, y_sample_w], axis=1)
+        diffs_poly_w = sampled_points_w[1:] - sampled_points_w[:-1]
+        distances_poly_w = np.linalg.norm(diffs_poly_w, axis=1)
+        smoothed_length_w = np.sum(distances_poly_w)
+
+        # Print results
+        print(f"Smoothed trace length (world frame): {smoothed_length_w:.3f} meters")
+        print(f"Curvature strength (world frame): {curvature_strength_w:.6f}")
+        ################################
+
+        # PCA
+        centroids_xy = centroids[:, :2]  # Only X, Y
+        pca = PCA(n_components=2)
+        centroids_xy_rot = pca.fit_transform(centroids_xy) # rotated centroids
+
+        # x and y
+        x_vals = centroids_xy_rot[:, 0]
+        y_vals = centroids_xy_rot[:, 1]
+
+        # Normalize x before fitting
+        x_min = np.min(x_vals)
+        x_max = np.max(x_vals)
+        x_range = x_max - x_min
+        x_vals_norm = (x_vals - x_min) / x_range
+
+        eigenvalues = pca.explained_variance_
+        eigen_std = np.sqrt(eigenvalues)
+
+        print(f"Eigenvalues (variances): {eigenvalues}")
+        print(f"Square roots (standard deviations): {eigen_std}")
+        print(f"x range is: {x_range}")
+
+        '''
+        #################### Without normalization ######################################
         poly_coeffs = np.polyfit(x_vals, y_vals, deg=2)
         curvature_strength = np.abs(poly_coeffs[0])
 
-        print(f"Trace length: {length:.3f} meters")
-        print(f"Curvature strength: {curvature_strength:.6f}")
+        x_sample_norm = np.linspace(0, 1, 100) # from 0 to 1 because we fit polynomial on normalized data so we have to be consistent
+        x_sample_real = x_sample_norm * x_range + x_min
+        y_sample = np.polyval(poly_coeffs, x_sample_real)
 
-        # Plot
+        sampled_points = np.stack([x_sample_real, y_sample], axis=1)
+        diffs_poly = sampled_points[1:] - sampled_points[:-1]
+        distances_poly = np.linalg.norm(diffs_poly, axis=1)
+        smoothed_length = np.sum(distances_poly)
+
+        print(f"Smoothed trace length (unnormalized x): {smoothed_length:.3f} meters")
+        print(f"Curvature strength (unnormalized x): {curvature_strength:.6f}")
+
         plt.figure(figsize=(10, 8))
-        plt.scatter(largest_cluster_points_np[:, 0], largest_cluster_points_np[:, 1], c='gray', s=3, label='Largest Cluster')
-        plt.scatter(centroids_xy[:, 0], centroids_xy[:, 1], c='red', s=20, label='Centroids')
+        plt.scatter(centroids_xy_rot[:, 0], centroids_xy_rot[:, 1], c='blue', s=50, label='PCA Centroids') # Plot centroids directly in PCA frame
 
-        # Plot fitted polynomial
-        x_fit = np.linspace(min(x_vals), max(x_vals), 100)
+        # Polynomial in PCA frame
+        x_fit = np.linspace(x_min, x_max, 100)
+        x_fit_norm = (x_fit - x_min) / x_range
         y_fit = np.polyval(poly_coeffs, x_fit)
-        plt.plot(x_fit, y_fit, c='blue', linewidth=2, label='Fitted Polynomial')
 
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.legend()
-        plt.title('Car Trace: Cluster, Centroids and Fitted Polynomial')
-        plt.grid(True)
+        plt.plot(x_fit, y_fit, c='green', linewidth=5, label='Fitted Polynomial Unnormalized')
+
+        plt.xlabel('PCA-X (Motion Axis)', fontsize=24)
+        plt.ylabel('PCA-Y (Deviation)', fontsize=24)
+        plt.title('Centroids in PCA Frame', fontsize=30)
+
+        # Ticks font size
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+
+        # Legend font size
+        plt.legend(fontsize=16)
+
+        plt.grid(False)
         plt.show()
+        '''
 
-        return centroids, length, curvature_strength
+
+
+        ########################## with normalization ######################################
+        poly_coeffs = np.polyfit(x_vals_norm, y_vals, deg=2)
+        curvature_strength = np.abs(poly_coeffs[0])
+
+        # Smoothed length along polynomial curve
+        x_sample_norm = np.linspace(0, 1, 100) # from 0 to 1 because we fit polynomial on normalized data so we have to be consistent
+        x_sample_real = x_sample_norm * x_range + x_min
+        y_sample = np.polyval(poly_coeffs, x_sample_norm)
+
+        sampled_points = np.stack([x_sample_real, y_sample], axis=1)
+        diffs_poly = sampled_points[1:] - sampled_points[:-1]
+        distances_poly = np.linalg.norm(diffs_poly, axis=1)
+        smoothed_length = np.sum(distances_poly)
+
+        # Print results
+        print(f"Smoothed trace length (normalized x): {smoothed_length:.3f} meters")
+        print(f"Curvature strength (normalized x): {curvature_strength:.6f}")
+
+        
+
+        #return centroids, smoothed_length, curvature_strength
+        '''
+        plt.figure(figsize=(10, 8))
+        plt.scatter(centroids_xy_rot[:, 0], centroids_xy_rot[:, 1], c='blue', s=50, label='PCA Centroids') # Plot centroids directly in PCA frame
+
+        # Polynomial in PCA frame
+        x_fit = np.linspace(x_min, x_max, 100)
+        x_fit_norm = (x_fit - x_min) / x_range
+        y_fit = np.polyval(poly_coeffs, x_fit_norm)
+
+        plt.plot(x_fit_norm, y_fit, c='green', linewidth=5, label='Fitted Polynomial Normalized')
+        plt.plot(x_fit, y_fit, c='red', linewidth=5, label='Fitted Polynomial Normalized')
+
+        plt.xlabel('PCA-X (Motion Axis)', fontsize=24)
+        plt.ylabel('PCA-Y (Deviation)', fontsize=24)
+        plt.title('Centroids in PCA Frame', fontsize=30)
+
+        # Ticks font size
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+
+        # Legend font size
+        plt.legend(fontsize=16)
+
+        plt.grid(False)
+        plt.show()
+        '''
+
+
+        '''
+        # ========== WORLD FRAME VISUALIZATION ==========
+
+        # Plot in original coordinates
+        plt.figure(figsize=(10, 8))
+        plt.scatter(centroids_xy[:, 0], centroids_xy[:, 1], c='red', s=50, label='Centroids')
+
+        # Inverse PCA to map back to original coordinates:
+        poly_rot = np.stack([x_fit, y_fit], axis=1)
+        poly_original = pca.inverse_transform(poly_rot)
+        
+        #plt.plot(poly_original[:, 0], poly_original[:, 1], c='blue', linewidth=2, label='Fitted Polynomial')
+
+        plt.xlabel('X (world frame)', fontsize=24)
+        plt.ylabel('Y (world frame)', fontsize=24)
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.legend(fontsize=16)
+        plt.title('Centroids in World Frame', fontsize=30)
+        plt.grid(False)
+        plt.show()
+        '''
+
+
+        return centroids, smoothed_length, curvature_strength
+
 
 
 
@@ -463,18 +594,30 @@ class Dynamic():
         clustering = DBSCAN(eps=eps_value, min_samples=min_points).fit(points_np)
         #clustering = HDBSCAN(min_samples=20, cluster_selection_epsilon=0.6).fit(points_np)
         labels = clustering.labels_
-        max_label = labels.max()
+        #max_label = labels.max()
         #print(f"Point cloud has {max_label + 1} clusters.")
 
         # Visualize using color (just for visualization)
-        colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-        colors[labels < 0] = 0
-        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-        o3d.visualization.draw_geometries([pcd])
+        #colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+        #colors[labels < 0] = 0
+        #pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        #o3d.visualization.draw_geometries([pcd])
 
+        '''
         ###############################
-        self.find_car_trace_cluster_centroid(pcd, points_timestamp, labels)
-        return True
+        centroids, smoothed_length, curvature_strength = self.find_car_trace_cluster_centroid(pcd, points_timestamp, labels)
+
+        movable_car = False
+        if smoothed_length >= 8.5:
+            movable_car = True
+            if curvature_strength >= 10.0:
+                label = "Turning car"
+            else:
+                label = "Straight moving car"
+        else:
+            label = "Parked car"
+        
+        return movable_car
         ###############################
         '''
         # Find the best car trace cluster
@@ -492,12 +635,11 @@ class Dynamic():
 
         #o3d.visualization.draw_geometries([car_trace_pcd, car_trace_bbox])
         return True
-        '''
     
 
     def process_all(self):
         for cam_name in self.instances_pcd.keys():
             for key in self.instances_pcd[cam_name].keys():
-                if key not in [-1, 0] and cam_name == "front": # -1 is outside of FOV, 0 is background
+                if key not in [-1, 0]: # -1 is outside of FOV, 0 is background
                     result = self.process_instance(cam_name, key)
                     self.dynamic_instance[cam_name][key] = result
