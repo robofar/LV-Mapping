@@ -1,1 +1,1 @@
-# Master Thesis
+# Master Thesis - LiDAR-Visual Mapping
