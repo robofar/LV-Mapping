@@ -603,7 +603,7 @@ class Dynamic():
         #pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
         #o3d.visualization.draw_geometries([pcd])
 
-        '''
+        
         ###############################
         centroids, smoothed_length, curvature_strength = self.find_car_trace_cluster_centroid(pcd, points_timestamp, labels)
 
@@ -635,6 +635,7 @@ class Dynamic():
 
         #o3d.visualization.draw_geometries([car_trace_pcd, car_trace_bbox])
         return True
+        '''
     
 
     def process_all(self):
