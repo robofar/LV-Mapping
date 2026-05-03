@@ -4,8 +4,6 @@ Maps of the environment are essential for autonomous car navigation. Metric maps
 
 ## Results
 <img width="1604" height="445" alt="Image" src="https://github.com/user-attachments/assets/56397729-2a50-454b-b8c8-2743b067a73d" />
-![Photorealistic but Geometrically Inaccurate map](https://github.com/user-attachments/assets/56397729-2a50-454b-b8c8-2743b067a73d)
-
 ---
 <img width="1604" height="445" alt="Image" src="https://github.com/user-attachments/assets/3b4ee0a2-5769-4295-a0f7-9735465a08e7" />
 
